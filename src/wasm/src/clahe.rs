@@ -1,4 +1,5 @@
 //! CLAHE (Contrast Limited Adaptive Histogram Equalization) in Rust
+//! Optimized with precomputed coordinate lookup tables and fast integer luminance
 
 pub fn apply_clahe(
     pixels: &mut [u8],
@@ -30,14 +31,15 @@ pub fn apply_clahe(
             let tile_pixel_count = (end_x - start_x) * (end_y - start_y);
 
             for y in start_y..end_y {
+                let row_offset = y * width;
                 for x in start_x..end_x {
-                    let idx = (y * width + x) * 4;
-                    let gray = ((0.299 * pixels[idx] as f32
-                        + 0.587 * pixels[idx + 1] as f32
-                        + 0.114 * pixels[idx + 2] as f32)
-                        .round() as usize)
-                        .clamp(0, 255);
-                    hist[gray] += 1;
+                    let idx = (row_offset + x) * 4;
+                    // Fast integer perceptual luminance (0.299R + 0.587G + 0.114B ~= (77R + 150G + 29B) >> 8)
+                    let gray = ((pixels[idx] as u32 * 77
+                        + pixels[idx + 1] as u32 * 150
+                        + pixels[idx + 2] as u32 * 29)
+                        >> 8) as usize;
+                    hist[gray.min(255)] += 1;
                 }
             }
 
@@ -67,32 +69,54 @@ pub fn apply_clahe(
         }
     }
 
+    // Precompute X coordinate mapping tables (eliminates 4M divisions per frame)
+    let max_tx = tiles_x.saturating_sub(1);
+    let mut tx_arr = Vec::with_capacity(width);
+    let mut next_tx_arr = Vec::with_capacity(width);
+    let mut dx_arr = Vec::with_capacity(width);
+    let inv_tile_w = 1.0 / tile_w as f32;
+
+    for x in 0..width {
+        let tx = (x / tile_w).min(max_tx);
+        let next_tx = (tx + 1).min(max_tx);
+        let dx = (x % tile_w) as f32 * inv_tile_w;
+        tx_arr.push(tx);
+        next_tx_arr.push(next_tx);
+        dx_arr.push(dx);
+    }
+
+    let max_ty = tiles_y.saturating_sub(1);
+    let inv_tile_h = 1.0 / tile_h as f32;
+
     // Bilinear interpolation across tiles
     for y in 0..height {
-        let ty = (y / tile_h).min(tiles_y.saturating_sub(1));
-        let next_ty = (ty + 1).min(tiles_y.saturating_sub(1));
-        let dy = (y % tile_h) as f32 / tile_h as f32;
+        let ty = (y / tile_h).min(max_ty);
+        let next_ty = (ty + 1).min(max_ty);
+        let dy = (y % tile_h) as f32 * inv_tile_h;
+        let row_offset = y * width;
+        let ty_row = ty * tiles_x;
+        let next_ty_row = next_ty * tiles_x;
 
         for x in 0..width {
-            let tx = (x / tile_w).min(tiles_x.saturating_sub(1));
-            let next_tx = (tx + 1).min(tiles_x.saturating_sub(1));
-            let dx = (x % tile_w) as f32 / tile_w as f32;
+            let tx = tx_arr[x];
+            let next_tx = next_tx_arr[x];
+            let dx = dx_arr[x];
 
-            let idx = (y * width + x) * 4;
-            let gray = ((0.299 * pixels[idx] as f32
-                + 0.587 * pixels[idx + 1] as f32
-                + 0.114 * pixels[idx + 2] as f32)
-                .round() as usize)
-                .clamp(0, 255);
+            let idx = (row_offset + x) * 4;
+            let gray = ((pixels[idx] as u32 * 77
+                + pixels[idx + 1] as u32 * 150
+                + pixels[idx + 2] as u32 * 29)
+                >> 8) as usize;
+            let gray_clamped = gray.min(255);
 
-            let cdf_tl = cdfs[ty * tiles_x + tx][gray];
-            let cdf_tr = cdfs[ty * tiles_x + next_tx][gray];
-            let cdf_bl = cdfs[next_ty * tiles_x + tx][gray];
-            let cdf_br = cdfs[next_ty * tiles_x + next_tx][gray];
+            let cdf_tl = cdfs[ty_row + tx][gray_clamped];
+            let cdf_tr = cdfs[ty_row + next_tx][gray_clamped];
+            let cdf_bl = cdfs[next_ty_row + tx][gray_clamped];
+            let cdf_br = cdfs[next_ty_row + next_tx][gray_clamped];
 
             let top = cdf_tl * (1.0 - dx) + cdf_tr * dx;
             let bot = cdf_bl * (1.0 - dx) + cdf_br * dx;
-            let final_val = ((top * (1.0 - dy) + bot * dy) * 255.0).round().clamp(0.0, 255.0) as u8;
+            let final_val = ((top * (1.0 - dy) + bot * dy) * 255.0) as u8;
 
             pixels[idx] = final_val;
             pixels[idx + 1] = final_val;

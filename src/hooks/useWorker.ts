@@ -52,7 +52,13 @@ export function useWorkerPipeline() {
 
     const jobId = ++activeJobIdRef.current;
     isWorkerBusyRef.current = true;
-    setIsProcessing(true);
+
+    // Only show processing indicator if job takes longer than 100ms to avoid UI flickering during slider drags
+    const spinnerTimer = setTimeout(() => {
+      if (isWorkerBusyRef.current) {
+        setIsProcessing(true);
+      }
+    }, 100);
 
     (async () => {
       try {
@@ -76,6 +82,7 @@ export function useWorkerPipeline() {
       } catch (err) {
         console.error('Worker processing error:', err);
       } finally {
+        clearTimeout(spinnerTimer);
         isWorkerBusyRef.current = false;
         setIsProcessing(false);
 

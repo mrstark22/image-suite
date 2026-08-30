@@ -267,10 +267,11 @@ export class ImageProcessorWorker {
         const tilePixelCount = (endX - startX) * (endY - startY);
 
         for (let y = startY; y < endY; y++) {
+          const rowOffset = y * width;
           for (let x = startX; x < endX; x++) {
-            const idx = (y * width + x) * 4;
-            const gray = Math.round(0.299 * pixels[idx] + 0.587 * pixels[idx + 1] + 0.114 * pixels[idx + 2]);
-            hist[gray]++;
+            const idx = (rowOffset + x) * 4;
+            const gray = (pixels[idx] * 77 + pixels[idx + 1] * 150 + pixels[idx + 2] * 29) >> 8;
+            hist[gray & 255]++;
           }
         }
 
@@ -290,36 +291,58 @@ export class ImageProcessorWorker {
         // Build CDF
         const cdf = new Float32Array(256);
         let sum = 0;
+        const invCount = 1.0 / (tilePixelCount || 1);
         for (let i = 0; i < 256; i++) {
           sum += hist[i];
-          cdf[i] = sum / (tilePixelCount || 1);
+          cdf[i] = sum * invCount;
         }
         cdfs.push(cdf);
       }
     }
 
+    // Precompute X coordinate mapping tables (eliminates 4M divisions per frame)
+    const maxTx = totalTilesX - 1;
+    const invTileW = 1.0 / tileW;
+    const txArr = new Int32Array(width);
+    const nextTxArr = new Int32Array(width);
+    const dxArr = new Float32Array(width);
+
+    for (let x = 0; x < width; x++) {
+      const tx = Math.min(maxTx, Math.floor(x / tileW));
+      txArr[x] = tx;
+      nextTxArr[x] = Math.min(maxTx, tx + 1);
+      dxArr[x] = (x % tileW) * invTileW;
+    }
+
+    const maxTy = totalTilesY - 1;
+    const invTileH = 1.0 / tileH;
+
     // Bilinear interpolation across tiles
     for (let y = 0; y < height; y++) {
-      const ty = Math.min(totalTilesY - 1, Math.floor(y / tileH));
-      const nextTy = Math.min(totalTilesY - 1, ty + 1);
-      const dy = (y % tileH) / tileH;
+      const ty = Math.min(maxTy, Math.floor(y / tileH));
+      const nextTy = Math.min(maxTy, ty + 1);
+      const dy = (y % tileH) * invTileH;
+      const rowOffset = y * width;
+      const tyRow = ty * totalTilesX;
+      const nextTyRow = nextTy * totalTilesX;
 
       for (let x = 0; x < width; x++) {
-        const tx = Math.min(totalTilesX - 1, Math.floor(x / tileW));
-        const nextTx = Math.min(totalTilesX - 1, tx + 1);
-        const dx = (x % tileW) / tileW;
+        const tx = txArr[x];
+        const nextTx = nextTxArr[x];
+        const dx = dxArr[x];
 
-        const idx = (y * width + x) * 4;
-        const gray = Math.round(0.299 * pixels[idx] + 0.587 * pixels[idx + 1] + 0.114 * pixels[idx + 2]);
+        const idx = (rowOffset + x) * 4;
+        const gray = (pixels[idx] * 77 + pixels[idx + 1] * 150 + pixels[idx + 2] * 29) >> 8;
+        const grayClamped = gray & 255;
 
-        const cdfTL = cdfs[ty * totalTilesX + tx][gray];
-        const cdfTR = cdfs[ty * totalTilesX + nextTx][gray];
-        const cdfBL = cdfs[nextTy * totalTilesX + tx][gray];
-        const cdfBR = cdfs[nextTy * totalTilesX + nextTx][gray];
+        const cdfTL = cdfs[tyRow + tx][grayClamped];
+        const cdfTR = cdfs[tyRow + nextTx][grayClamped];
+        const cdfBL = cdfs[nextTyRow + tx][grayClamped];
+        const cdfBR = cdfs[nextTyRow + nextTx][grayClamped];
 
         const top = cdfTL * (1 - dx) + cdfTR * dx;
         const bot = cdfBL * (1 - dx) + cdfBR * dx;
-        const finalVal = Math.round((top * (1 - dy) + bot * dy) * 255);
+        const finalVal = (top * (1 - dy) + bot * dy) * 255;
 
         pixels[idx] = finalVal;
         pixels[idx + 1] = finalVal;
