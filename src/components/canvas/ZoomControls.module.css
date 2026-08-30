@@ -1,0 +1,41 @@
+.zoomBar {
+  position: absolute;
+  bottom: 20px;
+  right: 20px;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  background: var(--glass-bg);
+  backdrop-filter: blur(12px);
+  padding: 4px 8px;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border-medium);
+  box-shadow: var(--shadow-lg);
+  z-index: 20;
+}
+
+.button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  transition: all var(--transition-fast);
+}
+
+.button:hover {
+  background: var(--bg-surface-hover);
+  color: var(--text-primary);
+}
+
+.zoomLabel {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent-primary);
+  min-width: 48px;
+  text-align: center;
+  padding: 0 4px;
+}

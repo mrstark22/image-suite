@@ -1,0 +1,311 @@
+.panel {
+  width: var(--panel-width);
+  height: 100%;
+  background: var(--bg-surface);
+  border-left: 1px solid var(--border-subtle);
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  z-index: 25;
+}
+
+.panelHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--space-4);
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-surface-raised);
+}
+
+.panelTitle {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.resetButton {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  transition: color var(--transition-fast);
+}
+
+.resetButton:hover {
+  color: var(--accent-primary);
+}
+
+.section {
+  padding: var(--space-4);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.sectionTitle {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: var(--space-3);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.toggleRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--space-3);
+}
+
+.toggleLabel {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.checkbox {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent-primary);
+  cursor: pointer;
+}
+
+.select {
+  width: 100%;
+  padding: 6px 10px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-size: 12px;
+  margin-bottom: var(--space-3);
+  outline: none;
+}
+
+.select:focus {
+  border-color: var(--border-focus);
+}
+
+.gridCards {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.cardButton {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-surface-raised);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  text-align: left;
+  transition: all var(--transition-fast);
+}
+
+.cardButton:hover {
+  background: var(--bg-surface-hover);
+  border-color: var(--border-medium);
+}
+
+.cardButtonActive {
+  background: rgba(56, 189, 248, 0.12);
+  border-color: var(--accent-primary);
+}
+
+.cardTitle {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 2px;
+}
+
+.cardDesc {
+  font-size: 9px;
+  color: var(--text-tertiary);
+  line-height: 1.2;
+}
+
+.exportActionBlock {
+  padding: var(--space-4);
+  margin-top: auto;
+}
+
+.primaryActionBtn {
+  width: 100%;
+  padding: 10px;
+  background: var(--accent-primary);
+  color: #041019;
+  font-weight: 700;
+  font-size: 13px;
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  box-shadow: 0 0 15px var(--accent-primary-glow);
+  transition: all var(--transition-fast);
+}
+
+.primaryActionBtn:hover {
+  background: #7dd3fc;
+  box-shadow: 0 0 22px var(--accent-primary-glow);
+  transform: translateY(-1px);
+}
+
+/* Accordion & Modern Uncluttered Tonal Styles */
+.accordionSection {
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.accordionHeader {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  transition: background var(--transition-fast);
+}
+
+.accordionHeader:hover {
+  background: var(--bg-surface-hover);
+}
+
+.accordionLeft {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.accordionIcon {
+  color: var(--accent-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.accordionTitle {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-primary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.activeDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent-primary);
+  box-shadow: 0 0 8px var(--accent-primary-glow);
+}
+
+.accordionRight {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.accordionContent {
+  padding: 4px 16px 16px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* Quick Presets Bar */
+.presetsContainer {
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-surface);
+}
+
+.presetsTitle {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-tertiary);
+  margin-bottom: 8px;
+}
+
+.presetChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.presetChip {
+  padding: 4px 10px;
+  background: var(--bg-surface-raised);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.presetChip:hover {
+  background: var(--bg-surface-hover);
+  border-color: var(--accent-primary);
+  color: var(--text-primary);
+}
+
+.presetChipActive {
+  background: rgba(56, 189, 248, 0.15);
+  border-color: var(--accent-primary);
+  color: var(--accent-primary);
+  font-weight: 600;
+}
+
+/* Segmented Control */
+.segmentedGroup {
+  display: flex;
+  background: var(--bg-input, #0e0e17);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 2px;
+  gap: 2px;
+  margin-bottom: 8px;
+}
+
+.segmentedItem {
+  flex: 1;
+  padding: 5px 8px;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  background: transparent;
+  border: none;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  text-align: center;
+  white-space: nowrap;
+}
+
+.segmentedItem:hover {
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.segmentedItemActive {
+  background: var(--bg-surface-raised, #1e1e2d);
+  color: var(--accent-primary, #38bdf8);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+

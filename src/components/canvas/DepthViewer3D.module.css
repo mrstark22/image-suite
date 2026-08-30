@@ -1,0 +1,94 @@
+.viewerContainer {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  background-color: #0c0f14;
+  overflow: hidden;
+  user-select: none;
+  cursor: grab;
+}
+
+.viewerContainer:active {
+  cursor: grabbing;
+}
+
+.webglCanvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.hudOverlay {
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  right: 14px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  pointer-events: none;
+}
+
+.hudBadge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(15, 23, 42, 0.75);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--accent-primary, #38bdf8);
+}
+
+.hudActions {
+  display: flex;
+  gap: 8px;
+  pointer-events: auto;
+}
+
+.hudBtn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(15, 23, 42, 0.85);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #cbd5e1;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.hudBtn:hover {
+  background: rgba(30, 41, 59, 0.95);
+  border-color: rgba(255, 255, 255, 0.25);
+  color: #ffffff;
+}
+
+.hudBtnActive {
+  background: rgba(14, 165, 233, 0.25);
+  border-color: var(--accent-primary, #38bdf8);
+  color: var(--accent-primary, #38bdf8);
+}
+
+.hudHint {
+  position: absolute;
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(15, 23, 42, 0.75);
+  backdrop-filter: blur(6px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 11px;
+  color: #94a3b8;
+  pointer-events: none;
+  letter-spacing: 0.2px;
+}

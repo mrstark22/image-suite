@@ -1,0 +1,195 @@
+:root {
+  /* Color Palette - Dark Precision Workshop Theme */
+  --bg-app: #090c10;
+  --bg-surface: #0f141c;
+  --bg-surface-raised: #161e2b;
+  --bg-surface-hover: #1f2a3c;
+  --bg-surface-active: #28374f;
+  --bg-input: #0c1017;
+  --bg-overlay: rgba(9, 12, 16, 0.75);
+
+  /* Borders & Glass */
+  --border-subtle: rgba(255, 255, 255, 0.07);
+  --border-medium: rgba(255, 255, 255, 0.12);
+  --border-focus: #38bdf8;
+  --glass-bg: rgba(15, 20, 28, 0.85);
+  --glass-border: rgba(255, 255, 255, 0.08);
+
+  /* Accents */
+  --accent-primary: #38bdf8;         /* Laser Cyan */
+  --accent-primary-hover: #0284c7;
+  --accent-primary-glow: rgba(56, 189, 248, 0.25);
+  --accent-secondary: #818cf8;       /* Vector Indigo */
+  --accent-success: #34d399;         /* Ready Emerald */
+  --accent-warning: #fbbf24;         /* Amber Burn */
+  --accent-danger: #f87171;          /* Laser Stop Red */
+  --accent-purple: #c084fc;          /* Depth Purple */
+
+  /* Text Colors */
+  --text-primary: #f1f5f9;
+  --text-secondary: #94a3b8;
+  --text-tertiary: #64748b;
+  --text-muted: #475569;
+  --text-accent: #38bdf8;
+
+  /* Typography */
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+
+  /* Spacing */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+
+  /* Border Radii */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-full: 9999px;
+
+  /* Shadows */
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.4), 0 2px 4px -2px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.5), 0 4px 6px -4px rgba(0, 0, 0, 0.5);
+  --shadow-glow: 0 0 20px -5px var(--accent-primary-glow);
+
+  /* Layout dimensions */
+  --header-height: 48px;
+  --tool-sidebar-width: 60px;
+  --panel-width: 340px;
+  --status-bar-height: 28px;
+
+  /* Transitions */
+  --transition-fast: 120ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-normal: 200ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-smooth: 300ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+[data-theme="light"] {
+  --bg-app: #f8fafc;
+  --bg-surface: #ffffff;
+  --bg-surface-raised: #f1f5f9;
+  --bg-surface-hover: #e2e8f0;
+  --bg-surface-active: #cbd5e1;
+  --bg-input: #ffffff;
+  --bg-overlay: rgba(248, 250, 252, 0.85);
+
+  --border-subtle: rgba(0, 0, 0, 0.08);
+  --border-medium: rgba(0, 0, 0, 0.15);
+  --border-focus: #0284c7;
+  --glass-bg: rgba(255, 255, 255, 0.9);
+  --glass-border: rgba(0, 0, 0, 0.1);
+
+  --accent-primary: #0284c7;
+  --accent-primary-hover: #0369a1;
+  --accent-primary-glow: rgba(2, 132, 199, 0.2);
+
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --text-tertiary: #64748b;
+  --text-muted: #94a3b8;
+  --text-accent: #0284c7;
+}
+
+/* CSS Reset & Defaults */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body, #root {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  font-family: var(--font-sans);
+  background-color: var(--bg-app);
+  color: var(--text-primary);
+  font-size: 13px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  user-select: none;
+}
+
+/* Custom Scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: var(--radius-full);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+/* Utility Animations */
+@keyframes pulseGlow {
+  0%, 100% { opacity: 0.8; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.04); }
+}
+
+@keyframes laserSweep {
+  0% { transform: translateY(-100%); }
+  100% { transform: translateY(1000%); }
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.animate-spin {
+  animation: spin 1s linear infinite;
+}
+
+/* Base interactive elements */
+button {
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  cursor: pointer;
+  outline: none;
+}
+
+button:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 2px;
+}
+
+input, select, textarea {
+  font-family: inherit;
+  font-size: inherit;
+  color: var(--text-primary);
+  background-color: var(--bg-input);
+  border: 1px solid var(--border-medium);
+  border-radius: var(--radius-sm);
+  padding: 4px 8px;
+  outline: none;
+  transition: border-color var(--transition-fast);
+}
+
+input:focus, select:focus, textarea:focus {
+  border-color: var(--border-focus);
+}
+
+/* Monospace telemetry / numerical text */
+.font-mono {
+  font-family: var(--font-mono);
+  letter-spacing: -0.02em;
+}
