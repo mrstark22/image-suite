@@ -1,4 +1,5 @@
 import React from 'react';
+import { useEditStore } from '../../store/editStore';
 import styles from './Slider.module.css';
 
 interface SliderProps {
@@ -10,6 +11,8 @@ interface SliderProps {
   unit?: string;
   onChange: (value: number) => void;
   onReset?: () => void;
+  onInteractionStart?: () => void;
+  onInteractionEnd?: () => void;
 }
 
 export const Slider: React.FC<SliderProps> = ({
@@ -21,9 +24,28 @@ export const Slider: React.FC<SliderProps> = ({
   unit = '',
   onChange,
   onReset,
+  onInteractionStart,
+  onInteractionEnd,
 }) => {
+  const beginAdjustment = useEditStore((s) => s.beginAdjustment);
+  const commitAdjustment = useEditStore((s) => s.commitAdjustment);
+
+  const handlePointerDown = () => {
+    beginAdjustment();
+    onInteractionStart?.();
+  };
+
+  const handlePointerUp = () => {
+    commitAdjustment();
+    onInteractionEnd?.();
+  };
+
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     onChange(parseFloat(e.target.value));
+  };
+
+  const handleInputFocus = () => {
+    beginAdjustment();
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -33,8 +55,19 @@ export const Slider: React.FC<SliderProps> = ({
     }
   };
 
+  const handleInputBlur = () => {
+    commitAdjustment();
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      commitAdjustment();
+      (e.target as HTMLInputElement).blur();
+    }
+  };
+
   // Calculate percentage fill for custom track gradient
-  const percentage = ((value - min) / (max - min)) * 100;
+  const percentage = Math.max(0, Math.min(100, ((value - min) / (max - min)) * 100));
 
   return (
     <div className={styles.container}>
@@ -55,7 +88,10 @@ export const Slider: React.FC<SliderProps> = ({
             min={min}
             max={max}
             step={step}
+            onFocus={handleInputFocus}
             onChange={handleInputChange}
+            onBlur={handleInputBlur}
+            onKeyDown={handleKeyDown}
           />
           {unit && <span className={styles.unit}>{unit}</span>}
         </div>
@@ -68,6 +104,10 @@ export const Slider: React.FC<SliderProps> = ({
           max={max}
           step={step}
           value={value}
+          onPointerDown={handlePointerDown}
+          onPointerUp={handlePointerUp}
+          onTouchStart={handlePointerDown}
+          onTouchEnd={handlePointerUp}
           onChange={handleChange}
           style={{
             background: `linear-gradient(to right, var(--accent-primary) 0%, var(--accent-primary) ${percentage}%, var(--bg-surface-active) ${percentage}%, var(--bg-surface-active) 100%)`,

@@ -12,19 +12,36 @@ import {
   Wand2,
 } from 'lucide-react';
 import { useEditStore } from '../../store/editStore';
+import { useLayerStore } from '../../store/layerStore';
 import { Slider } from '../shared/Slider';
 import { Histogram } from '../shared/Histogram';
-import type { GrayscaleMode } from '../../types/image';
+import type { GrayscaleMode, TonalAdjustments, ColorAdjustments, DetailEnhancements } from '../../types/image';
 import styles from './Panels.module.css';
 
 export const AdjustmentsPanel: React.FC = () => {
   const tonal = useEditStore((s) => s.tonal);
   const color = useEditStore((s) => s.color);
   const detail = useEditStore((s) => s.detail);
-  const setTonal = useEditStore((s) => s.setTonal);
-  const setColor = useEditStore((s) => s.setColor);
-  const setDetail = useEditStore((s) => s.setDetail);
+  const setTonalStore = useEditStore((s) => s.setTonal);
+  const setColorStore = useEditStore((s) => s.setColor);
+  const setDetailStore = useEditStore((s) => s.setDetail);
   const resetTonal = useEditStore((s) => s.resetTonal);
+
+  const layers = useLayerStore((s) => s.layers);
+  const activeLayerId = useLayerStore((s) => s.activeLayerId);
+  const setActiveLayer = useLayerStore((s) => s.setActiveLayer);
+  // Dispatch edits to editStore
+  const setTonal = (partial: Partial<TonalAdjustments>) => {
+    setTonalStore(partial);
+  };
+
+  const setColor = (partial: Partial<ColorAdjustments>) => {
+    setColorStore(partial);
+  };
+
+  const setDetail = (partial: Partial<DetailEnhancements>) => {
+    setDetailStore(partial);
+  };
 
   // Accordion state - Basic Tone and Levels open by default
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
@@ -143,6 +160,25 @@ export const AdjustmentsPanel: React.FC = () => {
         </button>
       </div>
 
+      {/* Target Layer Selector (when multiple layers exist) */}
+      {layers.length > 1 && (
+        <div style={{ padding: '8px 16px 0 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 11 }}>
+          <span style={{ color: 'var(--text-tertiary)' }}>Target Layer:</span>
+          <select
+            className={styles.select}
+            style={{ width: 'auto', padding: '3px 8px', fontSize: 11 }}
+            value={activeLayerId || ''}
+            onChange={(e) => setActiveLayer(e.target.value)}
+          >
+            {layers.map((l, i) => (
+              <option key={l.id} value={l.id}>
+                {i + 1}. {l.name}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+
       {/* Live RGB/Luma Histogram */}
       <div style={{ padding: '12px 16px 0 16px' }}>
         <Histogram />
@@ -192,7 +228,18 @@ export const AdjustmentsPanel: React.FC = () => {
 
       {/* Accordion 1: Tone & Exposure */}
       <div className={styles.accordionSection}>
-        <button className={styles.accordionHeader} onClick={() => toggleSection('tone')}>
+        <div
+          className={styles.accordionHeader}
+          role="button"
+          tabIndex={0}
+          onClick={() => toggleSection('tone')}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              toggleSection('tone');
+            }
+          }}
+        >
           <div className={styles.accordionLeft}>
             <span className={styles.accordionIcon}><Sun size={15} /></span>
             <span className={styles.accordionTitle}>Basic Tone & Exposure</span>
@@ -222,7 +269,7 @@ export const AdjustmentsPanel: React.FC = () => {
             )}
             {openSections.tone ? <ChevronDown size={15} color="var(--text-tertiary)" /> : <ChevronRight size={15} color="var(--text-tertiary)" />}
           </div>
-        </button>
+        </div>
 
         {openSections.tone && (
           <div className={styles.accordionContent}>
@@ -298,7 +345,18 @@ export const AdjustmentsPanel: React.FC = () => {
 
       {/* Accordion 2: Levels & Histogram Clipping */}
       <div className={styles.accordionSection}>
-        <button className={styles.accordionHeader} onClick={() => toggleSection('levels')}>
+        <div
+          className={styles.accordionHeader}
+          role="button"
+          tabIndex={0}
+          onClick={() => toggleSection('levels')}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              toggleSection('levels');
+            }
+          }}
+        >
           <div className={styles.accordionLeft}>
             <span className={styles.accordionIcon}><Sliders size={15} /></span>
             <span className={styles.accordionTitle}>Levels & Gamma</span>
@@ -319,7 +377,7 @@ export const AdjustmentsPanel: React.FC = () => {
             )}
             {openSections.levels ? <ChevronDown size={15} color="var(--text-tertiary)" /> : <ChevronRight size={15} color="var(--text-tertiary)" />}
           </div>
-        </button>
+        </div>
 
         {openSections.levels && (
           <div className={styles.accordionContent}>
@@ -354,7 +412,18 @@ export const AdjustmentsPanel: React.FC = () => {
 
       {/* Accordion 3: Clarity & Texture */}
       <div className={styles.accordionSection}>
-        <button className={styles.accordionHeader} onClick={() => toggleSection('detail')}>
+        <div
+          className={styles.accordionHeader}
+          role="button"
+          tabIndex={0}
+          onClick={() => toggleSection('detail')}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              toggleSection('detail');
+            }
+          }}
+        >
           <div className={styles.accordionLeft}>
             <span className={styles.accordionIcon}><Sparkles size={15} /></span>
             <span className={styles.accordionTitle}>Clarity & Texture</span>
@@ -376,7 +445,7 @@ export const AdjustmentsPanel: React.FC = () => {
             )}
             {openSections.detail ? <ChevronDown size={15} color="var(--text-tertiary)" /> : <ChevronRight size={15} color="var(--text-tertiary)" />}
           </div>
-        </button>
+        </div>
 
         {openSections.detail && (
           <div className={styles.accordionContent}>
@@ -416,7 +485,18 @@ export const AdjustmentsPanel: React.FC = () => {
 
       {/* Accordion 4: Color & Grayscale */}
       <div className={styles.accordionSection}>
-        <button className={styles.accordionHeader} onClick={() => toggleSection('color')}>
+        <div
+          className={styles.accordionHeader}
+          role="button"
+          tabIndex={0}
+          onClick={() => toggleSection('color')}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              toggleSection('color');
+            }
+          }}
+        >
           <div className={styles.accordionLeft}>
             <span className={styles.accordionIcon}><Palette size={15} /></span>
             <span className={styles.accordionTitle}>Color & Grayscale</span>
@@ -438,7 +518,7 @@ export const AdjustmentsPanel: React.FC = () => {
             )}
             {openSections.color ? <ChevronDown size={15} color="var(--text-tertiary)" /> : <ChevronRight size={15} color="var(--text-tertiary)" />}
           </div>
-        </button>
+        </div>
 
         {openSections.color && (
           <div className={styles.accordionContent}>
@@ -498,7 +578,18 @@ export const AdjustmentsPanel: React.FC = () => {
 
       {/* Accordion 5: Advanced Filters & Inversion */}
       <div className={styles.accordionSection}>
-        <button className={styles.accordionHeader} onClick={() => toggleSection('filters')}>
+        <div
+          className={styles.accordionHeader}
+          role="button"
+          tabIndex={0}
+          onClick={() => toggleSection('filters')}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              toggleSection('filters');
+            }
+          }}
+        >
           <div className={styles.accordionLeft}>
             <span className={styles.accordionIcon}><Zap size={15} /></span>
             <span className={styles.accordionTitle}>Advanced Filters</span>
@@ -520,7 +611,7 @@ export const AdjustmentsPanel: React.FC = () => {
             )}
             {openSections.filters ? <ChevronDown size={15} color="var(--text-tertiary)" /> : <ChevronRight size={15} color="var(--text-tertiary)" />}
           </div>
-        </button>
+        </div>
 
         {openSections.filters && (
           <div className={styles.accordionContent}>

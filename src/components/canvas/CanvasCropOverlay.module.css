@@ -1,0 +1,116 @@
+.cropContainer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 35;
+}
+
+.cropDimArea {
+  position: absolute;
+  background: rgba(0, 0, 0, 0.6);
+  pointer-events: auto;
+}
+
+.cropBox {
+  position: absolute;
+  border: 1.5px solid #ffffff;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.8);
+  pointer-events: auto;
+  cursor: move;
+}
+
+.gridLineH1, .gridLineH2, .gridLineV1, .gridLineV2 {
+  position: absolute;
+  background: rgba(255, 255, 255, 0.3);
+  pointer-events: none;
+}
+
+.gridLineH1 { top: 33.333%; left: 0; right: 0; height: 1px; }
+.gridLineH2 { top: 66.666%; left: 0; right: 0; height: 1px; }
+.gridLineV1 { left: 33.333%; top: 0; bottom: 0; width: 1px; }
+.gridLineV2 { left: 66.666%; top: 0; bottom: 0; width: 1px; }
+
+.handle {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  background: #ffffff;
+  border: 1.5px solid #000000;
+  border-radius: 1px;
+}
+
+.handleNW { top: -5px; left: -5px; cursor: nwse-resize; }
+.handleNE { top: -5px; right: -5px; cursor: nesw-resize; }
+.handleSW { bottom: -5px; left: -5px; cursor: nesw-resize; }
+.handleSE { bottom: -5px; right: -5px; cursor: nwse-resize; }
+
+.handleN { top: -5px; left: calc(50% - 5px); cursor: ns-resize; }
+.handleS { bottom: -5px; left: calc(50% - 5px); cursor: ns-resize; }
+.handleW { left: -5px; top: calc(50% - 5px); cursor: ew-resize; }
+.handleE { right: -5px; top: calc(50% - 5px); cursor: ew-resize; }
+
+.cropActionBar {
+  position: absolute;
+  bottom: -44px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--bg-surface-raised, #1c2128);
+  border: 1px solid var(--border-medium, #30363d);
+  border-radius: var(--radius-md, 6px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+  padding: 4px 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  z-index: 50;
+  pointer-events: auto;
+  white-space: nowrap;
+}
+
+.ratioSelect {
+  background: var(--bg-input, #0d1117);
+  color: var(--text-primary, #fff);
+  border: 1px solid var(--border-subtle, #30363d);
+  border-radius: 3px;
+  padding: 2px 6px;
+  font-size: 11px;
+  outline: none;
+}
+
+.cropDimLabel {
+  font-size: 10px;
+  color: var(--text-secondary, #8b949e);
+  font-family: var(--font-mono, monospace);
+}
+
+.btnCancel {
+  background: transparent;
+  border: 1px solid var(--border-medium, #30363d);
+  color: var(--text-primary, #fff);
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.btnCancel:hover {
+  background: var(--bg-surface-hover, #21262d);
+}
+
+.btnApply {
+  background: var(--accent-primary, #38bdf8);
+  color: #000;
+  font-weight: 600;
+  font-size: 11px;
+  border: none;
+  padding: 3px 10px;
+  border-radius: 3px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.btnApply:hover {
+  opacity: 0.9;
+}

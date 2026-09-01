@@ -18,6 +18,7 @@ import type { ProcessPreviewPayload } from '../types/worker-messages';
  */
 export function useWorkerPipeline() {
   const previewBuffer = useImageStore((s) => s.previewBuffer);
+  const previewProcessedBuffer = useImageStore((s) => s.previewProcessedBuffer);
   const previewDims = useImageStore((s) => s.previewDimensions);
   const setProcessedPreview = useImageStore((s) => s.setProcessedPreview);
   const setDepthHeightMapBuffer = useImageStore((s) => s.setDepthHeightMapBuffer);
@@ -30,6 +31,7 @@ export function useWorkerPipeline() {
   const dither = useEditStore((s) => s.dither);
   const geometry = useEditStore((s) => s.geometry);
   const vector = useEditStore((s) => s.vector);
+  const autoTrace = useEditStore((s) => s.autoTrace);
   const activeTab = useUIStore((s) => s.activeTab);
 
   // Worker scheduling state
@@ -42,7 +44,6 @@ export function useWorkerPipeline() {
   const triggerWorkerPipeline = () => {
     if (!previewBuffer || !previewDims) return;
     if (isWorkerBusyRef.current) {
-      // Worker is currently executing: payload is saved in latestPayloadRef and will execute immediately when current job finishes
       return;
     }
 
@@ -125,7 +126,7 @@ export function useWorkerPipeline() {
 
       const elapsed = performance.now() - startTime;
       activeJobIdRef.current++; // Invalidate any pending worker results
-      setProcessedPreview(directDestBufferRef.current, elapsed);
+      setProcessedPreview(directDestBufferRef.current.slice(0), elapsed);
       return;
     }
 
@@ -163,7 +164,7 @@ export function useWorkerPipeline() {
   const triggerVectorPipeline = () => {
     if (!previewBuffer || !previewDims || activeTab !== 'vector') return;
     if (isVectorBusyRef.current) {
-      return; // Picked up immediately when active job finishes
+      return;
     }
 
     const currentJob = latestVectorPayloadRef.current;
@@ -203,19 +204,20 @@ export function useWorkerPipeline() {
     })();
   };
 
-  // 2. Vector Computation Pipeline (Zero-Latency Async Coordinator)
+  // 2. Vector Computation Pipeline (Zero-Latency Async Coordinator, respects autoTrace)
   useEffect(() => {
-    if (!previewBuffer || !previewDims || activeTab !== 'vector') return;
+    const activeBuf = previewProcessedBuffer || previewBuffer;
+    if (!activeBuf || !previewDims || activeTab !== 'vector' || !autoTrace) return;
 
     latestVectorPayloadRef.current = {
-      buffer: previewBuffer,
+      buffer: activeBuf,
       width: previewDims.width,
       height: previewDims.height,
       config: vector,
     };
 
     triggerVectorPipeline();
-  }, [previewBuffer, previewDims, vector, activeTab, setVectorResult]);
+  }, [previewBuffer, previewProcessedBuffer, previewDims, vector, activeTab, autoTrace, setVectorResult]);
 
   // 3. Live 3D Depth Map Pipeline (Zero-Latency Async Coordinator)
   const depth = useEditStore((s) => s.depth);
@@ -226,7 +228,7 @@ export function useWorkerPipeline() {
   const triggerDepthPipeline = () => {
     if (!previewBuffer || !previewDims || activeTab !== 'depth') return;
     if (isDepthBusyRef.current) {
-      return; // Picked up immediately when active job finishes
+      return;
     }
 
     const currentJob = latestDepthPayloadRef.current;

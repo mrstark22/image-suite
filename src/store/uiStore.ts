@@ -1,6 +1,9 @@
 import { create } from 'zustand';
 
 export type ToolTab =
+  | 'properties'
+  | 'layers'
+  | 'cam'
   | 'adjustments'
   | 'dither'
   | 'vector'
@@ -20,6 +23,10 @@ interface UIState {
   isPresetDialogOpen: boolean;
   isExportDialogOpen: boolean;
   isSettingsDialogOpen: boolean;
+  isCanvasSizeDialogOpen: boolean;
+  isTestGridDialogOpen: boolean;
+  isShortcutsDialogOpen: boolean;
+  isTextDialogOpen: boolean;
 
   // Actions
   setActiveTab: (tab: ToolTab) => void;
@@ -33,11 +40,15 @@ interface UIState {
   setPresetDialogOpen: (open: boolean) => void;
   setExportDialogOpen: (open: boolean) => void;
   setSettingsDialogOpen: (open: boolean) => void;
+  setCanvasSizeDialogOpen: (open: boolean) => void;
+  setTestGridDialogOpen: (open: boolean) => void;
+  setShortcutsDialogOpen: (open: boolean) => void;
+  setTextDialogOpen: (open: boolean) => void;
 }
 
 export const useUIStore = create<UIState>((set) => ({
   activeTab: 'adjustments',
-  isSplitView: true,
+  isSplitView: false,
   isInvertedBurn: false,
   showRulers: true,
   showVectorOverlay: true,
@@ -46,6 +57,10 @@ export const useUIStore = create<UIState>((set) => ({
   isPresetDialogOpen: false,
   isExportDialogOpen: false,
   isSettingsDialogOpen: false,
+  isCanvasSizeDialogOpen: false,
+  isTestGridDialogOpen: false,
+  isShortcutsDialogOpen: false,
+  isTextDialogOpen: false,
 
   setActiveTab: (activeTab) => set({ activeTab }),
   toggleSplitView: () => set((state) => ({ isSplitView: !state.isSplitView })),
@@ -66,4 +81,8 @@ export const useUIStore = create<UIState>((set) => ({
   setPresetDialogOpen: (isPresetDialogOpen) => set({ isPresetDialogOpen }),
   setExportDialogOpen: (isExportDialogOpen) => set({ isExportDialogOpen }),
   setSettingsDialogOpen: (isSettingsDialogOpen) => set({ isSettingsDialogOpen }),
+  setCanvasSizeDialogOpen: (isCanvasSizeDialogOpen) => set({ isCanvasSizeDialogOpen }),
+  setTestGridDialogOpen: (isTestGridDialogOpen) => set({ isTestGridDialogOpen }),
+  setShortcutsDialogOpen: (isShortcutsDialogOpen) => set({ isShortcutsDialogOpen }),
+  setTextDialogOpen: (isTextDialogOpen) => set({ isTextDialogOpen }),
 }));

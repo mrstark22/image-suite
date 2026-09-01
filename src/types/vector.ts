@@ -20,6 +20,7 @@ export interface Point {
   x: number;
   y: number;
 }
+export type VectorPoint = Point;
 
 export interface PathSegment {
   type: 'M' | 'L' | 'C' | 'Q' | 'Z';

@@ -12,21 +12,38 @@ export function applyFastTonalLUT(
   tonal: TonalAdjustments,
   color: ColorAdjustments
 ): void {
-  const src = new Uint8ClampedArray(srcBuffer);
-  const dest = new Uint8ClampedArray(destBuffer);
   const totalPixels = width * height;
+  const expectedBytes = totalPixels * 4;
+
+  if (
+    !srcBuffer ||
+    !destBuffer ||
+    srcBuffer.byteLength < expectedBytes ||
+    destBuffer.byteLength < expectedBytes
+  ) {
+    return;
+  }
+
+  const src = new Uint8ClampedArray(srcBuffer, 0, expectedBytes);
+  const dest = new Uint8ClampedArray(destBuffer, 0, expectedBytes);
 
   // 1. Build 256-entry Lookup Table
   const lut = buildTonalLUT(tonal);
 
   // 2. Color parameters
-  const satFactor = color.saturation >= 0 ? 1.0 + (color.saturation / 100) * 2.0 : (color.saturation + 100) / 100;
+  const satFactor =
+    color.saturation >= 0 ? 1.0 + (color.saturation / 100) * 2.0 : (color.saturation + 100) / 100;
   const vibranceFactor = color.vibrance ? color.vibrance / 100 : 0;
-  const tempK = color.temperature / 100;
-  const tintK = color.tint / 100;
+  const tempK = (color.temperature || 0) / 100;
+  const tintK = (color.tint || 0) / 100;
   const grayscaleMode = tonal.grayscaleMode || 'none';
 
-  const hasColorAdjust = satFactor !== 1.0 || vibranceFactor !== 0 || tempK !== 0 || tintK !== 0 || grayscaleMode !== 'none';
+  const hasColorAdjust =
+    satFactor !== 1.0 ||
+    vibranceFactor !== 0 ||
+    tempK !== 0 ||
+    tintK !== 0 ||
+    grayscaleMode !== 'none';
 
   if (!hasColorAdjust) {
     // Ultra-Fast path: pure LUT mapping (runs in < 1ms)
@@ -87,9 +104,9 @@ export function applyFastTonalLUT(
         }
       }
 
-      dest[i] = r;
-      dest[i + 1] = g;
-      dest[i + 2] = b;
+      dest[i] = Math.max(0, Math.min(255, Math.round(r)));
+      dest[i + 1] = Math.max(0, Math.min(255, Math.round(g)));
+      dest[i + 2] = Math.max(0, Math.min(255, Math.round(b)));
       dest[i + 3] = src[i + 3];
     }
   }
@@ -102,17 +119,16 @@ export function buildTonalLUT(tonal: TonalAdjustments): Uint8Array {
   const lut = new Uint8Array(256);
 
   // 1. Exposure multiplier (2^EV)
-  const expMult = Math.pow(2.0, (tonal.exposure || 0));
+  const expMult = Math.pow(2.0, tonal.exposure || 0);
 
   // 2. Levels (Black Point & White Point)
-  const blackPt = tonal.blackPoint || 0;
-  const whitePt = Math.max(tonal.whitePoint ?? 255, blackPt + 1);
-  const span = whitePt - blackPt;
+  const blackPt = Math.max(0, Math.min(254, tonal.blackPoint || 0));
+  const whitePt = Math.max(blackPt + 1, Math.min(255, tonal.whitePoint ?? 255));
+  const span = Math.max(1, whitePt - blackPt);
 
   // 3. Gamma / Midtones curve
-  const baseGamma = tonal.gamma || 1.0;
+  const baseGamma = Math.max(0.1, Math.min(5.0, tonal.gamma || 1.0));
   const midtoneShift = (tonal.midtones || 0) / 100;
-  // Positive midtones increases gamma (invGamma < 1.0) to lift midtone brightness
   const effectiveGamma = baseGamma * Math.pow(2.0, midtoneShift);
   const invGamma = 1.0 / Math.max(effectiveGamma, 0.01);
 
@@ -131,48 +147,50 @@ export function buildTonalLUT(tonal: TonalAdjustments): Uint8Array {
   for (let i = 0; i < 256; i++) {
     // Step A: Window levels
     let norm = (Math.max(blackPt, Math.min(whitePt, i)) - blackPt) / span;
+    norm = Math.max(0.0, Math.min(1.0, norm));
 
     // Step B: Exposure scaling
-    norm = Math.min(1.0, Math.max(0.0, norm * expMult));
+    norm = Math.max(0.0, Math.min(1.0, norm * expMult));
 
-    // Step C: Gamma & Midtones
-    norm = Math.pow(norm, invGamma);
+    // Step C: Gamma & Midtones (guaranteed norm >= 0)
+    norm = Math.pow(Math.max(0.0, norm), invGamma);
 
     // Step D: Shadows & Highlights adjustments
     if (sFactor !== 0) {
-      // Smooth bell curve concentrated in shadows [0, 0.5]
-      const shadowWeight = Math.pow(1.0 - norm, 2.0);
+      const shadowWeight = Math.pow(Math.max(0.0, 1.0 - norm), 2.0);
       norm += sFactor * shadowWeight * 0.35;
     }
     if (hFactor !== 0) {
-      // Smooth curve concentrated in highlights [0.5, 1.0]
-      const highlightWeight = Math.pow(norm, 2.0);
+      const highlightWeight = Math.pow(Math.max(0.0, norm), 2.0);
       norm += hFactor * highlightWeight * 0.35;
     }
 
     // Step E: Whites & Blacks extremes
     if (bFactor !== 0) {
-      const blackWeight = Math.pow(1.0 - norm, 3.0);
+      const blackWeight = Math.pow(Math.max(0.0, 1.0 - norm), 3.0);
       norm += bFactor * blackWeight * 0.25;
     }
     if (wFactor !== 0) {
-      const whiteWeight = Math.pow(norm, 3.0);
+      const whiteWeight = Math.pow(Math.max(0.0, norm), 3.0);
       norm += wFactor * whiteWeight * 0.25;
     }
 
-    // Step F: Clarity (Midtone local contrast boost)
+    // Step F: Clarity
     if (clarityFactor !== 0) {
-      // Boost slope around norm = 0.5 using sine curve
-      norm += clarityFactor * Math.sin(2.0 * Math.PI * norm) * 0.12;
+      norm += clarityFactor * Math.sin(2.0 * Math.PI * Math.max(0.0, Math.min(1.0, norm))) * 0.12;
     }
 
-    // Step G: Centered Contrast & Brightness
-    norm = Math.min(1.0, Math.max(0.0, norm));
+    // Step G: Clamp norm before contrast and brightness
+    norm = Math.max(0.0, Math.min(1.0, Number.isFinite(norm) ? norm : 0.0));
     let val = (norm * 255 - 128) * contrastFactor + 128 + (tonal.brightness || 0) * 1.28;
 
     // Step H: Invert
     if (invert) {
       val = 255 - val;
+    }
+
+    if (!Number.isFinite(val)) {
+      val = i;
     }
 
     lut[i] = Math.max(0, Math.min(255, Math.round(val)));

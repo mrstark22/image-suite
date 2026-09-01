@@ -6,9 +6,17 @@ import type {
   GeometryTransform,
 } from '../types/image';
 import type { DitherConfig } from '../types/dither';
-import type { VectorConfig, VectorResult } from '../types/vector';
+import type { VectorConfig, VectorResult, VectorLayer } from '../types/vector';
+import type { CanvasLayer } from '../types/layer';
 import type { DepthConfig } from '../types/depth';
 import type { EditStep, EditRecipe } from '../types/recipe';
+import { generateCutlineLayer } from '../lib/cutline-generator';
+import { smoothVectorResult } from '../lib/vector-smoother';
+import { useImageStore } from './imageStore';
+import { useLayerStore } from './layerStore';
+import { useUIStore } from './uiStore';
+import { useSceneStore } from '../core/scene-store';
+import type { SceneNode } from '../core/scene-graph';
 
 export const DEFAULT_TONAL: TonalAdjustments = {
   exposure: 0,
@@ -61,6 +69,7 @@ export const DEFAULT_DITHER: DitherConfig = {
   matrixScale: 1,
   dotAngle: 45,
   invertedBurn: false,
+  alphaHandling: 'white-ignore',
 };
 
 export const DEFAULT_VECTOR: VectorConfig = {
@@ -99,7 +108,7 @@ export const DEFAULT_DEPTH: DepthConfig = {
   lightElevation: 45,
 };
 
-interface EditSnapshot {
+export interface EditSnapshot {
   tonal: TonalAdjustments;
   color: ColorAdjustments;
   detail: DetailEnhancements;
@@ -107,6 +116,13 @@ interface EditSnapshot {
   dither: DitherConfig;
   vector: VectorConfig;
   depth: DepthConfig;
+  autoTrace: boolean;
+  vectorResult: VectorResult | null;
+  layers?: CanvasLayer[];
+  activeLayerId?: string | null;
+  nodes?: Map<string, SceneNode>;
+  rootOrder?: string[];
+  selectedIds?: string[];
 }
 
 interface EditState {
@@ -119,12 +135,16 @@ interface EditState {
   vector: VectorConfig;
   depth: DepthConfig;
 
-  // Active Vector Result for SVG Overlay
+  // Active Vector Result for SVG Overlay & Auto-Trace Control
   vectorResult: VectorResult | null;
+  autoTrace: boolean;
+  isVectorStale: boolean;
 
-  // History Stacks
+  // History Stacks & Interaction Batching
   undoStack: EditSnapshot[];
   redoStack: EditSnapshot[];
+  isAdjusting: boolean;
+  adjustmentBaseline: EditSnapshot | null;
 
   // Non-destructive Recipe
   recipeName: string;
@@ -137,11 +157,19 @@ interface EditState {
   setDither: (dither: Partial<DitherConfig>) => void;
   setVector: (vector: Partial<VectorConfig>) => void;
   setDepth: (depth: Partial<DepthConfig>) => void;
+  setAutoTrace: (autoTrace: boolean) => void;
   setVectorResult: (result: VectorResult | null) => void;
+  addVectorLayer: (layer: VectorLayer) => void;
+  generateCutline: (offsetMm?: number, smoothness?: number) => void;
+  smoothVectors: (tolerance?: number, fitCurves?: boolean) => void;
+  clearVectors: () => void;
+  removeVectorLayer: (layerId: string) => void;
   toggleVectorLayer: (layerId: string) => void;
 
-  // History Actions
-  pushHistorySnapshot: () => void;
+  // History Actions (Interaction-based with mouseup / commit support)
+  beginAdjustment: () => void;
+  commitAdjustment: () => void;
+  recordHistorySnapshot: () => void;
   undo: () => void;
   redo: () => void;
   canUndo: () => boolean;
@@ -156,15 +184,30 @@ interface EditState {
   getExportRecipe: () => EditRecipe;
 }
 
-const getSnapshot = (state: EditState): EditSnapshot => ({
-  tonal: { ...state.tonal },
-  color: { ...state.color },
-  detail: { ...state.detail },
-  geometry: { ...state.geometry },
-  dither: { ...state.dither },
-  vector: { ...state.vector },
-  depth: { ...state.depth },
-});
+const getSnapshot = (state: EditState): EditSnapshot => {
+  const layerState = useLayerStore.getState();
+  const sceneState = useSceneStore.getState();
+
+  return {
+    tonal: { ...state.tonal },
+    color: { ...state.color },
+    detail: { ...state.detail },
+    geometry: { ...state.geometry },
+    dither: { ...state.dither },
+    vector: { ...state.vector },
+    depth: { ...state.depth },
+    autoTrace: state.autoTrace,
+    vectorResult: state.vectorResult ? { ...state.vectorResult } : null,
+    layers: layerState.layers.map((l) => ({
+      ...l,
+      transform: { ...l.transform },
+    })),
+    activeLayerId: layerState.activeLayerId,
+    nodes: new Map(sceneState.nodes),
+    rootOrder: [...sceneState.rootOrder],
+    selectedIds: [...sceneState.selectedIds],
+  };
+};
 
 export const useEditStore = create<EditState>((set, get) => ({
   tonal: { ...DEFAULT_TONAL },
@@ -175,10 +218,47 @@ export const useEditStore = create<EditState>((set, get) => ({
   vector: { ...DEFAULT_VECTOR },
   depth: { ...DEFAULT_DEPTH },
   vectorResult: null,
+  autoTrace: true,
+  isVectorStale: false,
 
   undoStack: [],
   redoStack: [],
+  isAdjusting: false,
+  adjustmentBaseline: null,
   recipeName: 'Untitled Recipe',
+
+  beginAdjustment: () => {
+    if (!get().isAdjusting) {
+      set({
+        isAdjusting: true,
+        adjustmentBaseline: getSnapshot(get()),
+      });
+    }
+  },
+
+  commitAdjustment: () => {
+    const baseline = get().adjustmentBaseline;
+    if (baseline) {
+      set((state) => ({
+        undoStack: [...state.undoStack.slice(-40), baseline],
+        redoStack: [],
+        isAdjusting: false,
+        adjustmentBaseline: null,
+      }));
+    } else {
+      set({ isAdjusting: false, adjustmentBaseline: null });
+    }
+  },
+
+  recordHistorySnapshot: () => {
+    const current = getSnapshot(get());
+    set((state) => ({
+      undoStack: [...state.undoStack.slice(-40), current],
+      redoStack: [],
+      isAdjusting: false,
+      adjustmentBaseline: null,
+    }));
+  },
 
   setTonal: (tonal) =>
     set((state) => ({
@@ -208,6 +288,7 @@ export const useEditStore = create<EditState>((set, get) => ({
   setVector: (vector) =>
     set((state) => ({
       vector: { ...state.vector, ...vector },
+      isVectorStale: !state.autoTrace,
     })),
 
   setDepth: (depth) =>
@@ -215,7 +296,93 @@ export const useEditStore = create<EditState>((set, get) => ({
       depth: { ...state.depth, ...depth },
     })),
 
-  setVectorResult: (vectorResult) => set({ vectorResult }),
+  setAutoTrace: (autoTrace) => set({ autoTrace }),
+
+  setVectorResult: (vectorResult) => set({ vectorResult, isVectorStale: false }),
+
+  addVectorLayer: (layer: VectorLayer) => {
+    get().recordHistorySnapshot();
+    const vr = get().vectorResult;
+    if (!vr) {
+      const dims = useImageStore.getState().previewDimensions || { width: 1000, height: 1000, scale: 1 };
+      set({
+        vectorResult: {
+          totalPaths: layer.paths.length,
+          totalNodes: layer.totalNodes,
+          svgString: '',
+          dimensions: { width: dims.width, height: dims.height },
+          layers: [layer],
+        },
+      });
+    } else {
+      const updatedLayers = [layer, ...vr.layers.filter((l) => l.id !== layer.id)];
+      const totalPaths = updatedLayers.reduce((acc, l) => acc + l.paths.length, 0);
+      const totalNodes = updatedLayers.reduce((acc, l) => acc + l.totalNodes, 0);
+      set({
+        vectorResult: {
+          ...vr,
+          layers: updatedLayers,
+          totalPaths,
+          totalNodes,
+        },
+      });
+    }
+  },
+
+  generateCutline: (offsetMm: number = 2.0, smoothness: number = 3) => {
+    const activeLayer = useLayerStore.getState().layers.find(
+      (l) => l.id === useLayerStore.getState().activeLayerId
+    );
+    const buf = activeLayer?.previewBuffer || useImageStore.getState().previewBuffer;
+    const dims = activeLayer?.previewDims || useImageStore.getState().previewDimensions;
+    const meta = activeLayer?.metadata || useImageStore.getState().metadata;
+    if (!buf || !dims) return;
+
+    const cutlineLayer = generateCutlineLayer(buf, dims.width, dims.height, {
+      offsetMm,
+      dpi: meta?.dpi || 300,
+      smoothness,
+      color: '#ff0000',
+    });
+
+    get().addVectorLayer(cutlineLayer);
+    useUIStore.getState().toggleVectorOverlay();
+  },
+
+  smoothVectors: (tolerance = 1.5, fitCurves = true) => {
+    const vr = get().vectorResult;
+    if (!vr) return;
+    get().recordHistorySnapshot();
+
+    const { result } = smoothVectorResult(vr, tolerance, fitCurves);
+    set({ vectorResult: result });
+  },
+
+  clearVectors: () => {
+    get().recordHistorySnapshot();
+    set({ vectorResult: null, autoTrace: false, isVectorStale: false });
+  },
+
+  removeVectorLayer: (layerId: string) => {
+    const vr = get().vectorResult;
+    if (!vr) return;
+    get().recordHistorySnapshot();
+    const remainingLayers = vr.layers.filter((l) => l.id !== layerId);
+    if (remainingLayers.length === 0) {
+      set({ vectorResult: null });
+    } else {
+      const totalPaths = remainingLayers.reduce((acc, l) => acc + l.paths.length, 0);
+      const totalNodes = remainingLayers.reduce((acc, l) => acc + l.paths.reduce((pAcc, p) => pAcc + (p.nodeCount || 0), 0), 0);
+      set({
+        vectorResult: {
+          ...vr,
+          layers: remainingLayers,
+          totalPaths,
+          totalNodes,
+        },
+      });
+    }
+  },
 
   toggleVectorLayer: (layerId: string) => {
     const vr = get().vectorResult;
@@ -230,24 +397,43 @@ export const useEditStore = create<EditState>((set, get) => ({
     });
   },
 
-  pushHistorySnapshot: () => {
-    const current = getSnapshot(get());
-    set((state) => ({
-      undoStack: [...state.undoStack.slice(-30), current],
-      redoStack: [],
-    }));
-  },
-
   undo: () => {
     const state = get();
     if (state.undoStack.length === 0) return;
     const prev = state.undoStack[state.undoStack.length - 1];
     const current = getSnapshot(state);
 
+    if (prev.layers) {
+      useLayerStore.setState({
+        layers: prev.layers,
+        activeLayerId: prev.activeLayerId ?? useLayerStore.getState().activeLayerId,
+      });
+      useLayerStore.getState().updateCompositePreview();
+    }
+
+    if (prev.nodes && prev.rootOrder) {
+      useSceneStore.setState({
+        nodes: prev.nodes,
+        rootOrder: prev.rootOrder,
+        selectedIds: prev.selectedIds ?? [],
+        revision: (useSceneStore.getState().revision || 0) + 1,
+      });
+    }
+
     set({
-      ...prev,
+      tonal: prev.tonal,
+      color: prev.color,
+      detail: prev.detail,
+      geometry: prev.geometry,
+      dither: prev.dither,
+      vector: prev.vector,
+      depth: prev.depth,
+      autoTrace: prev.autoTrace,
+      vectorResult: prev.vectorResult,
       undoStack: state.undoStack.slice(0, -1),
       redoStack: [current, ...state.redoStack],
+      isAdjusting: false,
+      adjustmentBaseline: null,
     });
   },
 
@@ -257,10 +443,37 @@ export const useEditStore = create<EditState>((set, get) => ({
     const next = state.redoStack[0];
     const current = getSnapshot(state);
 
+    if (next.layers) {
+      useLayerStore.setState({
+        layers: next.layers,
+        activeLayerId: next.activeLayerId ?? useLayerStore.getState().activeLayerId,
+      });
+      useLayerStore.getState().updateCompositePreview();
+    }
+
+    if (next.nodes && next.rootOrder) {
+      useSceneStore.setState({
+        nodes: next.nodes,
+        rootOrder: next.rootOrder,
+        selectedIds: next.selectedIds ?? [],
+        revision: (useSceneStore.getState().revision || 0) + 1,
+      });
+    }
+
     set({
-      ...next,
+      tonal: next.tonal,
+      color: next.color,
+      detail: next.detail,
+      geometry: next.geometry,
+      dither: next.dither,
+      vector: next.vector,
+      depth: next.depth,
+      autoTrace: next.autoTrace,
+      vectorResult: next.vectorResult,
       undoStack: [...state.undoStack, current],
       redoStack: state.redoStack.slice(1),
+      isAdjusting: false,
+      adjustmentBaseline: null,
     });
   },
 
@@ -268,7 +481,7 @@ export const useEditStore = create<EditState>((set, get) => ({
   canRedo: () => get().redoStack.length > 0,
 
   resetAll: () => {
-    get().pushHistorySnapshot();
+    get().recordHistorySnapshot();
     set({
       tonal: { ...DEFAULT_TONAL },
       color: { ...DEFAULT_COLOR },
@@ -282,22 +495,22 @@ export const useEditStore = create<EditState>((set, get) => ({
   },
 
   resetTonal: () => {
-    get().pushHistorySnapshot();
+    get().recordHistorySnapshot();
     set({ tonal: { ...DEFAULT_TONAL }, color: { ...DEFAULT_COLOR } });
   },
 
   resetDither: () => {
-    get().pushHistorySnapshot();
+    get().recordHistorySnapshot();
     set({ dither: { ...DEFAULT_DITHER } });
   },
 
   resetVector: () => {
-    get().pushHistorySnapshot();
-    set({ vector: { ...DEFAULT_VECTOR }, vectorResult: null });
+    get().recordHistorySnapshot();
+    set({ vector: { ...DEFAULT_VECTOR }, vectorResult: null, autoTrace: true });
   },
 
-  applyRecipe: (recipe) => {
-    get().pushHistorySnapshot();
+  applyRecipe: (recipe: EditRecipe) => {
+    get().recordHistorySnapshot();
     const newTonal = { ...DEFAULT_TONAL };
     const newColor = { ...DEFAULT_COLOR };
     const newDetail = { ...DEFAULT_DETAIL };
@@ -305,7 +518,7 @@ export const useEditStore = create<EditState>((set, get) => ({
     const newVector = { ...DEFAULT_VECTOR };
     const newDepth = { ...DEFAULT_DEPTH };
 
-    recipe.steps.forEach((step) => {
+    recipe.steps.forEach((step: EditStep) => {
       if (step.type === 'tonal') Object.assign(newTonal, step.params);
       if (step.type === 'color') Object.assign(newColor, step.params);
       if (step.type === 'detail') Object.assign(newDetail, step.params);

@@ -1,27 +1,19 @@
 import React, { useRef, useState } from 'react';
 import { Upload, Image, ShieldCheck, Sparkles } from 'lucide-react';
-import { loadImageFromFile } from '../../lib/image-loader';
 import { generateTestPattern } from '../../lib/sample-images';
+import { useLayerStore } from '../../store/layerStore';
 import { useImageStore } from '../../store/imageStore';
 import styles from './DropZone.module.css';
 
 export const DropZone: React.FC = () => {
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const setImage = useImageStore((s) => s.setImage);
+  const importImageFiles = useLayerStore((s) => s.importImageFiles);
   const setErrorMessage = useImageStore((s) => s.setErrorMessage);
 
-  const handleProcessFile = async (file: File) => {
+  const handleProcessFiles = async (files: File[]) => {
     try {
-      const result = await loadImageFromFile(file);
-      setImage(
-        file,
-        result.originalBuffer,
-        result.bitmap,
-        result.metadata,
-        result.previewBuffer,
-        result.previewDims
-      );
+      await importImageFiles(files);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Failed to load image file';
       setErrorMessage(message);
@@ -41,19 +33,19 @@ export const DropZone: React.FC = () => {
     e.preventDefault();
     setIsDragging(false);
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      handleProcessFile(e.dataTransfer.files[0]);
+      handleProcessFiles(Array.from(e.dataTransfer.files));
     }
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
-      handleProcessFile(e.target.files[0]);
+      handleProcessFiles(Array.from(e.target.files));
     }
   };
 
   const loadSample = async (type: 'gradient' | 'emblem' | 'grid') => {
     const file = await generateTestPattern(type);
-    await handleProcessFile(file);
+    await handleProcessFiles([file]);
   };
 
   return (
@@ -67,15 +59,16 @@ export const DropZone: React.FC = () => {
         <Upload size={28} />
       </div>
 
-      <h2 className={styles.title}>Drop your image to prepare & vectorize</h2>
+      <h2 className={styles.title}>Drop your image(s) to prepare & vectorize</h2>
       <p className={styles.subtitle}>
-        100% Client-side processing. Zero cloud uploads. Instant real-time preview.
+        Supports multiple image layers. 100% Client-side. Zero cloud uploads.
       </p>
 
       <input
         ref={fileInputRef}
         type="file"
         accept="image/png,image/jpeg,image/webp,image/svg+xml,image/bmp,image/tiff"
+        multiple
         className={styles.fileInput}
         onChange={handleFileChange}
       />
