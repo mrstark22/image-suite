@@ -157,8 +157,9 @@ The existing test-grid generator (`src/lib/test-grid-generator.ts`) is the start
 
 LightBurn sets speed and power per layer, not per region of an image, so a grid of different settings cannot be a single image. Decision: the tool exports a ready-made LightBurn project in which each cell is its own image on its own layer, with that cell's speed and power filled in. The user opens the file and presses start.
 
-- LightBurn's layer count caps the grid size (to be confirmed, roughly 30 cells).
-- The project format is not published. The exporter is written against a sample project saved from the user's LightBurn, and tested by round-tripping through LightBurn by hand.
+- LightBurn has 30 normal layers (indices 0 to 29), so a card is limited to 30 cells, for example 5 x 6.
+- The project format is not published. The exporter is written against real project files found in the test assets of two MIT-licensed parsers, `tscircuit/lbrnts` and `jlucaso1/lbrn2-to-svg` (LightBurn 0.9.24, 1.4.01 and 1.7.08), and tested by opening its output in LightBurn by hand. The format details are recorded in issue #40.
+- None of those samples uses Pass-Through or comes from a CO2 controller. Both need confirming against a project saved from the user's LightBurn.
 - Fallback if the format proves unreliable: LightBurn's built-in Material Test for power and speed, then a single tone-ramp image from this tool.
 
 ## UI redesign
@@ -226,6 +227,6 @@ To fix as each piece is ported. Verified in the audit unless marked.
 
 - Line interval and typical materials on each machine.
 - Relief: on the CO2 machines the heightmap runs in LightBurn's Grayscale image mode (power varies per pixel between min and max power). LightBurn's 3D Sliced mode is galvo-only and does not apply. Still to confirm: whether Grayscale mode uses more than 8 bits of a 16-bit image, and how the user runs reliefs today (passes, speed, power range).
-- A sample LightBurn project (one image on one layer) saved from the user's LightBurn, needed to write the calibration card exporter.
+- A sample LightBurn project (one image on one layer set to Pass-Through) saved from the user's LightBurn, to confirm how Pass-Through and CO2 settings are written. Not needed to start the exporter.
 - Background removal model and its licence.
 - Whether to keep the stale `.agents/AGENTS.md` wording (wasm-pack, visual regression tests) or update it to match this plan.
