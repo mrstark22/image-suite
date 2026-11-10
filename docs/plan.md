@@ -1,6 +1,6 @@
 # Image Suite — Plan
 
-Status: draft for review, 2026-11-10. Supersedes the feature list in `overview.md`.
+Status: agreed, 2026-11-10. Supersedes the feature list in `overview.md`.
 
 ## Goal
 
@@ -13,6 +13,8 @@ A browser tool that does three jobs well. All image processing happens in the br
 Background removal is a shared preparation step. Calibration profiles, saved per machine and material, are shared by workflows 2 and 3.
 
 Machines in use: a 60 W and a 155 W CO2 laser, with a diode laser possible later. They behave very differently, so nothing is calibrated per material alone.
+
+Hosting: Vercel. The Netlify configuration is removed in phase 0.
 
 Output target: LightBurn. The tool does its own dithering and hands LightBurn a finished 1-bit image to run in Pass-Through mode, so LightBurn neither resamples nor dithers it.
 
@@ -254,4 +256,3 @@ To fix as each piece is ported. Verified in the audit unless marked.
 - Relief: on the CO2 machines the heightmap runs in LightBurn's Grayscale image mode (power varies per pixel between min and max power). LightBurn's 3D Sliced mode is galvo-only and does not apply. Still to confirm: whether Grayscale mode uses more than 8 bits of a 16-bit image, and how the user runs reliefs today (passes, speed, power range).
 - A sample LightBurn project (one image on one layer set to Pass-Through) saved from the user's LightBurn, to confirm how Pass-Through and CO2 settings are written. Not needed to start the exporter.
 - Background removal model and its licence.
-- Where the app is deployed. The repo has both `netlify.toml` and `vercel.json`; this matters for CI, self-hosted model files and, later, accounts.
