@@ -8,12 +8,12 @@
 
 #[allow(dead_code)]
 pub struct DepthParams {
-    pub source_mode: u32,       // 0 = tonal-height, 1 = distance-transform, 2 = ai-estimation
-    pub bevel_style: u32,       // 0 = prismatic, 1 = dome, 2 = concave, 3 = flat
+    pub source_mode: u32, // 0 = tonal-height, 1 = distance-transform, 2 = ai-estimation
+    pub bevel_style: u32, // 0 = prismatic, 1 = dome, 2 = concave, 3 = flat
     pub invert_z: bool,
-    pub smoothing_radius: f32,  // 0 to 20 px
-    pub depth_scale: f32,       // 1.0 to 10.0 (affects dynamic contrast and bevel width)
-    pub relief_angle: f32,      // 15 to 90 degrees
+    pub smoothing_radius: f32, // 0 to 20 px
+    pub depth_scale: f32,      // 1.0 to 10.0 (affects dynamic contrast and bevel width)
+    pub relief_angle: f32,     // 15 to 90 degrees
 }
 
 /// Generates a full dynamic range 16-bit depth/height map buffer (0 - 65,535)
@@ -171,9 +171,21 @@ pub fn generate_depth_map_wasm(
                 let g = (pixels[p_idx + 1] as f32) / 255.0;
                 let b = (pixels[p_idx + 2] as f32) / 255.0;
 
-                let lin_r = if r <= 0.04045 { r / 12.92 } else { ((r + 0.055) / 1.055).powf(2.4) };
-                let lin_g = if g <= 0.04045 { g / 12.92 } else { ((g + 0.055) / 1.055).powf(2.4) };
-                let lin_b = if b <= 0.04045 { b / 12.92 } else { ((b + 0.055) / 1.055).powf(2.4) };
+                let lin_r = if r <= 0.04045 {
+                    r / 12.92
+                } else {
+                    ((r + 0.055) / 1.055).powf(2.4)
+                };
+                let lin_g = if g <= 0.04045 {
+                    g / 12.92
+                } else {
+                    ((g + 0.055) / 1.055).powf(2.4)
+                };
+                let lin_b = if b <= 0.04045 {
+                    b / 12.92
+                } else {
+                    ((b + 0.055) / 1.055).powf(2.4)
+                };
 
                 let lum = 0.2126 * lin_r + 0.7152 * lin_g + 0.0722 * lin_b;
                 // High-depth S-Curve contrast response
@@ -190,8 +202,12 @@ pub fn generate_depth_map_wasm(
     let mut max_h = f32::MIN;
 
     for &h in &height_map {
-        if h < min_h { min_h = h; }
-        if h > max_h { max_h = h; }
+        if h < min_h {
+            min_h = h;
+        }
+        if h > max_h {
+            max_h = h;
+        }
     }
 
     let range = max_h - min_h;

@@ -2,6 +2,12 @@
 //! High-performance image processing, tonal LUT, CLAHE, adaptive thresholding,
 //! sharpening, advanced dithering, vectorization, and 3D depth/heightmap relief for precision manufacturing.
 
+// The exported functions are a C ABI called from JavaScript with pointers into
+// this module's own linear memory. They cannot be marked `unsafe` without
+// changing how the host calls them, so the pointer checks live at the top of
+// each function instead.
+#![allow(clippy::not_unsafe_ptr_arg_deref)]
+
 mod clahe;
 mod depth;
 mod dither;

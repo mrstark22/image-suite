@@ -25,12 +25,7 @@ pub struct DitherParams {
     pub inverted_burn: bool,
 }
 
-pub fn apply_dithering(
-    pixels: &mut [u8],
-    width: usize,
-    height: usize,
-    params: &DitherParams,
-) {
+pub fn apply_dithering(pixels: &mut [u8], width: usize, height: usize, params: &DitherParams) {
     if width == 0 || height == 0 {
         return;
     }
@@ -64,7 +59,14 @@ pub fn apply_dithering(
                 (0, 1, 5.0 / 16.0),
                 (1, 1, 1.0 / 16.0),
             ];
-            dither_error_diffusion(&mut gray, width, height, QUANT_THRESH, params.serpentine, &kernel);
+            dither_error_diffusion(
+                &mut gray,
+                width,
+                height,
+                QUANT_THRESH,
+                params.serpentine,
+                &kernel,
+            );
         }
         DitherAlgo::Atkinson => {
             let kernel = [
@@ -75,7 +77,14 @@ pub fn apply_dithering(
                 (1, 1, 1.0 / 8.0),
                 (0, 2, 1.0 / 8.0),
             ];
-            dither_error_diffusion(&mut gray, width, height, QUANT_THRESH, params.serpentine, &kernel);
+            dither_error_diffusion(
+                &mut gray,
+                width,
+                height,
+                QUANT_THRESH,
+                params.serpentine,
+                &kernel,
+            );
         }
         DitherAlgo::Jarvis => {
             let kernel = [
@@ -92,7 +101,14 @@ pub fn apply_dithering(
                 (1, 2, 3.0 / 48.0),
                 (2, 2, 1.0 / 48.0),
             ];
-            dither_error_diffusion(&mut gray, width, height, QUANT_THRESH, params.serpentine, &kernel);
+            dither_error_diffusion(
+                &mut gray,
+                width,
+                height,
+                QUANT_THRESH,
+                params.serpentine,
+                &kernel,
+            );
         }
         DitherAlgo::Bayer2 => {
             dither_bayer_2(&mut gray, width, height, params.matrix_scale.max(1));
@@ -107,7 +123,11 @@ pub fn apply_dithering(
 
     // Write binary 0 or 255 back to pixel buffer
     // gray[i] is already quantized to 255.0 (light / bg) or 0.0 (dark / fg)
-    let (fg, bg) = if params.inverted_burn { (255u8, 0u8) } else { (0u8, 255u8) };
+    let (fg, bg) = if params.inverted_burn {
+        (255u8, 0u8)
+    } else {
+        (0u8, 255u8)
+    };
 
     for i in 0..total {
         let idx = i * 4;

@@ -236,18 +236,10 @@ pub fn trace_boundary_contours(
                 let mut next_dir = None;
                 for &cd in &candidate_dirs {
                     let has_edge = match cd {
-                        Direction::East => {
-                            cur_x < width && h_edges[cur_y * width + cur_x] == 1
-                        }
-                        Direction::South => {
-                            cur_y < height && v_edges[cur_y * gw + cur_x] == 1
-                        }
-                        Direction::West => {
-                            cur_x > 0 && h_edges[cur_y * width + (cur_x - 1)] == -1
-                        }
-                        Direction::North => {
-                            cur_y > 0 && v_edges[(cur_y - 1) * gw + cur_x] == -1
-                        }
+                        Direction::East => cur_x < width && h_edges[cur_y * width + cur_x] == 1,
+                        Direction::South => cur_y < height && v_edges[cur_y * gw + cur_x] == 1,
+                        Direction::West => cur_x > 0 && h_edges[cur_y * width + (cur_x - 1)] == -1,
+                        Direction::North => cur_y > 0 && v_edges[(cur_y - 1) * gw + cur_x] == -1,
                     };
 
                     if has_edge {
@@ -1231,8 +1223,7 @@ pub fn vectorize_to_json_string(
                 cfg.canny_high,
                 denoise_radius,
             );
-            let raw_contours =
-                trace_boundary_contours(&edges, width, height, effective_min_area);
+            let raw_contours = trace_boundary_contours(&edges, width, height, effective_min_area);
             let hex = "#38bdf8";
 
             json.push_str(&format!(
@@ -1284,8 +1275,7 @@ pub fn vectorize_to_json_string(
                 binary[i] = if is_fg { 1 } else { 0 };
             }
 
-            let raw_contours =
-                trace_boundary_contours(&binary, width, height, effective_min_area);
+            let raw_contours = trace_boundary_contours(&binary, width, height, effective_min_area);
             let hex = "#38bdf8";
 
             json.push_str(&format!(
