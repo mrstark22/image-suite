@@ -1,11 +1,9 @@
 import React from 'react';
 import { Toolbar } from './components/toolbar/Toolbar';
 import { ToolPanel } from './components/panels/ToolPanel';
-import { ViewportCanvas } from './components/canvas/ViewportCanvas';
+import { PreviewCanvas } from './components/canvas/PreviewCanvas';
 import { ZoomControls } from './components/canvas/ZoomControls';
-import { PropertiesPanel } from './components/panels/PropertiesPanel';
 import { LayersPanel } from './components/panels/LayersPanel';
-import { CAMPanel } from './components/panels/CAMPanel';
 import { AdjustmentsPanel } from './components/panels/AdjustmentsPanel';
 import { DitheringPanel } from './components/panels/DitheringPanel';
 import { VectorizationPanel } from './components/panels/VectorizationPanel';
@@ -17,6 +15,7 @@ import { CanvasSizeDialog } from './components/dialogs/CanvasSizeDialog';
 import { MaterialTestGridDialog } from './components/dialogs/MaterialTestGridDialog';
 import { ShortcutsDialog } from './components/dialogs/ShortcutsDialog';
 import { TextLayerDialog } from './components/dialogs/TextLayerDialog';
+import { ErrorBanner } from './components/shared/ErrorBanner';
 import { useUIStore } from './store/uiStore';
 import { useWorkerPipeline } from './hooks/useWorker';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
@@ -37,12 +36,8 @@ export const App: React.FC = () => {
 
   const renderActivePanel = () => {
     switch (activeTab) {
-      case 'properties':
-        return <PropertiesPanel />;
       case 'layers':
         return <LayersPanel />;
-      case 'cam':
-        return <CAMPanel />;
       case 'adjustments':
         return <AdjustmentsPanel />;
       case 'dither':
@@ -56,7 +51,7 @@ export const App: React.FC = () => {
       case 'export':
         return <ExportPanel />;
       default:
-        return <PropertiesPanel />;
+        return <AdjustmentsPanel />;
     }
   };
 
@@ -66,7 +61,8 @@ export const App: React.FC = () => {
       <div className={styles.mainLayout}>
         <ToolPanel />
         <main className={styles.canvasArea}>
-          <ViewportCanvas />
+          <ErrorBanner />
+          <PreviewCanvas />
           <ZoomControls />
         </main>
         {renderActivePanel()}

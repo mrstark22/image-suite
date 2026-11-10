@@ -3,7 +3,6 @@ import { useEditStore } from '../store/editStore';
 import { useLayerStore } from '../store/layerStore';
 import { useImageStore } from '../store/imageStore';
 import { useUIStore } from '../store/uiStore';
-import { useSceneStore } from '../core/scene-store';
 
 export function useKeyboardShortcuts() {
   const undo = useEditStore((s) => s.undo);
@@ -108,28 +107,6 @@ export function useKeyboardShortcuts() {
           return;
         }
 
-        // Group: Ctrl+G
-        if (key === 'g' && !e.shiftKey) {
-          e.preventDefault();
-          useSceneStore.getState().groupSelected();
-          return;
-        }
-
-        // Ungroup: Ctrl+Shift+G
-        if (key === 'g' && e.shiftKey) {
-          e.preventDefault();
-          const selected = useSceneStore.getState().selectedIds;
-          selected.forEach((id) => useSceneStore.getState().ungroupNode(id));
-          return;
-        }
-
-        // Select All: Ctrl+A
-        if (key === 'a') {
-          e.preventDefault();
-          useSceneStore.getState().selectAll();
-          return;
-        }
-
         // Actual Size (100%): Ctrl+1
         if (key === '1') {
           e.preventDefault();
@@ -156,23 +133,10 @@ export function useKeyboardShortcuts() {
         // Tool mode hotkeys (without Ctrl)
         if (e.key.toLowerCase() === 'v') {
           setCanvasTool('move');
-          useSceneStore.getState().setActiveTool('move');
-          return;
-        }
-        if (e.key.toLowerCase() === 'a') {
-          useSceneStore.getState().setActiveTool('node');
-          return;
-        }
-        if (e.key.toLowerCase() === 'p') {
-          useSceneStore.getState().setActiveTool('pen');
-          return;
-        }
-        if (e.key.toLowerCase() === 'u') {
-          useSceneStore.getState().setActiveTool('shape');
           return;
         }
         if (e.key.toLowerCase() === 't') {
-          useSceneStore.getState().setActiveTool('text');
+          useUIStore.getState().setTextDialogOpen(true);
           return;
         }
         if (e.key.toLowerCase() === 'h') {
@@ -201,10 +165,9 @@ export function useKeyboardShortcuts() {
           return;
         }
 
-        // Delete active node / layer
+        // Delete active layer
         if (e.key === 'Delete' || e.key === 'Backspace') {
           e.preventDefault();
-          useSceneStore.getState().removeSelected();
           if (activeLayerId) {
             removeLayer(activeLayerId);
           }

@@ -37,7 +37,11 @@ pub fn compute_tonal_lut(params: &TonalParams) -> [u8; 256] {
     let span = (wp - bp).max(1.0);
 
     // 3. Gamma & Midtones curve
-    let base_gamma = if params.gamma <= 0.01 { 1.0 } else { params.gamma };
+    let base_gamma = if params.gamma <= 0.01 {
+        1.0
+    } else {
+        params.gamma
+    };
     let midtone_shift = params.midtones / 100.0;
     let effective_gamma = base_gamma * (2.0f32).powf(midtone_shift);
     let inv_gamma = 1.0 / effective_gamma.max(0.01);
@@ -129,7 +133,11 @@ pub fn apply_tonal_and_color(
     let temp_k = color.temperature / 100.0;
     let tint_k = color.tint / 100.0;
 
-    let has_color_adjust = sat_factor != 1.0 || vibrance_factor != 0.0 || temp_k != 0.0 || tint_k != 0.0 || tonal.grayscale_mode != 0;
+    let has_color_adjust = sat_factor != 1.0
+        || vibrance_factor != 0.0
+        || temp_k != 0.0
+        || tint_k != 0.0
+        || tonal.grayscale_mode != 0;
 
     for i in 0..total_pixels {
         let idx = i * 4;
@@ -141,9 +149,9 @@ pub fn apply_tonal_and_color(
             if tonal.grayscale_mode != 0 {
                 let gray = match tonal.grayscale_mode {
                     1 => 0.2126 * r + 0.7152 * g + 0.0722 * b, // Rec.709 Photometric
-                    2 => (r + g + b) / 3.0,                     // Average
+                    2 => (r + g + b) / 3.0,                    // Average
                     3 => (r.max(g).max(b) + r.min(g).min(b)) / 2.0, // Desaturate
-                    4 => r.max(g).max(b),                       // Max
+                    4 => r.max(g).max(b),                      // Max
                     5 => 255.0 - (0.2126 * r + 0.7152 * g + 0.0722 * b), // Inverted
                     _ => 0.2126 * r + 0.7152 * g + 0.0722 * b,
                 };
@@ -165,7 +173,11 @@ pub fn apply_tonal_and_color(
                     let luma = 0.2126 * r + 0.7152 * g + 0.0722 * b;
                     let max_c = r.max(g).max(b);
                     let min_c = r.min(g).min(b);
-                    let current_sat = if max_c == 0.0 { 0.0 } else { (max_c - min_c) / max_c };
+                    let current_sat = if max_c == 0.0 {
+                        0.0
+                    } else {
+                        (max_c - min_c) / max_c
+                    };
 
                     let vib_boost = vibrance_factor * (1.0 - current_sat) * 1.5;
                     let total_sat = (sat_factor + vib_boost).max(0.0);

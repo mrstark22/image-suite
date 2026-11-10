@@ -5,10 +5,12 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build:wasm": "node -e \"const fs = require('fs'); const cp = require('child_process'); const path = require('path'); const out = 'src/wasm/pkg/image_suite_wasm.wasm'; try { const bin = path.join(process.env.USERPROFILE || process.env.HOME || '', '.cargo', 'bin'); process.env.PATH = bin + path.delimiter + process.env.PATH; cp.execSync('rustc --crate-type cdylib --target wasm32-unknown-unknown -C opt-level=3 -C lto=yes -C panic=abort src/wasm/src/lib.rs -o ' + out, { stdio: 'inherit' }); console.log('Compiled Rust WASM successfully'); } catch (e) { if (fs.existsSync(out)) { console.log('Using prebuilt WASM binary'); } else { throw e; } }\"",
+    "build:wasm": "node scripts/build-wasm.mjs",
     "build": "npm run build:wasm && tsc && vite build",
     "preview": "vite preview",
-    "test": "vitest run"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:rust": "cargo test --manifest-path src/wasm/Cargo.toml"
   },
   "dependencies": {
     "comlink": "^4.4.2",
@@ -24,8 +26,6 @@
     "@types/react": "^19.0.10",
     "@types/react-dom": "^19.0.4",
     "@vitejs/plugin-react": "^4.3.4",
-    "@webgpu/types": "^0.1.72",
-    "assemblyscript": "^0.28.20",
     "typescript": "^5.7.3",
     "vite": "^6.2.0",
     "vite-plugin-top-level-await": "^1.4.4",

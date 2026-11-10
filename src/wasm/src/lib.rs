@@ -2,6 +2,12 @@
 //! High-performance image processing, tonal LUT, CLAHE, adaptive thresholding,
 //! sharpening, advanced dithering, vectorization, and 3D depth/heightmap relief for precision manufacturing.
 
+// The exported functions are a C ABI called from JavaScript with pointers into
+// this module's own linear memory. They cannot be marked `unsafe` without
+// changing how the host calls them, so the pointer checks live at the top of
+// each function instead.
+#![allow(clippy::not_unsafe_ptr_arg_deref)]
+
 mod clahe;
 mod depth;
 mod dither;
@@ -9,6 +15,9 @@ mod sharpen;
 mod threshold;
 mod tonal;
 mod vector;
+
+#[cfg(test)]
+mod tests;
 
 use clahe::apply_clahe;
 use depth::{generate_depth_map_wasm, DepthParams};
@@ -85,7 +94,6 @@ pub extern "C" fn process_pipeline(
     dither_thresh: u32,
     dither_serpentine: u32,
     dither_scale: usize,
-    dither_dot_angle: f32,
     dither_inverted: u32,
 ) {
     if ptr.is_null() || width == 0 || height == 0 {
@@ -143,11 +151,6 @@ pub extern "C" fn process_pipeline(
         4 => DitherAlgo::Bayer2,
         5 => DitherAlgo::Bayer4,
         6 => DitherAlgo::Bayer8,
-        7 => DitherAlgo::BlueNoise,
-        8 => DitherAlgo::Ostromoukhov,
-        9 => DitherAlgo::Riemersma,
-        10 => DitherAlgo::KnuthDot,
-        11 => DitherAlgo::HalftoneDot,
         _ => DitherAlgo::None,
     };
 
@@ -157,7 +160,6 @@ pub extern "C" fn process_pipeline(
             threshold: dither_thresh as u8,
             serpentine: dither_serpentine != 0,
             matrix_scale: dither_scale,
-            dot_angle: dither_dot_angle,
             inverted_burn: dither_inverted != 0,
         };
         apply_dithering(pixels, width, height, &dither_params);

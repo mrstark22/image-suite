@@ -2,15 +2,14 @@
 name = "image_suite_wasm"
 version = "0.1.0"
 edition = "2021"
-description = "High-performance client-side image processing, CLAHE, and advanced dithering engine for Image Suite"
+description = "Image processing core for Image Suite: tonal adjustments, detail filters, dithering, tracing and heightmaps"
 
 [lib]
 crate-type = ["cdylib", "rlib"]
 
+# No dependencies: the module exports plain `extern "C"` functions and is
+# compiled with rustc directly (see scripts/build-wasm.mjs).
 [dependencies]
-wasm-bindgen = "0.2.100"
-js-sys = "0.3.77"
-web-sys = { version = "0.3.77", features = ["console"] }
 
 [profile.release]
 opt-level = 3

@@ -47,7 +47,6 @@ export interface WasmPipelineParams {
   ditherThreshold: number;
   ditherSerpentine: boolean;
   ditherScale: number;
-  ditherDotAngle: number;
   ditherInverted: boolean;
 }
 
@@ -95,7 +94,6 @@ interface WasmExports {
     ditherThresh: number,
     ditherSerpentine: number,
     ditherScale: number,
-    ditherDotAngle: number,
     ditherInverted: number
   ) => void;
   process_vector: (
@@ -137,11 +135,6 @@ const ALGORITHM_CODE_MAP: Record<string, number> = {
   'bayer-2': 4,
   'bayer-4': 5,
   'bayer-8': 6,
-  'blue-noise': 7,
-  ostromoukhov: 8,
-  riemersma: 9,
-  'knuth-dot': 10,
-  'halftone-dot': 11,
 };
 
 export class RustWasmEngine {
@@ -262,7 +255,6 @@ export class RustWasmEngine {
         params.ditherThreshold ?? 128,
         params.ditherSerpentine ? 1 : 0,
         params.ditherScale ?? 1,
-        params.ditherDotAngle ?? 45,
         params.ditherInverted ? 1 : 0
       );
 

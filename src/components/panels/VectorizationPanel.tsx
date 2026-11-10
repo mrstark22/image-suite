@@ -11,11 +11,8 @@ import {
   Scissors,
   Sparkles,
   Zap,
-  Plus,
 } from 'lucide-react';
 import { useEditStore } from '../../store/editStore';
-import { useSceneStore } from '../../core/scene-store';
-import { useImageStore } from '../../store/imageStore';
 import { Slider } from '../shared/Slider';
 import { generateDXF } from '../../lib/dxf-export';
 import { generateProductionSVG } from '../../lib/svg-export';
@@ -78,20 +75,6 @@ export const VectorizationPanel: React.FC = () => {
     a.download = `vector-${vector.mode}-output.dxf`;
     a.click();
     URL.revokeObjectURL(url);
-  };
-
-  const addVectorNode = useSceneStore((s) => s.addVectorNode);
-  const previewDims = useImageStore((s) => s.previewDimensions);
-
-  const handleCommitToScene = () => {
-    if (!vectorResult || vectorResult.layers.length === 0) return;
-    const w = previewDims?.width || 800;
-    const h = previewDims?.height || 800;
-
-    vectorResult.layers.forEach((layer) => {
-      const combinedSvg = layer.paths.map((p) => p.svgPathData).join(' ');
-      addVectorNode(layer.name || 'Traced Vector', combinedSvg, w, h, layer.color);
-    });
   };
 
   return (
@@ -445,9 +428,6 @@ export const VectorizationPanel: React.FC = () => {
             </button>
             <button className={styles.actionBtnSecondary} onClick={handleDownloadDXF}>
               <FileCode size={13} /> DXF
-            </button>
-            <button className={styles.actionBtnSecondary} onClick={handleCommitToScene} title="Convert to editable vector object on canvas">
-              <Plus size={13} /> Add to Canvas
             </button>
           </div>
         </div>

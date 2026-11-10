@@ -13,17 +13,12 @@ interface DitherOption {
 
 const DITHER_OPTIONS: DitherOption[] = [
   { id: 'none', title: 'None', desc: 'Continuous grayscale tone' },
-  { id: 'blue-noise', title: 'Blue Noise', desc: 'Organic film-grain, void-and-cluster', badge: 'GPU / WASM' },
-  { id: 'ostromoukhov', title: 'Ostromoukhov', desc: 'Variable error diffusion, zero worming', badge: 'WASM' },
-  { id: 'riemersma', title: 'Riemersma', desc: 'Hilbert curve, eliminates CNC linear banding', badge: 'WASM' },
-  { id: 'knuth-dot', title: 'Knuth Dot', desc: 'Class matrix block-based diffusion', badge: 'WASM' },
-  { id: 'floyd-steinberg', title: 'Floyd-Steinberg', desc: 'Standard 4-point error diffusion', badge: 'WASM' },
-  { id: 'atkinson', title: 'Atkinson', desc: 'Crisp high-contrast 6-tap details', badge: 'WASM' },
-  { id: 'jarvis', title: 'Jarvis', desc: 'Ultra-fine 12-tap error diffusion', badge: 'WASM' },
-  { id: 'bayer-2', title: 'Bayer 2×2', desc: 'Fast compact ordered dither', badge: 'GPU / WASM' },
-  { id: 'bayer-4', title: 'Bayer 4×4', desc: 'Standard crosshatch matrix', badge: 'GPU / WASM' },
-  { id: 'bayer-8', title: 'Bayer 8×8', desc: 'Fine 64-level ordered matrix', badge: 'GPU / WASM' },
-  { id: 'halftone-dot', title: 'Halftone Dot', desc: 'Rotated circular screen angle dots', badge: 'GPU / WASM' },
+  { id: 'floyd-steinberg', title: 'Floyd-Steinberg', desc: 'Standard 4-point error diffusion' },
+  { id: 'jarvis', title: 'Jarvis', desc: 'Smoother 12-point error diffusion' },
+  { id: 'atkinson', title: 'Atkinson', desc: 'High contrast; deepens shadows, lifts highlights' },
+  { id: 'bayer-2', title: 'Bayer 2×2', desc: 'Coarse ordered pattern, 5 tones' },
+  { id: 'bayer-4', title: 'Bayer 4×4', desc: 'Ordered crosshatch pattern, 17 tones' },
+  { id: 'bayer-8', title: 'Bayer 8×8', desc: 'Fine ordered pattern, 65 tones' },
 ];
 
 export const DitheringPanel: React.FC = () => {
@@ -34,12 +29,7 @@ export const DitheringPanel: React.FC = () => {
   return (
     <div className={styles.panel}>
       <div className={styles.panelHeader}>
-        <div>
-          <span className={styles.panelTitle}>Dithering Engine</span>
-          <div style={{ fontSize: 10, color: 'var(--accent-primary)', fontWeight: 600, marginTop: 2 }}>
-            ⚡ Rust WASM & WebGPU Acceleration
-          </div>
-        </div>
+        <span className={styles.panelTitle}>Dithering</span>
         <button className={styles.resetButton} onClick={resetDither}>
           Reset
         </button>
@@ -96,8 +86,7 @@ export const DitheringPanel: React.FC = () => {
 
           {(dither.algorithm === 'floyd-steinberg' ||
             dither.algorithm === 'atkinson' ||
-            dither.algorithm === 'jarvis' ||
-            dither.algorithm === 'ostromoukhov') && (
+            dither.algorithm === 'jarvis') && (
             <div className={styles.toggleRow}>
               <span className={styles.toggleLabel}>Serpentine Traversal</span>
               <input
@@ -111,9 +100,7 @@ export const DitheringPanel: React.FC = () => {
 
           {(dither.algorithm === 'bayer-2' ||
             dither.algorithm === 'bayer-4' ||
-            dither.algorithm === 'bayer-8' ||
-            dither.algorithm === 'blue-noise' ||
-            dither.algorithm === 'halftone-dot') && (
+            dither.algorithm === 'bayer-8') && (
             <Slider
               label="Matrix Scale / Dot Size"
               value={dither.matrixScale}
@@ -121,17 +108,6 @@ export const DitheringPanel: React.FC = () => {
               max={4}
               step={1}
               onChange={(v) => setDither({ matrixScale: v })}
-            />
-          )}
-
-          {dither.algorithm === 'halftone-dot' && (
-            <Slider
-              label="Screen Angle"
-              value={dither.dotAngle}
-              min={0}
-              max={90}
-              unit="°"
-              onChange={(v) => setDither({ dotAngle: v })}
             />
           )}
 

@@ -60,7 +60,11 @@ pub fn apply_clahe(
             // Build Cumulative Distribution Function (CDF)
             let mut cdf = [0.0f32; 256];
             let mut sum = 0u32;
-            let count_f = if tile_pixel_count == 0 { 1.0 } else { tile_pixel_count as f32 };
+            let count_f = if tile_pixel_count == 0 {
+                1.0
+            } else {
+                tile_pixel_count as f32
+            };
             for i in 0..256 {
                 sum += hist[i];
                 cdf[i] = (sum as f32) / count_f;
