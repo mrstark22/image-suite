@@ -59,7 +59,7 @@ These come from the problems that motivated the project. Each becomes an automat
 - Adjustments undo/redo core (`src/store/editStore.ts`).
 - Relief numeric core (`src/wasm/src/depth.rs`, `src/lib/depth-engine.ts`): heights stay floating point through to 16-bit, Gaussian smoothing, invert, and the shading model shared by `depth-shader.ts` and the viewer.
 - 3D viewer (`src/components/canvas/DepthViewer3D.tsx`), with its resource handling fixed.
-- UI shell: panels, sliders, dialogs, styling.
+- UI structure and behaviour of the panels, sliders and dialogs. Their styling and layout are replaced by the UI redesign.
 
 ### Drop for now
 
@@ -153,6 +153,17 @@ Selecting a machine and material loads the matching calibration. A calibration m
 
 The existing test-grid generator (`src/lib/test-grid-generator.ts`) is the starting point. How cards carry per-cell power and speed into LightBurn is an open question below.
 
+## UI redesign
+
+The current interface reads as a generic generated dashboard (dark navy, cyan glow, translucent panels) and has no responsive styling: there are no media queries, and the layout is a fixed desktop frame.
+
+- **Look.** A chosen visual direction with its own tokens for colour, type, spacing and elevation, in light and dark. Neutral greys around the canvas so the interface does not distort judgement of tone. Fonts self-hosted.
+- **Structure.** Organised around the three jobs (Vector, Photo, Relief), each a short ordered flow with the canvas always visible. Machine and material selection lives in the shell.
+- **Responsive.** Side panel on desktop, collapsible on tablet, bottom sheet on phone. Pinch zoom and pan on the canvas, touch orbit in the 3D view.
+- **Consistency.** Shared components on the new tokens; the roughly 200 inline style blocks are removed.
+
+This runs alongside phase 1, so each workflow's panels are built once in the new design. Layout work needs to be seen to be verified: either the no-browser rule in `.agents/AGENTS.md` is relaxed for screenshots, or each change is checked by hand.
+
 ## Background removal
 
 A real segmentation model run in the browser, replacing the flood fill. The model file is self-hosted and version-pinned, download progress is shown, and failure is reported, never silently replaced by a heuristic. Model choice depends on a licence check.
@@ -180,8 +191,9 @@ Work is tracked in GitHub issues. Each phase has a tracking issue with its work 
 | 3. Profiles and photo | #4 | #33 to #41 |
 | 4. Relief | #5 | #42 to #48 |
 | 5. Background removal | #6 | #49 to #50 |
+| UI redesign (alongside phase 1) | #51 | #52 to #55 |
 
-Labels: `phase` marks the tracking issues; `area: infra`, `area: core`, `area: vector`, `area: photo`, `area: relief` and `area: background-removal` group work items; `bug` marks defects in existing code and `enhancement` marks new work.
+Labels: `phase` marks the tracking issues; `area: infra`, `area: core`, `area: vector`, `area: photo`, `area: relief`, `area: background-removal` and `area: ui` group work items; `bug` marks defects in existing code and `enhancement` marks new work.
 
 ## Known defects in kept code
 
