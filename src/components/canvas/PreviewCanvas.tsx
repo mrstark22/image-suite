@@ -2,6 +2,8 @@ import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { useImageStore } from '../../store/imageStore';
 import { useEditStore } from '../../store/editStore';
 import { openImageFiles, confirmReplaceInBrowser } from '../../lib/open-image';
+import { previewDpi, MM_PER_INCH } from '../../lib/image-size';
+import { fitsDimensions } from '../../lib/crop';
 import { useUIStore } from '../../store/uiStore';
 import { DropZone } from '../shared/DropZone';
 import { DepthViewer3D } from './DepthViewer3D';
@@ -20,6 +22,7 @@ export const PreviewCanvas: React.FC = () => {
   const previewVersion = useImageStore((s) => s.previewVersion);
   const dims = useImageStore((s) => s.previewDimensions);
   const metadata = useImageStore((s) => s.metadata);
+  const wholePreview = useImageStore((s) => s.sourcePreviewDimensions);
   const canvasTool = useImageStore((s) => s.canvasTool);
   const substrateMask = useImageStore((s) => s.substrateMask);
   const substrateCornerRadius = useImageStore((s) => s.substrateCornerRadius);
@@ -93,6 +96,8 @@ export const PreviewCanvas: React.FC = () => {
       offscreen.width = dims.width;
       offscreen.height = dims.height;
     }
+    // A buffer for other dimensions is a stale result (#19); skip it rather than throw.
+    if (!fitsDimensions(previewBuffer, dims.width, dims.height)) return;
     const oCtx = offscreen.getContext('2d', { willReadFrequently: true });
     if (oCtx) {
       const origImageData = new ImageData(
@@ -107,6 +112,8 @@ export const PreviewCanvas: React.FC = () => {
   // Render Canvas Buffers efficiently without allocations
   useEffect(() => {
     if (!canvasRef.current || !dims || !processedBuffer) return;
+    // A buffer for other dimensions is a stale result (#19); skip it rather than throw.
+    if (!fitsDimensions(processedBuffer, dims.width, dims.height)) return;
 
     const canvas = canvasRef.current;
     if (canvas.width !== dims.width || canvas.height !== dims.height) {
@@ -323,7 +330,12 @@ export const PreviewCanvas: React.FC = () => {
                 y="4"
                 width={dims.width - 8}
                 height={dims.height - 8}
-                rx={Math.round((substrateCornerRadius / 25.4) * (metadata?.dpi || 300))}
+                rx={Math.round(
+                  (substrateCornerRadius / MM_PER_INCH) *
+                    (metadata && wholePreview
+                      ? previewDpi(metadata.dpi, metadata, wholePreview)
+                      : metadata?.dpi || 300)
+                )}
                 stroke="var(--accent-primary, #38bdf8)"
                 strokeWidth="2"
                 strokeDasharray="6 4"

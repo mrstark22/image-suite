@@ -1,24 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { Maximize, X, Check } from 'lucide-react';
 import { useImageStore } from '../../store/imageStore';
+import { useEditStore } from '../../store/editStore';
 import { useUIStore } from '../../store/uiStore';
+import { shownFileSize, pxToLength, dpiForLength, type PhysicalUnit } from '../../lib/image-size';
 import styles from './CanvasSizeDialog.module.css';
-
-type PhysicalUnit = 'mm' | 'in';
-
-const MM_PER_INCH = 25.4;
-
-/** Physical length of `px` pixels at `dpi`, in `unit`. */
-function pxToUnit(px: number, dpi: number, unit: PhysicalUnit): number {
-  const inches = px / dpi;
-  return unit === 'mm' ? inches * MM_PER_INCH : inches;
-}
-
-/** DPI at which `px` pixels span `length` in `unit`. */
-function dpiFor(px: number, length: number, unit: PhysicalUnit): number {
-  const inches = unit === 'mm' ? length / MM_PER_INCH : length;
-  return px / inches;
-}
 
 /**
  * Sets the image's resolution, either directly as DPI or as the physical width
@@ -29,8 +15,9 @@ export const CanvasSizeDialog: React.FC = () => {
   const isOpen = useUIStore((s) => s.isCanvasSizeDialogOpen);
   const setIsOpen = useUIStore((s) => s.setCanvasSizeDialogOpen);
 
-  const dims = useImageStore((s) => s.previewDimensions);
+  const wholePreview = useImageStore((s) => s.sourcePreviewDimensions);
   const metadata = useImageStore((s) => s.metadata);
+  const crop = useEditStore((s) => s.geometry.cropRect);
   const setStoreDpi = useImageStore((s) => s.setDpi);
 
   const [unit, setUnit] = useState<PhysicalUnit>('mm');
@@ -45,10 +32,14 @@ export const CanvasSizeDialog: React.FC = () => {
     }
   }, [metadata, isOpen]);
 
-  if (!isOpen || !dims) return null;
+  if (!isOpen || !wholePreview || !metadata) return null;
 
-  const widthValue = Number(pxToUnit(dims.width, dpi, unit).toFixed(unit === 'mm' ? 1 : 3));
-  const heightValue = Number(pxToUnit(dims.height, dpi, unit).toFixed(unit === 'mm' ? 1 : 3));
+  // The DPI refers to the file's pixels, so sizes are computed from the file's
+  // pixel count for the current crop, not from the downscaled preview.
+  const dims = shownFileSize(metadata, wholePreview, crop);
+
+  const widthValue = Number(pxToLength(dims.width, dpi, unit).toFixed(unit === 'mm' ? 1 : 3));
+  const heightValue = Number(pxToLength(dims.height, dpi, unit).toFixed(unit === 'mm' ? 1 : 3));
   const isValid = Number.isFinite(dpi) && dpi > 0;
 
   const shown = (field: 'width' | 'height' | 'dpi', value: number) =>
@@ -59,8 +50,8 @@ export const CanvasSizeDialog: React.FC = () => {
     setEditing({ field, text });
     const value = Number(text);
     if (text.trim() === '' || !Number.isFinite(value) || value <= 0) return;
-    if (field === 'width') setDpi(dpiFor(dims.width, value, unit));
-    else if (field === 'height') setDpi(dpiFor(dims.height, value, unit));
+    if (field === 'width') setDpi(dpiForLength(dims.width, value, unit));
+    else if (field === 'height') setDpi(dpiForLength(dims.height, value, unit));
     else setDpi(value);
   };
 

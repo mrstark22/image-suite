@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Check, X } from 'lucide-react';
 import { useImageStore } from '../../store/imageStore';
 import { useEditStore } from '../../store/editStore';
+import { filePxPerPreviewPx, pxToLength } from '../../lib/image-size';
 import styles from './CanvasCropOverlay.module.css';
 
 type AspectRatio = 'free' | '1:1' | '4:3' | '16:9' | '3:2';
@@ -11,6 +12,7 @@ export const CanvasCropOverlay: React.FC = () => {
   const setCanvasTool = useImageStore((s) => s.setCanvasTool);
   const dims = useImageStore((s) => s.previewDimensions);
   const metadata = useImageStore((s) => s.metadata);
+  const wholePreview = useImageStore((s) => s.sourcePreviewDimensions);
   const zoom = useImageStore((s) => s.zoom);
   const cropTo = useEditStore((s) => s.cropTo);
 
@@ -149,9 +151,13 @@ export const CanvasCropOverlay: React.FC = () => {
 
   if (canvasTool !== 'crop' || !dims) return null;
 
+  // The box is in preview pixels; size it in file pixels, which the DPI refers to.
   const dpi = metadata?.dpi || 300;
-  const mmW = ((cropBox.width / dpi) * 25.4).toFixed(1);
-  const mmH = ((cropBox.height / dpi) * 25.4).toFixed(1);
+  const fileScale = metadata && wholePreview ? filePxPerPreviewPx(metadata, wholePreview) : { x: 1, y: 1 };
+  const fileW = Math.round(cropBox.width * fileScale.x);
+  const fileH = Math.round(cropBox.height * fileScale.y);
+  const mmW = pxToLength(fileW, dpi, 'mm').toFixed(1);
+  const mmH = pxToLength(fileH, dpi, 'mm').toFixed(1);
 
   return (
     <div className={styles.cropContainer} style={{ width: dims.width, height: dims.height }}>
@@ -202,7 +208,7 @@ export const CanvasCropOverlay: React.FC = () => {
           </select>
 
           <span className={styles.cropDimLabel}>
-            {cropBox.width}×{cropBox.height}px ({mmW}×{mmH}mm)
+            {fileW}×{fileH}px ({mmW}×{mmH}mm)
           </span>
 
           <button className={styles.btnCancel} onClick={() => setCanvasTool('pan')} title="Cancel Crop (Esc)">

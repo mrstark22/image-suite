@@ -1,7 +1,16 @@
 import type { ImageMetadata, PreviewDimensions } from '../types/image';
 import { loadImageFromFile } from './image-loader';
 import { useImageStore } from '../store/imageStore';
-import { useEditStore } from '../store/editStore';
+import {
+  useEditStore,
+  DEFAULT_TONAL,
+  DEFAULT_COLOR,
+  DEFAULT_DETAIL,
+  DEFAULT_GEOMETRY,
+  DEFAULT_DITHER,
+  DEFAULT_VECTOR,
+  DEFAULT_DEPTH,
+} from '../store/editStore';
 
 /** An image that has been decoded and is ready to become the open image. */
 export interface LoadedImage {
@@ -39,12 +48,36 @@ export function openLoadedImage(image: LoadedImage): void {
   useEditStore.getState().startNewImage();
 }
 
+/** Structural equality for plain settings objects (numbers, strings, booleans, nested objects, null). */
+function sameValue(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null) return false;
+  const aKeys = Object.keys(a);
+  const bKeys = Object.keys(b);
+  if (aKeys.length !== bKeys.length) return false;
+  const aRecord = a as Record<string, unknown>;
+  const bRecord = b as Record<string, unknown>;
+  return aKeys.every((key) => key in bRecord && sameValue(aRecord[key], bRecord[key]));
+}
+
 /**
  * Returns true when opening another image would discard edits the user made
- * to the current one.
+ * to the current one: any setting differs from its default, including the
+ * crop. This compares the settings themselves rather than asking the undo
+ * history, because several controls do not record history yet (#21).
  */
 export function hasUnsavedEdits(): boolean {
-  return useImageStore.getState().previewBuffer !== null && useEditStore.getState().canUndo();
+  if (useImageStore.getState().previewBuffer === null) return false;
+  const s = useEditStore.getState();
+  return !(
+    sameValue(s.tonal, DEFAULT_TONAL) &&
+    sameValue(s.color, DEFAULT_COLOR) &&
+    sameValue(s.detail, DEFAULT_DETAIL) &&
+    sameValue(s.geometry, DEFAULT_GEOMETRY) &&
+    sameValue(s.dither, DEFAULT_DITHER) &&
+    sameValue(s.vector, DEFAULT_VECTOR) &&
+    sameValue(s.depth, DEFAULT_DEPTH)
+  );
 }
 
 /**

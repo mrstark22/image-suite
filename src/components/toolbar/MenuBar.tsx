@@ -21,6 +21,7 @@ import {
 import { useImageStore } from '../../store/imageStore';
 import { useEditStore } from '../../store/editStore';
 import { openImageFiles, confirmReplaceInBrowser } from '../../lib/open-image';
+import { shownFileSize } from '../../lib/image-size';
 import { useUIStore } from '../../store/uiStore';
 import styles from './MenuBar.module.css';
 
@@ -29,7 +30,8 @@ export const MenuBar: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const metadata = useImageStore((s) => s.metadata);
-  const previewDims = useImageStore((s) => s.previewDimensions);
+  const wholePreview = useImageStore((s) => s.sourcePreviewDimensions);
+  const crop = useEditStore((s) => s.geometry.cropRect);
   const isProcessing = useImageStore((s) => s.isProcessing);
   const durationMs = useImageStore((s) => s.processingDurationMs);
   const setZoom = useImageStore((s) => s.setZoom);
@@ -83,6 +85,8 @@ export const MenuBar: React.FC = () => {
       }
     }
   };
+
+  const shownSize = metadata && wholePreview ? shownFileSize(metadata, wholePreview, crop) : null;
 
   const handleClearWorkspace = () => {
     clearImage();
@@ -401,9 +405,7 @@ export const MenuBar: React.FC = () => {
           >
             <span className={`${styles.pulseDot} ${isProcessing ? styles.processingDot : ''}`} />
             <span style={{ textDecoration: 'underline dotted', textUnderlineOffset: 3 }}>
-              {previewDims
-                ? `${Math.round(previewDims.width / previewDims.scale)}×${Math.round(previewDims.height / previewDims.scale)}`
-                : `${metadata.width}×${metadata.height}`}
+              {shownSize ? `${shownSize.width}×${shownSize.height}` : `${metadata.width}×${metadata.height}`}
               px
             </span>
             <span style={{ color: 'var(--text-muted)' }}>•</span>

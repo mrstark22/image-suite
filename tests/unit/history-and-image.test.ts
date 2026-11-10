@@ -288,6 +288,19 @@ describe('Opening an image', () => {
     expect(useEditStore.getState().canUndo()).toBe(true);
   });
 
+  it('counts a setting changed without an undo entry as an edit (#21 controls)', () => {
+    openLabelledImage(20, 10);
+    expect(hasUnsavedEdits()).toBe(false);
+
+    // Dither cards and checkboxes call setDither directly, with no history entry.
+    useEditStore.getState().setDither({ algorithm: 'atkinson' });
+    expect(useEditStore.getState().canUndo()).toBe(false);
+    expect(hasUnsavedEdits()).toBe(true);
+
+    useEditStore.getState().setDither({ algorithm: DEFAULT_DITHER.algorithm });
+    expect(hasUnsavedEdits()).toBe(false);
+  });
+
   it('says how many extra files were not opened', () => {
     expect(ignoredFilesMessage('a.png', 1)).toBe(
       'Opened a.png. This tool works on one image at a time, so the other 1 file was not opened.'

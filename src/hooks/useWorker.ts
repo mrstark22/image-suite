@@ -7,6 +7,18 @@ import { getComlinkWorker } from '../lib/comlink-setup';
 import { applyFastTonalLUT } from '../lib/fast-tonal';
 import { renderReliefPreview } from '../lib/depth-shader';
 import type { ProcessPreviewPayload } from '../types/worker-messages';
+import { fitsDimensions } from '../lib/crop';
+
+/**
+ * True when a worker result of `width` x `height` still matches the preview
+ * as it is now. Reads the store directly, not a render's closure, because the
+ * dimensions can change (a crop, an undo) while the job runs. Stopgap until
+ * the scheduler in #16 and #19 replaces this hook.
+ */
+function matchesCurrentPreview(width: number, height: number): boolean {
+  const dims = useImageStore.getState().previewDimensions;
+  return dims !== null && dims.width === width && dims.height === height;
+}
 
 /**
  * Logs a failed worker request and shows it to the user in the error banner.
@@ -86,7 +98,11 @@ export function useWorkerPipeline() {
         );
 
         // Only commit if this job is still the latest active job
-        if (jobId === activeJobIdRef.current) {
+        if (
+          jobId === activeJobIdRef.current &&
+          matchesCurrentPreview(result.width, result.height) &&
+          fitsDimensions(result.buffer, result.width, result.height)
+        ) {
           setProcessedPreview(result.buffer, result.durationMs);
         }
       } catch (err) {
@@ -260,7 +276,10 @@ export function useWorkerPipeline() {
           config: currentJob.config,
         });
 
-        if (jobId === activeDepthJobIdRef.current) {
+        if (
+          jobId === activeDepthJobIdRef.current &&
+          matchesCurrentPreview(currentJob.width, currentJob.height)
+        ) {
           setDepthHeightMapBuffer(result.heightMapBuffer);
           const depth16 = new Uint16Array(result.heightMapBuffer);
           const rgba = renderReliefPreview(

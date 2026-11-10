@@ -35,3 +35,8 @@ export function cropRgba(
   }
   return { buffer: out.buffer, width: r.width, height: r.height };
 }
+
+/** True when `buffer` holds exactly one RGBA image of `width` x `height`. */
+export function fitsDimensions(buffer: ArrayBuffer, width: number, height: number): boolean {
+  return buffer.byteLength === width * height * 4;
+}
