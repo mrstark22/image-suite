@@ -190,7 +190,7 @@ To fix as each piece is ported. Verified in the audit unless marked.
 ## Open questions
 
 - Line interval and typical materials on each machine.
-- Relief: how the heightmap is run in LightBurn (Grayscale or 3D Sliced mode, passes), and whether LightBurn uses more than 8 bits of a 16-bit image. This decides the export format and the calibration card.
+- Relief: on the CO2 machines the heightmap runs in LightBurn's Grayscale image mode (power varies per pixel between min and max power). LightBurn's 3D Sliced mode is galvo-only and does not apply. Still to confirm: whether Grayscale mode uses more than 8 bits of a 16-bit image, and how the user runs reliefs today (passes, speed, power range).
 - Whether calibration cards should be exported as a real LightBurn project with per-cell power and speed, or as an image used with LightBurn's own material test.
 - Background removal model and its licence.
 - Whether to keep the stale `.agents/AGENTS.md` wording (wasm-pack, visual regression tests) or update it to match this plan.
