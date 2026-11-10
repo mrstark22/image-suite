@@ -150,6 +150,7 @@ Selecting a machine and material loads the matching calibration. A calibration m
 Instead of judging the card by eye, the user can photograph or scan it and let the tool measure it (issue #56).
 
 - Cards carry burned corner markers and unburned reference patches, so one picture is enough to locate the card, correct perspective and even out the lighting.
+- Cards are self-describing. The machine and material are chosen before export, and the card carries them, with the grid's speed and power values, as a burned machine-readable code and a text label. The tool reads the code and asks the user to confirm; if it cannot be read, the user picks from a list. This also lets a card exported on one device be read on another, since profiles are stored per browser.
 - The tool measures each patch's darkness relative to the bare material, builds the tone response curve from the measurements, ranks the power and speed cells by usable tone range, and flags cells with discolouration around the patch.
 - The tool proposes; the user confirms or overrides. Choosing by eye stays available.
 - Limits: phone cameras apply their own tone processing, so readings are relative within one photo, and a flatbed scan is the most repeatable. A photo cannot measure depth, so relief calibration still uses measured depths.
