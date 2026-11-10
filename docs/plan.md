@@ -4,7 +4,7 @@ Status: draft for review, 2026-11-10. Supersedes the feature list in `overview.m
 
 ## Goal
 
-A browser tool that does three jobs well, entirely client-side:
+A browser tool that does three jobs well. All image processing happens in the browser and images are never uploaded:
 
 1. **Image to clean vector.** Turn a logo, drawing or scan into paths worth sending to a laser or CNC. This is the most-used workflow and the biggest frustration, so it goes first.
 2. **Photo to engrave-ready image.** Turn a photograph into a file that burns well on a given material at a given size, without dozens of test burns.
@@ -138,7 +138,7 @@ Test burns cannot be removed, because the result depends on the physical machine
 - **Material.** Name and notes (species, thickness, finish).
 - **Calibration.** One per machine, material and job type (photo or relief). Holds the speed, power range, line interval, passes and the measured response curve.
 
-Selecting a machine and material loads the matching calibration. A calibration made on the 60 W is never offered for the 155 W. Profiles are stored locally and can be exported and imported as files.
+Selecting a machine and material loads the matching calibration. A calibration made on the 60 W is never offered for the 155 W. Profiles are stored locally and can be exported and imported as files. Signing in syncs them across computers (see Accounts and sync).
 
 ### Photo calibration
 
@@ -183,6 +183,17 @@ The current interface reads as a generic generated dashboard (dark navy, cyan gl
 
 This runs alongside phase 1, so each workflow's panels are built once in the new design. Layout work is verified with headless-browser screenshots at phone, tablet and desktop widths, in addition to checks by hand.
 
+## Accounts and sync
+
+Profiles live in the browser, so they exist only on the computer that made them. The user has two machines, each with its own computer.
+
+- **Principle.** The tool works fully in the browser with no account. Signing in adds sync across computers. Images are never uploaded; only profiles and settings are.
+- **Local-first.** Profiles are always read from and written to the browser store and synced in the background, so the tool keeps working offline. The profile store is built sync-ready from the start: stable IDs, modified times, a version on every record, and deletions recorded instead of erased.
+- **Conflicts.** The most recent change wins and the other is kept as a recoverable previous version.
+- **Cost of this.** It adds a backend, stored personal data, running costs, a privacy policy and terms, none of which the project has today.
+- **Paid plan.** Possible later if the tool is offered as a service: free and complete in the browser, with sync as a paid feature. Not scheduled.
+- **Before this lands.** Profile export and import as files, and self-describing calibration cards, already let two computers share profiles by hand.
+
 ## Background removal
 
 A real segmentation model run in the browser, replacing the flood fill. The model file is self-hosted and version-pinned, download progress is shown, and failure is reported, never silently replaced by a heuristic. Model choice depends on a licence check.
@@ -195,6 +206,7 @@ A real segmentation model run in the browser, replacing the flood fill. The mode
 3. **Profiles and photo workflow.** Machine, material and calibration profiles; device-grid resampling, clarity and CLAHE fixes, real blue noise, 1-bit export, photo calibration cards.
 4. **Relief workflow.** Single heightmap for view and export, model handling, option clean-up, depth calibration.
 5. **Background removal.**
+6. **Accounts and profile sync.** Backend and sign-in choice, local-first sync of profiles. A paid plan is recorded but not scheduled.
 
 Phases 2 to 5 are independent after phase 1 and can be reordered.
 
@@ -210,9 +222,10 @@ Work is tracked in GitHub issues. Each phase has a tracking issue with its work 
 | 3. Profiles and photo | #4 | #33 to #41, #56 |
 | 4. Relief | #5 | #42 to #48 |
 | 5. Background removal | #6 | #49 to #50 |
+| 6. Accounts and sync | #57 | #58 to #60 |
 | UI redesign (alongside phase 1) | #51 | #52 to #55 |
 
-Labels: `phase` marks the tracking issues; `area: infra`, `area: core`, `area: vector`, `area: photo`, `area: relief`, `area: background-removal` and `area: ui` group work items; `bug` marks defects in existing code and `enhancement` marks new work.
+Labels: `phase` marks the tracking issues; `area: infra`, `area: core`, `area: vector`, `area: photo`, `area: relief`, `area: background-removal`, `area: accounts` and `area: ui` group work items; `bug` marks defects in existing code and `enhancement` marks new work.
 
 ## Known defects in kept code
 
