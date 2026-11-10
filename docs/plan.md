@@ -1,6 +1,6 @@
 # Image Suite — Plan
 
-Status: agreed, 2026-11-10. Supersedes the feature list in `overview.md`.
+Status: agreed, 2026-11-10. Phase 0 is complete.
 
 ## Goal
 
@@ -14,7 +14,7 @@ Background removal is a shared preparation step. Calibration profiles, saved per
 
 Machines in use: a 60 W and a 155 W CO2 laser, with a diode laser possible later. They behave very differently, so nothing is calibrated per material alone.
 
-Hosting: Vercel. The Netlify configuration is removed in phase 0.
+Hosting: Vercel.
 
 Output target: LightBurn. The tool does its own dithering and hands LightBurn a finished 1-bit image to run in Pass-Through mode, so LightBurn neither resamples nor dithers it.
 
@@ -59,7 +59,7 @@ These come from the problems that motivated the project. Each becomes an automat
 - WASM bridge allocation and free (`src/wasm/wasm-bridge.ts`).
 - Adaptive threshold and unsharp mask.
 - Adjustments undo/redo core (`src/store/editStore.ts`).
-- Relief numeric core (`src/wasm/src/depth.rs`, `src/lib/depth-engine.ts`): heights stay floating point through to 16-bit, Gaussian smoothing, invert, and the shading model shared by `depth-shader.ts` and the viewer.
+- Relief numeric core (`src/wasm/src/depth.rs`): heights stay floating point through to 16-bit, Gaussian smoothing, invert, and the shading model shared by `depth-shader.ts` and the viewer.
 - 3D viewer (`src/components/canvas/DepthViewer3D.tsx`), with its resource handling fixed.
 - UI structure and behaviour of the panels, sliders and dialogs. Their styling and layout are replaced by the UI redesign.
 
@@ -68,12 +68,12 @@ These come from the problems that motivated the project. Each becomes an automat
 - The current flood-fill background removal, and the silent luminance heuristic that stands in for AI depth when the model fails.
 - Scene graph, drawing tools (pen, node, shape, text), grouping, booleans, project file.
 - CAM, toolpaths, G-code. The `.lbrn2` exporter writes an invented JSON format, not LightBurn's.
-- Multi-layer compositing, unless a workflow turns out to need it.
+- Multi-layer compositing, unless a workflow turns out to need it. Still present after phase 0: the layer store is the current document model, so it is replaced or removed with the new document in phase 1 (#15).
 - WebGPU dither path and the divergent JavaScript fallbacks.
 - Mislabeled algorithms: "blue noise" (a hash), "Riemersma" (no Hilbert curve), "Knuth dot diffusion" (a threshold screen), "Ostromoukhov" (invented weights), halftone (tone error up to 25 points). They return only as real implementations.
 - Batch processing.
 
-Dropped code is deleted, not hidden. It stays in git history.
+Dropped code is deleted, not hidden. It stays in git history. Phase 0 removed everything on this list except multi-layer compositing and the two items that belong to later phases (the flood-fill background removal, phase 5, and the AI depth fallback, phase 4).
 
 ## Architecture
 
@@ -238,7 +238,6 @@ To fix as each piece is ported. Verified in the audit unless marked.
 - Clarity is inverted: positive values flatten midtones (`src/lib/fast-tonal.ts:180`, `src/wasm/src/tonal.rs:93`).
 - CLAHE darkens the bottom and right bands when the image is not divisible by the grid (`src/wasm/src/clahe.rs`). Reported, reproduced by the audit.
 - The dither threshold slider is a brightness bias that speckles pure white and black (`src/wasm/src/dither.rs:68`). Reported.
-- Screen angle 0 renders as 45 (`src/workers/imageWorker.ts`). Reported.
 - Tracing uses the unprocessed preview, ignoring adjustments (`src/hooks/useWorker.ts:180`).
 - K-means seeds from evenly spaced pixel positions, which often coincide (`src/wasm/src/vector.rs:843`).
 - "Optimize & Smooth Nodes" throws on WASM trace output (`src/lib/vector-smoother.ts:27`).
