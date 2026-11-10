@@ -4,12 +4,15 @@ Status: draft for review, 2026-11-10. Supersedes the feature list in `overview.m
 
 ## Goal
 
-A browser tool that does two jobs well, entirely client-side:
+A browser tool that does three jobs well, entirely client-side:
 
-1. **Image to clean vector.** Turn a logo, drawing or scan into paths worth sending to a laser or CNC.
+1. **Image to clean vector.** Turn a logo, drawing or scan into paths worth sending to a laser or CNC. This is the most-used workflow and the biggest frustration, so it goes first.
 2. **Photo to engrave-ready image.** Turn a photograph into a file that burns well on a given material at a given size, without dozens of test burns.
+3. **Image to 3D relief.** Turn a photo or logo into a heightmap for relief engraving, where the exported file matches what the screen shows.
 
-Background removal is a shared preparation step for both.
+Background removal is a shared preparation step. Calibration profiles, saved per machine and material, are shared by workflows 2 and 3.
+
+Machines in use: a 60 W and a 155 W CO2 laser, with a diode laser possible later. They behave very differently, so nothing is calibrated per material alone.
 
 Output target: LightBurn. The tool does its own dithering and hands LightBurn a finished 1-bit image to run in Pass-Through mode, so LightBurn neither resamples nor dithers it.
 
@@ -35,6 +38,14 @@ These come from the problems that motivated the project. Each becomes an automat
 | LightBurn's dithering is poor | Dithering is done here, at the machine's exact dot pitch, and exported 1-bit with the correct DPI so LightBurn passes it through untouched. |
 | The burn does not match the screen | The preview simulates the burn (dot size and material tone response), not just the pixels. |
 
+### Relief
+
+| Complaint | Requirement |
+|---|---|
+| Export does not match the screen | One heightmap is computed and both the 3D view and the export read it. Every control that changes the view changes the file, or is labelled as view-only. |
+| No way to calibrate depth | A depth calibration card per machine and material, so a grey value maps to a known depth. |
+| Options that do nothing | Every control is honoured in every mode, or removed. |
+
 ## Scope
 
 ### Keep (measured as correct in the November audit)
@@ -46,12 +57,13 @@ These come from the problems that motivated the project. Each becomes an automat
 - WASM bridge allocation and free (`src/wasm/wasm-bridge.ts`).
 - Adaptive threshold and unsharp mask.
 - Adjustments undo/redo core (`src/store/editStore.ts`).
+- Relief numeric core (`src/wasm/src/depth.rs`, `src/lib/depth-engine.ts`): heights stay floating point through to 16-bit, Gaussian smoothing, invert, and the shading model shared by `depth-shader.ts` and the viewer.
+- 3D viewer (`src/components/canvas/DepthViewer3D.tsx`), with its resource handling fixed.
 - UI shell: panels, sliders, dialogs, styling.
 
 ### Drop for now
 
-- 3D depth maps and the 3D viewer.
-- "AI depth" and the current flood-fill background removal.
+- The current flood-fill background removal, and the silent luminance heuristic that stands in for AI depth when the model fails.
 - Scene graph, drawing tools (pen, node, shape, text), grouping, booleans, project file.
 - CAM, toolpaths, G-code. The `.lbrn2` exporter writes an invented JSON format, not LightBurn's.
 - Multi-layer compositing, unless a workflow turns out to need it.
@@ -95,13 +107,49 @@ Tests use synthetic shapes with known geometry: circle radius error, ring to one
 
 Tests: mean output density matches input tone per algorithm; exported pixel dimensions equal size times DPI; DPI metadata present; pure white and pure black stay clean.
 
-### Calibration
+## Workflow C: image to 3D relief
 
-Test burns cannot be removed, because power and speed depend on the physical material and machine. The aim is to collapse them to one or two structured burns per material and never repeat them.
+1. **Source.** A photo (depth estimated by a model), a logo or vector shape (bevel from a distance transform), or a tonal image used directly as height.
+2. **Shape.** Depth range, smoothing, invert and bevel profile. All of them change the heightmap itself.
+3. **Depth curve.** Applied from the selected calibration, so equal steps in the heightmap give equal steps in real depth.
+4. **Preview.** The 3D view renders the same heightmap the export writes, at real proportions for the chosen physical size and maximum depth. Lighting controls are view-only and labelled so.
+5. **Export.** Heightmap at full resolution for the chosen size, with the LightBurn settings to use.
+
+Changes from the current code:
+
+- One heightmap buffer feeds both viewer and export. Today `depthScale` changes only shading, and smoothing is skipped in AI mode.
+- Depth estimation model is self-hosted and version-pinned, shows download progress, and reports failure instead of substituting a heuristic. Input keeps its aspect ratio and is downsampled properly.
+- The result cache is keyed on the whole image, not 32 bytes of the top row.
+- Smoothing no longer lowers peaks: the map is re-normalised afterwards.
+- Dead or unreachable options (`reliefAngle`, `zMin`, `zMax`, `export16Bit`, `detailEmboss`, `lightElevation`) are wired up or removed.
+- The broken second export button in the Export panel is removed; there is one export path.
+- "True Euclidean" becomes true: an exact distance transform replaces the chamfer approximation.
+- The viewer releases its GL resources and handles mouse release outside the canvas.
+
+Tests: exported heightmap equals the buffer the viewer was given; each control changes the exported data; a known bevel profile matches its formula; peak height survives smoothing; the PNG decodes to the same 16-bit values.
+
+## Machines and calibration
+
+Test burns cannot be removed, because the result depends on the physical machine and material. The aim is to collapse them to one or two structured burns per combination and never repeat them.
+
+### Profiles
+
+- **Machine.** Name, source type (CO2 tube or diode), rated wattage, spot size, minimum power at which it fires reliably, usual line interval. Initially: 60 W CO2 and 155 W CO2.
+- **Material.** Name and notes (species, thickness, finish).
+- **Calibration.** One per machine, material and job type (photo or relief). Holds the speed, power range, line interval, passes and the measured response curve.
+
+Selecting a machine and material loads the matching calibration. A calibration made on the 60 W is never offered for the 155 W. Profiles are stored locally and can be exported and imported as files.
+
+### Photo calibration
 
 - **Card 1, power and speed.** A grid where each cell is a short tone ramp. The user picks the cell with solid blacks, no charring and a visible lightest step.
-- **Card 2, tone response (optional).** A fine ramp at the chosen setting. The user marks where steps stop being distinguishable, by eye or from a photo of the card. This becomes the material's tone curve.
-- **Profile.** Material, machine, line interval, speed, power, dot size, tone curve. Stored locally, exportable as a file.
+- **Card 2, tone response (optional).** A fine ramp at the chosen setting. The user marks where steps stop being distinguishable, by eye or from a photo of the card. This becomes the tone curve.
+
+### Relief calibration
+
+- **Depth card.** A stepped ramp of grey levels burned at the chosen speed, power range and passes.
+- **Measure.** The user enters the depth of each step, measured with calipers or a depth gauge.
+- **Result.** A depth curve (grey value to millimetres) and the maximum usable depth for that machine and material. The pipeline applies the inverse so the relief comes out with the proportions shown on screen.
 
 The existing test-grid generator (`src/lib/test-grid-generator.ts`) is the starting point. How cards carry per-cell power and speed into LightBurn is an open question below.
 
@@ -113,11 +161,12 @@ A real segmentation model run in the browser, replacing the flood fill. The mode
 
 0. **Safety net.** CI running typecheck, Vitest and Rust tests. Property tests for every kept piece. Delete dropped code.
 1. **Core.** Document, pipeline, units, transparency. Full-resolution export with correct physical size.
-2. **Photo workflow.** Device-grid resampling, clarity and CLAHE fixes, real blue noise, 1-bit export, material profiles and calibration cards.
-3. **Vector workflow.** Segmentation, sub-pixel boundaries, stroke and fill classification, centreline, curve fitting, export in real units.
-4. **Background removal.**
+2. **Vector workflow.** Segmentation, sub-pixel boundaries, stroke and fill classification, centreline, curve fitting, export in real units.
+3. **Profiles and photo workflow.** Machine, material and calibration profiles; device-grid resampling, clarity and CLAHE fixes, real blue noise, 1-bit export, photo calibration cards.
+4. **Relief workflow.** Single heightmap for view and export, model handling, option clean-up, depth calibration.
+5. **Background removal.**
 
-Phases 2 and 3 are independent after phase 1 and can swap.
+Phases 2 to 5 are independent after phase 1 and can be reordered.
 
 ## Known defects in kept code
 
@@ -133,12 +182,15 @@ To fix as each piece is ported. Verified in the audit unless marked.
 - Tracing stops silently at 4,000 contours (`src/wasm/src/vector.rs:153`). Reported.
 - Checkboxes, preset chips and reset buttons in the adjustments panel are not undoable. Reported.
 - Stale worker results can overwrite the current preview (`src/hooks/useWorker.ts`). Reported.
+- Relief: transparent pixels count as ink, so a logo on a transparent background gives a flat map (`src/wasm/src/depth.rs:40`). Reported. Fixed by flattening transparency in the core.
+- Relief: the Export panel's heightmap button sends 16-bit data down the 8-bit path (`src/components/panels/ExportPanel.tsx:316`).
+- Relief: AI depth falls back to a heuristic with no message (`src/lib/ai-depth.ts:127`), and its cache key is weak (`src/workers/imageWorker.ts:28`).
 - Existing tests check output shape, not correctness.
 
 ## Open questions
 
-- Machine type, line interval and typical materials.
-- Which workflow hurts more, to decide whether phase 2 or 3 goes first.
+- Line interval and typical materials on each machine.
+- Relief: how the heightmap is run in LightBurn (Grayscale or 3D Sliced mode, passes), and whether LightBurn uses more than 8 bits of a 16-bit image. This decides the export format and the calibration card.
 - Whether calibration cards should be exported as a real LightBurn project with per-cell power and speed, or as an image used with LightBurn's own material test.
 - Background removal model and its licence.
 - Whether to keep the stale `.agents/AGENTS.md` wording (wasm-pack, visual regression tests) or update it to match this plan.
