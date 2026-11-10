@@ -203,13 +203,14 @@ A real segmentation model run in the browser, replacing the flood fill. The mode
 
 0. **Safety net.** CI running typecheck, Vitest and Rust tests. Property tests for every kept piece. Delete dropped code.
 1. **Core.** Document, pipeline, units, transparency. Full-resolution export with correct physical size.
+   - **UI redesign**, alongside phase 1: design direction, workflow-based shell, responsive layout, shared components. Each later phase builds its panels in the new design.
 2. **Vector workflow.** Segmentation, sub-pixel boundaries, stroke and fill classification, centreline, curve fitting, export in real units.
 3. **Profiles and photo workflow.** Machine, material and calibration profiles; device-grid resampling, clarity and CLAHE fixes, real blue noise, 1-bit export, photo calibration cards.
 4. **Relief workflow.** Single heightmap for view and export, model handling, option clean-up, depth calibration.
 5. **Background removal.**
 6. **Accounts and profile sync.** Backend and sign-in choice, local-first sync of profiles. A paid plan is recorded but not scheduled.
 
-Phases 2 to 5 are independent after phase 1 and can be reordered.
+Phases 2 to 5 are independent after phase 1 and can be reordered. Phases 0 to 2 with the UI redesign form the first milestone: a tracer that fixes the main frustration, on a sound core, in the new interface.
 
 ### Tracking
 
@@ -253,4 +254,4 @@ To fix as each piece is ported. Verified in the audit unless marked.
 - Relief: on the CO2 machines the heightmap runs in LightBurn's Grayscale image mode (power varies per pixel between min and max power). LightBurn's 3D Sliced mode is galvo-only and does not apply. Still to confirm: whether Grayscale mode uses more than 8 bits of a 16-bit image, and how the user runs reliefs today (passes, speed, power range).
 - A sample LightBurn project (one image on one layer set to Pass-Through) saved from the user's LightBurn, to confirm how Pass-Through and CO2 settings are written. Not needed to start the exporter.
 - Background removal model and its licence.
-- Whether to keep the stale `.agents/AGENTS.md` wording (wasm-pack, visual regression tests) or update it to match this plan.
+- Where the app is deployed. The repo has both `netlify.toml` and `vercel.json`; this matters for CI, self-hosted model files and, later, accounts.
