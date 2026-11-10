@@ -1,6 +1,6 @@
 # Phase 1 design: document, pipeline and units
 
-Status: revised after review on PR #64. Covers issues #15 to #22 (tracking issue #2). Nothing here is implemented yet.
+Status: approved on PR #64, with the second review's points folded in. Covers issues #15 to #22 (tracking issue #2). Nothing here is implemented yet.
 
 ## 1. The document
 
@@ -311,22 +311,33 @@ Sharing one source between several workers would need a `SharedArrayBuffer`, whi
 |---|---|---|
 | Encoded file (`File`) | Main thread and worker (a `Blob` reference, not a copy) | `documentStore`; dropped when another file is loaded |
 | Decoded source, RGBA8 | WASM memory, allocated once at load | The worker's `SourceHandle`; `deallocate` on `releaseSource`, which runs when another file is loaded |
-| `source`-stage render at the preview target | WASM memory | The worker's cache, keyed by (source, crop, target). One entry. Freed and replaced when the crop or target changes. |
-| `source`-stage render at the native target | WASM memory, for the length of one run | The run. Freed in a `finally` when the run ends; not cached in phase 1. |
-| Working copy for steps 4 to 6 | WASM memory | The run, freed in a `finally` |
+| `source`-stage render at the preview target | WASM memory | The worker's cache, keyed by (source, crop, 2048 px target). One entry. Freed and replaced when the crop changes. The 1024 px gesture target (section 2) is derived from this entry by a linear-light halving, not from the source, so gestures and gesture ends do not evict each other. |
+| Preview working copy for steps 4 to 6 | WASM memory, preview size | The run, freed in a `finally`. Needed because the cached entry must stay unmodified. |
+| `source`-stage render at the native target | WASM memory, for the length of one run | The run. Steps 4 to 6 run in place on it, so there is no separate working copy at native size. Freed in a `finally`; not cached in phase 1. |
 | Preview result | Copied out of WASM into a JavaScript `ArrayBuffer`, transferred to the main thread | `renderStore`; replaced by the next commit |
 | Export file | Encoded in the worker in row chunks read straight from WASM memory, streamed through `CompressionStream` | Transferred to the main thread as the finished file bytes |
 
 `prepare_source` returns a pointer to a new buffer of `dstW * dstH * 4` bytes. The caller owns it and frees it with the existing `deallocate(ptr, len)`, in a `finally`. That is the same contract as `allocate`.
 
-Decoding uses `createImageBitmap(file, { imageOrientation: 'from-image' })`, an `OffscreenCanvas` and `getImageData`. The 2D canvas stores premultiplied colour whatever `premultiplyAlpha` asks for, so `getImageData` returns values that went through premultiplication and back. Low-alpha pixels lose some colour precision on the way. That does not matter here: flattening multiplies by alpha again, and the result differs by at most one level from flattening the file's exact values. The #18 test compares at the WASM level, where it is exact.
+**Allocation failure is reported, not trapped.** `allocate` uses `Vec::with_capacity`, which aborts when memory runs out; in WASM that is a trap, and the instance cannot be used afterwards. A new export, `try_allocate(size) -> ptr`, reserves with `Vec::try_reserve_exact` and returns null on failure. The two large buffers, the source and the native render, are allocated with it, so the worker can report "too large for this device" and keep the instance. The instance reset below remains for traps inside a step.
+
+**Decoding in strips.** `createImageBitmap(file, { imageOrientation: 'from-image' })` decodes the file. The worker then:
+
+1. allocates the source buffer in WASM with `try_allocate`
+2. draws one horizontal band of the bitmap into a band-sized `OffscreenCanvas`, at most 4 megapixels
+3. reads the band with `getImageData` and copies it into the source buffer
+4. repeats for the next band, then closes the bitmap
+
+The full-size canvas and the full-size `ImageData` never exist. That also removes any dependence on the canvas area limit, including iOS's 4,096 x 4,096 px (16.7 MP, an area limit). The limits that remain are what `createImageBitmap` can decode and what WASM memory can hold, and both are detected by failure.
+
+The 2D canvas stores premultiplied colour whatever `premultiplyAlpha` asks for, so `getImageData` returns values that went through premultiplication and back. Low-alpha pixels lose some colour precision on the way. That does not matter here: flattening multiplies by alpha again, and the result differs by at most one level from flattening the file's exact values. The #18 test compares at the WASM level, where it is exact.
 
 ### Peak and steady-state memory
 
 During a native-resolution run on a source of N pixels, WASM memory holds about **17 bytes per pixel**:
 
 - 4 bytes for the source
-- 4 bytes for the native `source`-stage render
+- 4 bytes for the native `source`-stage render, which steps 4 to 6 modify in place
 - up to 9 bytes of scratch for the largest single step:
   - adaptive threshold: 1 byte of grey plus 8 bytes of integral image
   - sharpening after its rework: 8 bytes
@@ -342,32 +353,35 @@ To give the memory back, after any run that grew WASM memory beyond the steady-s
 2. decodes the source again from the `File`, which takes about as long as the original load
 3. lets the preview cache refill on the next preview run
 
-The same reset follows an out-of-memory error. Nothing else lives in WASM between runs, so the reset is safe.
+The same reset follows a trap inside a step. Nothing else lives in WASM between runs, so the reset is safe.
+
+**At load,** with strip decoding, the peak is the decoded `ImageBitmap` (about 4 bytes per pixel, outside WASM) plus the source buffer (4 bytes per pixel, inside WASM) plus one band: about **8 bytes per pixel**. Without strips it would be about 16 bytes per pixel outside WASM plus 4 inside. The re-decode after an instance reset follows the same path, with the same peak.
 
 **Steady state** is the source plus the preview cache, about `4N + 32 MB`. For a 6000x4000 photo that is about 130 MB, and for a 139-megapixel scan about 590 MB.
 
 ### Largest accepted source
 
-The limit comes from three things:
+**The real limit is what fails on this device.** It is detected at run time: `createImageBitmap` rejects, or `try_allocate` returns null for the source or the native render. No per-browser table is relied on. Strip decoding removes canvas size from the question.
 
-- **WASM memory.** In Chromium 153 (measured in this environment), WASM memory grows to 4 GiB. At 17 bytes per pixel and with headroom for the browser, the app accepts at most **150 megapixels**. That covers an A4 scan at 1200 DPI (9921 x 14031, 139 MP). An A3 scan at 1200 DPI (279 MP) is refused.
-- **Canvas size for decoding.** In Chromium 153 (measured here), an `OffscreenCanvas` works up to 65,535 px per side and up to 268,435,456 px in area, for example 16,384 x 16,384. MDN states that iOS limits the canvas to 4,096 x 4,096. I could not verify the limits for Firefox, desktop Safari or particular iOS versions: no browser other than Chromium is available in this environment, and the third-party table of results could not be fetched.
-- **Detection at run time,** so the design does not depend on a table. After decoding, the worker writes and reads back a sentinel pixel in the canvas's far corner. MDN says a canvas over the limit "renders the canvas unusable", so a failed read-back means the image is too large for this browser. The WASM allocation is checked the same way.
+**There is also a ceiling of 150 megapixels.** In Chromium 153 (measured in this environment), WASM memory grows to 4 GiB, and 17 bytes per pixel puts a 150 MP export at about 2.5 GB. Sources above 150 MP are refused without trying. The ceiling is not a promise:
+- A contiguous 2.5 GB of WASM memory will not be available on many machines, and far less on a phone.
+- The app and its messages do not claim that 150 MP is supported.
 
-**What the user sees above a limit:** a message giving the image's pixel size and the limit that was hit. They can then cancel or open the image at a reduced resolution they choose. When reduced, the document's source records both the file's size and the size opened, and the size dialog shows the reduction. A smaller image is never substituted silently.
+For reference, an A4 scan at 1200 DPI is 139 MP (9921 x 14031). Firefox and Safari were not measured, since only Chromium is installed here.
+
+**What the user sees when a limit is hit:** a message saying what failed on this device (decoding, or memory for the source or for the export) and the image's pixel size. They can then cancel or open the image at a reduced resolution they choose. When reduced, the document's source records both the file's size and the size opened, and the size dialog shows the reduction. A smaller image is never substituted silently.
 
 ### Export blocks the preview, and shows progress
 
 A synchronous WASM call cannot be interrupted, and there is one worker. While an export runs, preview runs wait. The preview scheduler stays dirty and runs as soon as the export finishes, and the preview shows "Paused while exporting".
 
-The export reports progress through a callback passed with `Comlink.proxy`. It is called at stage boundaries:
+The export reports progress through a callback passed with `Comlink.proxy`. It is called at the boundaries between the calls that actually exist:
 
-- preparing the source
-- adjusting
-- dithering
+- preparing the source (`prepare_source`)
+- processing: steps 4 to 6 are one `process_pipeline` call, so adjusting and dithering are reported as one stage
 - encoding, which reports a percentage, since it is chunked in JavaScript
 
-A Cancel button takes effect at the next boundary.
+A Cancel button takes effect at the next boundary. `process_pipeline` is split later only if processing alone turns out too long to sit through without progress.
 
 ## 6. Export
 
@@ -419,8 +433,8 @@ Browser checks for each pull request that changes the UI:
 
 ## 8. Order of work
 
-1. **#15, part 1: document and stores.** `documentStore`, `viewStore` and `renderStore` are added, and the existing panels are adapted to read and write the document. The document becomes the only owner of the source, scale, steps and history, and the size dialog becomes the first step. The layer UI still works at preview resolution as today, but layer operations are not undoable in this state, and the preview still goes through the old worker path.
-2. **#15, part 2: removal.** Layers, text layers, multi-image import and canvas padding, as listed in section 3.
+1. **#15, part 1: removal.** Layers, text layers, multi-image import and canvas padding, as listed in section 3. A loaded image goes straight into `imageStore`, as it did before layers existed. Removing layers first avoids adapting the layer UI to a model that would then delete it. It also means `main` never has layer operations that cannot be undone.
+2. **#15, part 2: document and stores.** `documentStore`, `viewStore` and `renderStore` are added, and the existing panels are adapted to read and write the document. The document becomes the only owner of the source, scale, steps and history, and the size dialog becomes the first step. The preview still goes through the old worker path until #16.
 3. **#16 and #19 together.** The pipeline, the single worker and the schedulers replace `useWorker.ts` and the pool. Building #16 on the old coordinator and then rewriting it for #19 would mean writing the coordinator twice.
 4. **#18.** Flattening is already a step from #16. This adds its tests across dither, trace and relief, and removes the alpha dropdown.
 5. **#17.** Full-resolution export, the PNG encoder and export progress.
