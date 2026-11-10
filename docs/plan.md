@@ -159,6 +159,7 @@ Instead of judging the card by eye, the user can photograph or scan it and let t
 
 - **Depth card.** A stepped ramp of grey levels burned at the chosen speed, power range and passes.
 - **Measure.** The user enters the depth of each step, measured with calipers or a depth gauge.
+- **Or scan (optional, issue #61).** The user loads a 3D scan of the burned card, as a mesh or point cloud. The tool fits a plane to the unburned surface, aligns the scan to the card layout and measures every step from thousands of samples, including floor flatness and wall angle. With a scan, cards can use a continuous ramp and a grid of power and speed settings. The scanner has to resolve depths finer than the steps, and dark burned wood can be hard to capture, so gaps are reported and the user confirms the result.
 - **Result.** A depth curve (grey value to millimetres) and the maximum usable depth for that machine and material. The pipeline applies the inverse so the relief comes out with the proportions shown on screen.
 
 The existing test-grid generator (`src/lib/test-grid-generator.ts`) is the starting point.
@@ -220,7 +221,7 @@ Work is tracked in GitHub issues. Each phase has a tracking issue with its work 
 | 1. Core | #2 | #15 to #22 |
 | 2. Vector | #3 | #23 to #32 |
 | 3. Profiles and photo | #4 | #33 to #41, #56 |
-| 4. Relief | #5 | #42 to #48 |
+| 4. Relief | #5 | #42 to #48, #61 |
 | 5. Background removal | #6 | #49 to #50 |
 | 6. Accounts and sync | #57 | #58 to #60 |
 | UI redesign (alongside phase 1) | #51 | #52 to #55 |
