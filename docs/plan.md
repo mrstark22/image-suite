@@ -168,6 +168,21 @@ A real segmentation model run in the browser, replacing the flood fill. The mode
 
 Phases 2 to 5 are independent after phase 1 and can be reordered.
 
+### Tracking
+
+Work is tracked in GitHub issues. Each phase has a tracking issue with its work items attached as sub-issues.
+
+| Phase | Tracking issue | Work items |
+|---|---|---|
+| 0. Safety net and cleanup | #1 | #7 to #14 |
+| 1. Core | #2 | #15 to #22 |
+| 2. Vector | #3 | #23 to #32 |
+| 3. Profiles and photo | #4 | #33 to #41 |
+| 4. Relief | #5 | #42 to #48 |
+| 5. Background removal | #6 | #49 to #50 |
+
+Labels: `phase` marks the tracking issues; `area: infra`, `area: core`, `area: vector`, `area: photo`, `area: relief` and `area: background-removal` group work items; `bug` marks defects in existing code and `enhancement` marks new work.
+
 ## Known defects in kept code
 
 To fix as each piece is ported. Verified in the audit unless marked.
