@@ -151,7 +151,15 @@ Selecting a machine and material loads the matching calibration. A calibration m
 - **Measure.** The user enters the depth of each step, measured with calipers or a depth gauge.
 - **Result.** A depth curve (grey value to millimetres) and the maximum usable depth for that machine and material. The pipeline applies the inverse so the relief comes out with the proportions shown on screen.
 
-The existing test-grid generator (`src/lib/test-grid-generator.ts`) is the starting point. How cards carry per-cell power and speed into LightBurn is an open question below.
+The existing test-grid generator (`src/lib/test-grid-generator.ts`) is the starting point.
+
+### Getting cards into LightBurn
+
+LightBurn sets speed and power per layer, not per region of an image, so a grid of different settings cannot be a single image. Decision: the tool exports a ready-made LightBurn project in which each cell is its own image on its own layer, with that cell's speed and power filled in. The user opens the file and presses start.
+
+- LightBurn's layer count caps the grid size (to be confirmed, roughly 30 cells).
+- The project format is not published. The exporter is written against a sample project saved from the user's LightBurn, and tested by round-tripping through LightBurn by hand.
+- Fallback if the format proves unreliable: LightBurn's built-in Material Test for power and speed, then a single tone-ramp image from this tool.
 
 ## UI redesign
 
@@ -162,7 +170,7 @@ The current interface reads as a generic generated dashboard (dark navy, cyan gl
 - **Responsive.** Side panel on desktop, collapsible on tablet, bottom sheet on phone. Pinch zoom and pan on the canvas, touch orbit in the 3D view.
 - **Consistency.** Shared components on the new tokens; the roughly 200 inline style blocks are removed.
 
-This runs alongside phase 1, so each workflow's panels are built once in the new design. Layout work needs to be seen to be verified: either the no-browser rule in `.agents/AGENTS.md` is relaxed for screenshots, or each change is checked by hand.
+This runs alongside phase 1, so each workflow's panels are built once in the new design. Layout work is verified with headless-browser screenshots at phone, tablet and desktop widths, in addition to checks by hand.
 
 ## Background removal
 
@@ -218,6 +226,6 @@ To fix as each piece is ported. Verified in the audit unless marked.
 
 - Line interval and typical materials on each machine.
 - Relief: on the CO2 machines the heightmap runs in LightBurn's Grayscale image mode (power varies per pixel between min and max power). LightBurn's 3D Sliced mode is galvo-only and does not apply. Still to confirm: whether Grayscale mode uses more than 8 bits of a 16-bit image, and how the user runs reliefs today (passes, speed, power range).
-- Whether calibration cards should be exported as a real LightBurn project with per-cell power and speed, or as an image used with LightBurn's own material test.
+- A sample LightBurn project (one image on one layer) saved from the user's LightBurn, needed to write the calibration card exporter.
 - Background removal model and its licence.
 - Whether to keep the stale `.agents/AGENTS.md` wording (wasm-pack, visual regression tests) or update it to match this plan.

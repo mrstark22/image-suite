@@ -41,7 +41,7 @@
 - Use CodeGraph (`codegraph explore`) to understand existing code before editing
 - Run `cargo clippy` and `cargo fmt` after Rust changes
 - Run `npx vitest run` after TypeScript changes
-- **NEVER run browser subagents or browser testing** — the user tests the browser UI manually. Only run CLI/terminal unit tests.
+- Browser checks are allowed: run the app in a headless browser to take screenshots and verify UI and layout changes (desktop, tablet and phone widths). Unit tests still run from the CLI. The user also tests the UI manually, so say what was and was not checked in a browser.
 - Maintain all existing comments and documentation unless explicitly asked to remove them
 
 ## Domain Terminology
