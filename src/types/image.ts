@@ -56,14 +56,14 @@ export interface DetailEnhancements {
   adaptiveConstant: number;  // -50 to 50 (2 default)
 }
 
+/** A rectangle in whole pixels of the uncropped preview. */
+export interface CropRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 export interface GeometryTransform {
-  rotation: number;       // 0, 90, 180, 270 or arbitrary deg
-  flipHorizontal: boolean;
-  flipVertical: boolean;
-  cropRect: {
-    x: number;
-    y: number;
-    width: number;
-    height: number;
-  } | null;
+  cropRect: CropRect | null;
 }

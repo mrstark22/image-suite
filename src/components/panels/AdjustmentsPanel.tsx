@@ -12,7 +12,6 @@ import {
   Wand2,
 } from 'lucide-react';
 import { useEditStore } from '../../store/editStore';
-import { useLayerStore } from '../../store/layerStore';
 import { Slider } from '../shared/Slider';
 import { Histogram } from '../shared/Histogram';
 import type { GrayscaleMode, TonalAdjustments, ColorAdjustments, DetailEnhancements } from '../../types/image';
@@ -27,9 +26,6 @@ export const AdjustmentsPanel: React.FC = () => {
   const setDetailStore = useEditStore((s) => s.setDetail);
   const resetTonal = useEditStore((s) => s.resetTonal);
 
-  const layers = useLayerStore((s) => s.layers);
-  const activeLayerId = useLayerStore((s) => s.activeLayerId);
-  const setActiveLayer = useLayerStore((s) => s.setActiveLayer);
   // Dispatch edits to editStore
   const setTonal = (partial: Partial<TonalAdjustments>) => {
     setTonalStore(partial);
@@ -159,25 +155,6 @@ export const AdjustmentsPanel: React.FC = () => {
           Reset All
         </button>
       </div>
-
-      {/* Target Layer Selector (when multiple layers exist) */}
-      {layers.length > 1 && (
-        <div style={{ padding: '8px 16px 0 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 11 }}>
-          <span style={{ color: 'var(--text-tertiary)' }}>Target Layer:</span>
-          <select
-            className={styles.select}
-            style={{ width: 'auto', padding: '3px 8px', fontSize: 11 }}
-            value={activeLayerId || ''}
-            onChange={(e) => setActiveLayer(e.target.value)}
-          >
-            {layers.map((l, i) => (
-              <option key={l.id} value={l.id}>
-                {i + 1}. {l.name}
-              </option>
-            ))}
-          </select>
-        </div>
-      )}
 
       {/* Live RGB/Luma Histogram */}
       <div style={{ padding: '12px 16px 0 16px' }}>

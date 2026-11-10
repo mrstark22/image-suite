@@ -4,16 +4,16 @@ import type {
   ColorAdjustments,
   DetailEnhancements,
   GeometryTransform,
+  CropRect,
 } from '../types/image';
 import type { DitherConfig } from '../types/dither';
 import type { VectorConfig, VectorResult, VectorLayer } from '../types/vector';
-import type { CanvasLayer } from '../types/layer';
 import type { DepthConfig } from '../types/depth';
 import type { EditStep, EditRecipe } from '../types/recipe';
 import { generateCutlineLayer } from '../lib/cutline-generator';
 import { smoothVectorResult } from '../lib/vector-smoother';
+import { clampCropRect } from '../lib/crop';
 import { useImageStore } from './imageStore';
-import { useLayerStore } from './layerStore';
 import { useUIStore } from './uiStore';
 
 export const DEFAULT_TONAL: TonalAdjustments = {
@@ -54,9 +54,6 @@ export const DEFAULT_DETAIL: DetailEnhancements = {
 };
 
 export const DEFAULT_GEOMETRY: GeometryTransform = {
-  rotation: 0,
-  flipHorizontal: false,
-  flipVertical: false,
   cropRect: null,
 };
 
@@ -115,8 +112,6 @@ export interface EditSnapshot {
   depth: DepthConfig;
   autoTrace: boolean;
   vectorResult: VectorResult | null;
-  layers?: CanvasLayer[];
-  activeLayerId?: string | null;
 }
 
 interface EditState {
@@ -148,6 +143,12 @@ interface EditState {
   setColor: (color: Partial<ColorAdjustments>) => void;
   setDetail: (detail: Partial<DetailEnhancements>) => void;
   setGeometry: (geometry: Partial<GeometryTransform>) => void;
+  /**
+   * Crops to `box`, given in pixels of the preview as currently shown (that is,
+   * after any earlier crop). Records one undo entry. Does nothing if the box
+   * lies outside the image.
+   */
+  cropTo: (box: CropRect) => void;
   setDither: (dither: Partial<DitherConfig>) => void;
   setVector: (vector: Partial<VectorConfig>) => void;
   setDepth: (depth: Partial<DepthConfig>) => void;
@@ -168,6 +169,8 @@ interface EditState {
   redo: () => void;
   canUndo: () => boolean;
   canRedo: () => boolean;
+  /** Resets every setting to its default and clears the history, for a newly opened image. */
+  startNewImage: () => void;
 
   // Reset & Preset Actions
   resetAll: () => void;
@@ -179,8 +182,6 @@ interface EditState {
 }
 
 const getSnapshot = (state: EditState): EditSnapshot => {
-  const layerState = useLayerStore.getState();
-
   return {
     tonal: { ...state.tonal },
     color: { ...state.color },
@@ -191,11 +192,6 @@ const getSnapshot = (state: EditState): EditSnapshot => {
     depth: { ...state.depth },
     autoTrace: state.autoTrace,
     vectorResult: state.vectorResult ? { ...state.vectorResult } : null,
-    layers: layerState.layers.map((l) => ({
-      ...l,
-      transform: { ...l.transform },
-    })),
-    activeLayerId: layerState.activeLayerId,
   };
 };
 
@@ -270,6 +266,23 @@ export const useEditStore = create<EditState>((set, get) => ({
       geometry: { ...state.geometry, ...geometry },
     })),
 
+  cropTo: (box) => {
+    const source = useImageStore.getState().sourcePreviewDimensions;
+    if (!source) return;
+    const current = get().geometry.cropRect;
+    const viewWidth = current ? current.width : source.width;
+    const viewHeight = current ? current.height : source.height;
+    const inView = clampCropRect(box, viewWidth, viewHeight);
+    if (!inView) return;
+    const rect = {
+      ...inView,
+      x: (current?.x ?? 0) + inView.x,
+      y: (current?.y ?? 0) + inView.y,
+    };
+    get().recordHistorySnapshot();
+    set((state) => ({ geometry: { ...state.geometry, cropRect: rect } }));
+  },
+
   setDither: (dither) =>
     set((state) => ({
       dither: { ...state.dither, ...dither },
@@ -320,12 +333,9 @@ export const useEditStore = create<EditState>((set, get) => ({
   },
 
   generateCutline: (offsetMm: number = 2.0, smoothness: number = 3) => {
-    const activeLayer = useLayerStore.getState().layers.find(
-      (l) => l.id === useLayerStore.getState().activeLayerId
-    );
-    const buf = activeLayer?.previewBuffer || useImageStore.getState().previewBuffer;
-    const dims = activeLayer?.previewDims || useImageStore.getState().previewDimensions;
-    const meta = activeLayer?.metadata || useImageStore.getState().metadata;
+    const buf = useImageStore.getState().previewBuffer;
+    const dims = useImageStore.getState().previewDimensions;
+    const meta = useImageStore.getState().metadata;
     if (!buf || !dims) return;
 
     const cutlineLayer = generateCutlineLayer(buf, dims.width, dims.height, {
@@ -393,14 +403,6 @@ export const useEditStore = create<EditState>((set, get) => ({
     const prev = state.undoStack[state.undoStack.length - 1];
     const current = getSnapshot(state);
 
-    if (prev.layers) {
-      useLayerStore.setState({
-        layers: prev.layers,
-        activeLayerId: prev.activeLayerId ?? useLayerStore.getState().activeLayerId,
-      });
-      useLayerStore.getState().updateCompositePreview();
-    }
-
     set({
       tonal: prev.tonal,
       color: prev.color,
@@ -424,14 +426,6 @@ export const useEditStore = create<EditState>((set, get) => ({
     const next = state.redoStack[0];
     const current = getSnapshot(state);
 
-    if (next.layers) {
-      useLayerStore.setState({
-        layers: next.layers,
-        activeLayerId: next.activeLayerId ?? useLayerStore.getState().activeLayerId,
-      });
-      useLayerStore.getState().updateCompositePreview();
-    }
-
     set({
       tonal: next.tonal,
       color: next.color,
@@ -451,6 +445,24 @@ export const useEditStore = create<EditState>((set, get) => ({
 
   canUndo: () => get().undoStack.length > 0,
   canRedo: () => get().redoStack.length > 0,
+
+  startNewImage: () =>
+    set({
+      tonal: { ...DEFAULT_TONAL },
+      color: { ...DEFAULT_COLOR },
+      detail: { ...DEFAULT_DETAIL },
+      geometry: { ...DEFAULT_GEOMETRY },
+      dither: { ...DEFAULT_DITHER },
+      vector: { ...DEFAULT_VECTOR },
+      depth: { ...DEFAULT_DEPTH },
+      vectorResult: null,
+      autoTrace: true,
+      isVectorStale: false,
+      undoStack: [],
+      redoStack: [],
+      isAdjusting: false,
+      adjustmentBaseline: null,
+    }),
 
   resetAll: () => {
     get().recordHistorySnapshot();
@@ -531,3 +543,11 @@ export const useEditStore = create<EditState>((set, get) => ({
     };
   },
 }));
+
+// The crop is an edit setting, so undo, redo, presets and resets can change it.
+// Whenever it changes, derive the cropped preview from the whole-image preview.
+useEditStore.subscribe((state, prev) => {
+  if (state.geometry.cropRect !== prev.geometry.cropRect) {
+    useImageStore.getState().applyCrop(state.geometry.cropRect);
+  }
+});

@@ -1,12 +1,14 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { useImageStore } from '../../store/imageStore';
 import { useUIStore } from '../../store/uiStore';
+import { previewDpi } from '../../lib/image-size';
 import styles from './CanvasRulers.module.css';
 
 export const CanvasRulers: React.FC = () => {
   const showRulers = useUIStore((s) => s.showRulers);
   const dims = useImageStore((s) => s.previewDimensions);
   const metadata = useImageStore((s) => s.metadata);
+  const wholePreview = useImageStore((s) => s.sourcePreviewDimensions);
   const zoom = useImageStore((s) => s.zoom);
   const pan = useImageStore((s) => s.pan);
 
@@ -15,7 +17,9 @@ export const CanvasRulers: React.FC = () => {
   const [unit, setUnit] = useState<'mm' | 'in' | 'px'>('mm');
   const [mousePos, setMousePos] = useState<{ x: number; y: number } | null>(null);
 
-  const dpi = metadata?.dpi || 300;
+  // The rulers measure preview pixels, so use the preview's own resolution.
+  const fileDpi = metadata?.dpi || 300;
+  const dpi = metadata && wholePreview ? previewDpi(fileDpi, metadata, wholePreview) : fileDpi;
 
   // Track global mouse position for ruler crosshair indicators
   useEffect(() => {

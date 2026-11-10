@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Grid, X, Check } from 'lucide-react';
-import { useLayerStore } from '../../store/layerStore';
+import { openLoadedImage, hasUnsavedEdits, confirmReplaceInBrowser } from '../../lib/open-image';
 import { useEditStore } from '../../store/editStore';
 import { useImageStore } from '../../store/imageStore';
 import { useUIStore } from '../../store/uiStore';
@@ -21,7 +21,6 @@ export const MaterialTestGridDialog: React.FC<Props> = ({ isOpen, onClose }) => 
   const [targetMode, setTargetMode] = useState<'raster' | 'vector'>('raster');
 
   const metadata = useImageStore((s) => s.metadata);
-  const addLayerFromLoadedImage = useLayerStore((s) => s.addLayerFromLoadedImage);
   const addVectorLayer = useEditStore((s) => s.addVectorLayer);
   const toggleVectorOverlay = useUIStore((s) => s.toggleVectorOverlay);
 
@@ -42,6 +41,7 @@ export const MaterialTestGridDialog: React.FC<Props> = ({ isOpen, onClose }) => 
       addVectorLayer(vectorLayer);
       toggleVectorOverlay();
     } else {
+      if (hasUnsavedEdits() && !confirmReplaceInBrowser()) return;
       const { buffer, width, height } = generateTestGridRaster({
         rows,
         cols,
@@ -55,11 +55,11 @@ export const MaterialTestGridDialog: React.FC<Props> = ({ isOpen, onClose }) => 
       const file = new File([blob], `material-test-grid-${type}.png`, { type: 'image/png' });
       const bitmap = await createImageBitmap(new ImageData(new Uint8ClampedArray(buffer), width, height));
 
-      addLayerFromLoadedImage(
+      openLoadedImage({
         file,
-        buffer,
+        originalBuffer: buffer,
         bitmap,
-        {
+        metadata: {
           name: `Test Grid (${type === 'power-matrix' ? 'Power/Speed' : 'Steps'})`,
           width,
           height,
@@ -69,9 +69,9 @@ export const MaterialTestGridDialog: React.FC<Props> = ({ isOpen, onClose }) => 
           format: 'png',
           hasAlpha: false,
         },
-        buffer,
-        { width, height, scale: 1.0 }
-      );
+        previewBuffer: buffer,
+        previewDims: { width, height, scale: 1.0 },
+      });
     }
 
     onClose();
@@ -162,8 +162,8 @@ export const MaterialTestGridDialog: React.FC<Props> = ({ isOpen, onClose }) => 
               value={targetMode}
               onChange={(e) => setTargetMode(e.target.value as any)}
             >
-              <option value="raster">Engraving Image Layer (Grayscale Burn Levels)</option>
-              <option value="vector">Vector Cut Grid Layer (Red #FF0000 Paths)</option>
+              <option value="raster">Open as Image, Replacing the Current One (Grayscale Burn Levels)</option>
+              <option value="vector">Vector Cut Grid Overlay (Red #FF0000 Paths)</option>
             </select>
           </div>
         </div>

@@ -1,8 +1,7 @@
 import React, { useState } from 'react';
-import { Download, CheckCircle, Layers, FileCode, Box } from 'lucide-react';
+import { Download, CheckCircle, FileCode, Box } from 'lucide-react';
 import { useImageStore } from '../../store/imageStore';
 import { useEditStore } from '../../store/editStore';
-import { useLayerStore } from '../../store/layerStore';
 import { encodeBmpRgb24 } from '../../lib/bmp-encoder';
 import { generateProductionSVG } from '../../lib/svg-export';
 import { generateDXF } from '../../lib/dxf-export';
@@ -17,12 +16,8 @@ export const ExportPanel: React.FC = () => {
   const vectorResult = useEditStore((s) => s.vectorResult);
   const vectorConfig = useEditStore((s) => s.vector);
 
-  const layers = useLayerStore((s) => s.layers);
-  const activeLayerId = useLayerStore((s) => s.activeLayerId);
-  const activeLayer = layers.find((l) => l.id === activeLayerId) || layers[0] || null;
 
   const [format, setFormat] = useState<'png' | 'bmp' | 'jpeg' | 'webp' | 'recipe'>('png');
-  const [exportScope, setExportScope] = useState<'composite' | 'active' | 'all'>('composite');
   const [dpi, setDpi] = useState<number>(300);
   const [isExporting, setIsExporting] = useState(false);
   const [isDone, setIsDone] = useState(false);
@@ -34,7 +29,7 @@ export const ExportPanel: React.FC = () => {
           <span className={styles.panelTitle}>Export Engine</span>
         </div>
         <div style={{ padding: 24, textAlign: 'center', color: 'var(--text-tertiary)' }}>
-          Please load an image or add layers to configure export.
+          Please load an image to configure export.
         </div>
       </div>
     );
@@ -99,35 +94,8 @@ export const ExportPanel: React.FC = () => {
         a.download = `${metadata.name.replace(/\.[^/.]+$/, '')}-recipe.imgsuite`;
         a.click();
         URL.revokeObjectURL(url);
-      } else if (exportScope === 'active' && activeLayer && activeLayer.previewBuffer) {
-        const layerW = activeLayer.previewDims?.width || dims.width;
-        const layerH = activeLayer.previewDims?.height || dims.height;
-        exportBufferAsFile(
-          activeLayer.previewBuffer,
-          layerW,
-          layerH,
-          `layer-${activeLayer.name.replace(/\.[^/.]+$/, '')}`,
-          format
-        );
-      } else if (exportScope === 'all') {
-        // Batch export all visible layers
-        layers.forEach((layer, idx) => {
-          if (layer.visible && layer.previewBuffer) {
-            const layerW = layer.previewDims?.width || dims.width;
-            const layerH = layer.previewDims?.height || dims.height;
-            setTimeout(() => {
-              exportBufferAsFile(
-                layer.previewBuffer!,
-                layerW,
-                layerH,
-                `layer-${idx + 1}-${layer.name.replace(/\.[^/.]+$/, '')}`,
-                format
-              );
-            }, idx * 150);
-          }
-        });
       } else {
-        // Export full master composite
+        // Export the processed image
         exportBufferAsFile(
           processedBuffer,
           dims.width,
@@ -148,25 +116,6 @@ export const ExportPanel: React.FC = () => {
       <div className={styles.panelHeader}>
         <span className={styles.panelTitle}>Export Engine</span>
       </div>
-
-      {/* Export Scope */}
-      {layers.length > 1 && (
-        <div className={styles.section}>
-          <div className={styles.sectionTitle} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <Layers size={14} />
-            <span>Export Scope</span>
-          </div>
-          <select
-            className={styles.select}
-            value={exportScope}
-            onChange={(e) => setExportScope(e.target.value as any)}
-          >
-            <option value="composite">Full Composite Output ({layers.length} Layers)</option>
-            <option value="active">Active Layer Only ({activeLayer?.name || 'Selected'})</option>
-            <option value="all">All Visible Layers as Separate Files (Batch)</option>
-          </select>
-        </div>
-      )}
 
       {/* Output Format */}
       <div className={styles.section}>
@@ -253,11 +202,7 @@ export const ExportPanel: React.FC = () => {
           ) : (
             <>
               <Download size={16} />
-              {exportScope === 'all'
-                ? `Export All ${layers.length} Layers`
-                : exportScope === 'active'
-                ? `Export ${activeLayer?.name || 'Active Layer'}`
-                : 'Export Prepared Output'}
+              Export Prepared Output
             </>
           )}
         </button>

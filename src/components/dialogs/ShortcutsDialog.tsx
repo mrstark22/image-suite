@@ -11,23 +11,11 @@ const SHORTCUT_GROUPS = [
   {
     category: 'Tools & Canvas Modes',
     items: [
-      { key: 'V', desc: 'Select & Move Layer Tool' },
       { key: 'H', desc: 'Pan Canvas Viewport Tool' },
-      { key: 'C', desc: 'Interactive Canvas Crop Tool' },
-      { key: 'T', desc: 'Add Typography / Monogram Text Layer' },
+      { key: 'C', desc: 'Crop Tool' },
       { key: 'Space + Drag', desc: 'Temporary Viewport Pan' },
-      { key: 'Enter', desc: 'Apply Canvas Crop' },
+      { key: 'Enter', desc: 'Apply Crop' },
       { key: 'Esc', desc: 'Cancel Crop / Close Modal' },
-    ],
-  },
-  {
-    category: 'Layer Management & Ordering',
-    items: [
-      { key: '[  /  ]', desc: 'Cycle Active Layer Selection' },
-      { key: 'Ctrl + [', desc: 'Move Layer Down in Stack' },
-      { key: 'Ctrl + ]', desc: 'Move Layer Up in Stack' },
-      { key: 'Ctrl + E', desc: 'Merge Active Layer Down' },
-      { key: 'Del / Backspace', desc: 'Delete Active Layer' },
     ],
   },
   {
@@ -45,7 +33,7 @@ const SHORTCUT_GROUPS = [
     items: [
       { key: 'Ctrl + Z', desc: 'Undo Last Action / Parameter Change' },
       { key: 'Ctrl + Y', desc: 'Redo Action' },
-      { key: 'Ctrl + O', desc: 'Open / Import Images as Layers' },
+      { key: 'Ctrl + O', desc: 'Open Image' },
       { key: 'Ctrl + S', desc: 'Open Production Export Dialog' },
     ],
   },

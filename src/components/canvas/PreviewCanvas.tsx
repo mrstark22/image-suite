@@ -1,7 +1,9 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { useImageStore } from '../../store/imageStore';
 import { useEditStore } from '../../store/editStore';
-import { useLayerStore } from '../../store/layerStore';
+import { openImageFiles, confirmReplaceInBrowser } from '../../lib/open-image';
+import { previewDpi, MM_PER_INCH } from '../../lib/image-size';
+import { fitsDimensions } from '../../lib/crop';
 import { useUIStore } from '../../store/uiStore';
 import { DropZone } from '../shared/DropZone';
 import { DepthViewer3D } from './DepthViewer3D';
@@ -20,6 +22,7 @@ export const PreviewCanvas: React.FC = () => {
   const previewVersion = useImageStore((s) => s.previewVersion);
   const dims = useImageStore((s) => s.previewDimensions);
   const metadata = useImageStore((s) => s.metadata);
+  const wholePreview = useImageStore((s) => s.sourcePreviewDimensions);
   const canvasTool = useImageStore((s) => s.canvasTool);
   const substrateMask = useImageStore((s) => s.substrateMask);
   const substrateCornerRadius = useImageStore((s) => s.substrateCornerRadius);
@@ -38,44 +41,18 @@ export const PreviewCanvas: React.FC = () => {
 
   const vectorResult = useEditStore((s) => s.vectorResult);
   const depthConfig = useEditStore((s) => s.depth);
-  const beginAdjustment = useEditStore((s) => s.beginAdjustment);
-  const commitAdjustment = useEditStore((s) => s.commitAdjustment);
-
-  const layers = useLayerStore((s) => s.layers);
-  const activeLayerId = useLayerStore((s) => s.activeLayerId);
-  const setLayerTransform = useLayerStore((s) => s.setLayerTransform);
-  const importImageFiles = useLayerStore((s) => s.importImageFiles);
-
-  const activeLayer = layers.find((l) => l.id === activeLayerId) || layers[0] || null;
 
   // Interaction State
   const [isDraggingPan, setIsDraggingPan] = useState(false);
-  const [isDraggingLayer, setIsDraggingLayer] = useState(false);
-  const [scalingHandle, setScalingHandle] = useState<'tl' | 'tr' | 'bl' | 'br' | null>(null);
   const [isDraggingSplit, setIsDraggingSplit] = useState(false);
   const [isDragOverCanvas, setIsDragOverCanvas] = useState(false);
   const [isSpaceHeld, setIsSpaceHeld] = useState(false);
 
-  const dragStartRef = useRef<{
-    clientX: number;
-    clientY: number;
-    panX: number;
-    panY: number;
-    layerX: number;
-    layerY: number;
-    initialScale: number;
-    boxWidth: number;
-    boxHeight: number;
-  }>({
+  const dragStartRef = useRef<{ clientX: number; clientY: number; panX: number; panY: number }>({
     clientX: 0,
     clientY: 0,
     panX: 0,
     panY: 0,
-    layerX: 0,
-    layerY: 0,
-    initialScale: 1.0,
-    boxWidth: 100,
-    boxHeight: 100,
   });
 
   // Auto-fit on initial first load
@@ -119,6 +96,8 @@ export const PreviewCanvas: React.FC = () => {
       offscreen.width = dims.width;
       offscreen.height = dims.height;
     }
+    // A buffer for other dimensions is a stale result (#19); skip it rather than throw.
+    if (!fitsDimensions(previewBuffer, dims.width, dims.height)) return;
     const oCtx = offscreen.getContext('2d', { willReadFrequently: true });
     if (oCtx) {
       const origImageData = new ImageData(
@@ -133,6 +112,8 @@ export const PreviewCanvas: React.FC = () => {
   // Render Canvas Buffers efficiently without allocations
   useEffect(() => {
     if (!canvasRef.current || !dims || !processedBuffer) return;
+    // A buffer for other dimensions is a stale result (#19); skip it rather than throw.
+    if (!fitsDimensions(processedBuffer, dims.width, dims.height)) return;
 
     const canvas = canvasRef.current;
     if (canvas.width !== dims.width || canvas.height !== dims.height) {
@@ -187,49 +168,8 @@ export const PreviewCanvas: React.FC = () => {
         clientY: e.clientY,
         panX: pan.x,
         panY: pan.y,
-        layerX: 0,
-        layerY: 0,
-        initialScale: 1.0,
-        boxWidth: 0,
-        boxHeight: 0,
-      };
-      return;
-    }
-
-    if (e.button === 0 && canvasTool === 'move' && activeLayer && !activeLayer.locked) {
-      // Start moving active layer
-      beginAdjustment();
-      setIsDraggingLayer(true);
-      dragStartRef.current = {
-        clientX: e.clientX,
-        clientY: e.clientY,
-        panX: pan.x,
-        panY: pan.y,
-        layerX: activeLayer.transform?.x || 0,
-        layerY: activeLayer.transform?.y || 0,
-        initialScale: activeLayer.transform?.scale ?? 1.0,
-        boxWidth: Math.max(20, boxWidth),
-        boxHeight: Math.max(20, boxHeight),
       };
     }
-  };
-
-  const handleStartCornerScale = (e: React.MouseEvent, handle: 'tl' | 'tr' | 'bl' | 'br') => {
-    e.stopPropagation();
-    if (!activeLayer || activeLayer.locked) return;
-    beginAdjustment();
-    setScalingHandle(handle);
-    dragStartRef.current = {
-      clientX: e.clientX,
-      clientY: e.clientY,
-      panX: pan.x,
-      panY: pan.y,
-      layerX: activeLayer.transform?.x || 0,
-      layerY: activeLayer.transform?.y || 0,
-      initialScale: activeLayer.transform?.scale ?? 1.0,
-      boxWidth: Math.max(20, boxWidth),
-      boxHeight: Math.max(20, boxHeight),
-    };
   };
 
   const handleMouseMove = useCallback((e: MouseEvent) => {
@@ -244,41 +184,13 @@ export const PreviewCanvas: React.FC = () => {
         x: dragStartRef.current.panX + deltaX,
         y: dragStartRef.current.panY + deltaY,
       });
-    } else if (isDraggingLayer && activeLayer) {
-      const deltaX = (e.clientX - dragStartRef.current.clientX) / zoom;
-      const deltaY = (e.clientY - dragStartRef.current.clientY) / zoom;
-      setLayerTransform(activeLayer.id, {
-        x: Math.round(dragStartRef.current.layerX + deltaX),
-        y: Math.round(dragStartRef.current.layerY + deltaY),
-      });
-    } else if (scalingHandle && activeLayer) {
-      const deltaX = (e.clientX - dragStartRef.current.clientX) / zoom;
-      const deltaY = (e.clientY - dragStartRef.current.clientY) / zoom;
-      const initialScale = dragStartRef.current.initialScale;
-      const baseDim = (dragStartRef.current.boxWidth + dragStartRef.current.boxHeight) / 2;
-
-      let deltaMagnitude = 0;
-      if (scalingHandle === 'br') deltaMagnitude = (deltaX + deltaY) / 2;
-      else if (scalingHandle === 'tl') deltaMagnitude = (-deltaX - deltaY) / 2;
-      else if (scalingHandle === 'tr') deltaMagnitude = (deltaX - deltaY) / 2;
-      else if (scalingHandle === 'bl') deltaMagnitude = (-deltaX + deltaY) / 2;
-
-      const scaleRatio = 1 + deltaMagnitude / Math.max(10, baseDim / initialScale);
-      const newScale = Math.max(0.05, Math.min(10.0, Number((initialScale * scaleRatio).toFixed(3))));
-
-      setLayerTransform(activeLayer.id, { scale: newScale });
     }
-  }, [isDraggingSplit, isDraggingPan, isDraggingLayer, scalingHandle, activeLayer, dims, zoom, setPan, setSplitPosition, setLayerTransform]);
+  }, [isDraggingSplit, isDraggingPan, dims, setPan, setSplitPosition]);
 
   const handleMouseUp = useCallback(() => {
-    if (isDraggingLayer || scalingHandle) {
-      commitAdjustment();
-    }
     setIsDraggingPan(false);
-    setIsDraggingLayer(false);
     setIsDraggingSplit(false);
-    setScalingHandle(null);
-  }, [isDraggingLayer, scalingHandle, commitAdjustment]);
+  }, []);
 
   // Drag and drop onto canvas
   const handleDragOver = (e: React.DragEvent) => {
@@ -294,12 +206,15 @@ export const PreviewCanvas: React.FC = () => {
     e.preventDefault();
     setIsDragOverCanvas(false);
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      importImageFiles(Array.from(e.dataTransfer.files));
+      openImageFiles(Array.from(e.dataTransfer.files), confirmReplaceInBrowser).catch((err: unknown) => {
+        const message = err instanceof Error ? err.message : 'Failed to load image file';
+        useImageStore.getState().setErrorMessage(message);
+      });
     }
   };
 
   useEffect(() => {
-    if (isDraggingPan || isDraggingLayer || isDraggingSplit || scalingHandle) {
+    if (isDraggingPan || isDraggingSplit) {
       window.addEventListener('mousemove', handleMouseMove);
       window.addEventListener('mouseup', handleMouseUp);
     }
@@ -307,7 +222,7 @@ export const PreviewCanvas: React.FC = () => {
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [isDraggingPan, isDraggingLayer, isDraggingSplit, scalingHandle, handleMouseMove, handleMouseUp]);
+  }, [isDraggingPan, isDraggingSplit, handleMouseMove, handleMouseUp]);
 
   if (!previewBuffer || !dims) {
     return (
@@ -330,22 +245,10 @@ export const PreviewCanvas: React.FC = () => {
     );
   }
 
-  // Calculate active layer bounding box
-  const activeW = activeLayer?.previewDims?.width || dims.width;
-  const activeH = activeLayer?.previewDims?.height || dims.height;
-  const activeT = activeLayer?.transform || { x: 0, y: 0, scale: 1.0, rotation: 0 };
-
-  const boxWidth = activeW * (activeT.scale ?? 1.0);
-  const boxHeight = activeH * (activeT.scale ?? 1.0);
-  const boxLeft = dims.width / 2 - boxWidth / 2 + activeT.x;
-  const boxTop = dims.height / 2 - boxHeight / 2 + activeT.y;
-
-  const isMoveActive = canvasTool === 'move' && !isSpaceHeld;
-
   return (
     <div
       ref={containerRef}
-      className={`${styles.canvasContainer} ${isMoveActive ? styles.canvasContainerMove : styles.canvasContainerPan}`}
+      className={`${styles.canvasContainer} ${styles.canvasContainerPan}`}
       onWheel={handleWheel}
       onMouseDown={handleMouseDown}
       onDragOver={handleDragOver}
@@ -376,45 +279,6 @@ export const PreviewCanvas: React.FC = () => {
         }}
       >
         <canvas ref={canvasRef} className={styles.mainCanvas} />
-
-        {/* Active Layer Bounding Box HUD (when Move Tool is active) */}
-        {isMoveActive && activeLayer && (
-          <div
-            className={styles.layerBoundingBox}
-            style={{
-              left: `${boxLeft}px`,
-              top: `${boxTop}px`,
-              width: `${boxWidth}px`,
-              height: `${boxHeight}px`,
-              transform: `rotate(${activeT.rotation}deg)`,
-              transformOrigin: 'center center',
-            }}
-          >
-            <div className={styles.boxLabel}>
-              {activeLayer.name} ({Math.round(activeT.x)}, {Math.round(activeT.y)}) • {((activeT.scale ?? 1.0) * 100).toFixed(0)}%
-            </div>
-            <div
-              className={`${styles.cornerHandle} ${styles.handleTL}`}
-              onMouseDown={(e) => handleStartCornerScale(e, 'tl')}
-              title="Drag corner to scale layer"
-            />
-            <div
-              className={`${styles.cornerHandle} ${styles.handleTR}`}
-              onMouseDown={(e) => handleStartCornerScale(e, 'tr')}
-              title="Drag corner to scale layer"
-            />
-            <div
-              className={`${styles.cornerHandle} ${styles.handleBL}`}
-              onMouseDown={(e) => handleStartCornerScale(e, 'bl')}
-              title="Drag corner to scale layer"
-            />
-            <div
-              className={`${styles.cornerHandle} ${styles.handleBR}`}
-              onMouseDown={(e) => handleStartCornerScale(e, 'br')}
-              title="Drag corner to scale layer"
-            />
-          </div>
-        )}
 
         {/* Vector Path Overlay */}
         {showVectorOverlay && vectorResult && (
@@ -466,7 +330,12 @@ export const PreviewCanvas: React.FC = () => {
                 y="4"
                 width={dims.width - 8}
                 height={dims.height - 8}
-                rx={Math.round((substrateCornerRadius / 25.4) * (metadata?.dpi || 300))}
+                rx={Math.round(
+                  (substrateCornerRadius / MM_PER_INCH) *
+                    (metadata && wholePreview
+                      ? previewDpi(metadata.dpi, metadata, wholePreview)
+                      : metadata?.dpi || 300)
+                )}
                 stroke="var(--accent-primary, #38bdf8)"
                 strokeWidth="2"
                 strokeDasharray="6 4"
