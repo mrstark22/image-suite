@@ -1,6 +1,6 @@
 # Phase 1 design: document, pipeline and units
 
-Status: draft for review. Covers issues #15 to #22 (tracking issue #2). Nothing here is implemented yet.
+Status: revised after review on PR #64. Covers issues #15 to #22 (tracking issue #2). Nothing here is implemented yet.
 
 ## 1. The document
 
@@ -8,50 +8,69 @@ Status: draft for review. Covers issues #15 to #22 (tracking issue #2). Nothing 
 
 ```ts
 interface ImageDocument {
-  id: string;                 // new for every loaded image
-  source: SourceInfo;         // the original, by reference (see below)
-  widthMm: number;            // physical width of the cropped image
-  steps: EditSteps;           // the edits, in pipeline order
-  vector: VectorConfig;       // workflow settings, read by the tracer
-  depth: DepthConfig;         // workflow settings, read by the relief generator
+  id: string;
+  source: SourceInfo;
+  mmPerPx: number | null;
+  steps: EditSteps;
+  vector: VectorConfig;
+  depth: DepthConfig;
 }
 
 interface SourceInfo {
-  sourceId: string;           // key of the decoded pixels held by the worker
+  sourceId: string;
   name: string;
-  widthPx: number;            // full resolution, after EXIF orientation
+  widthPx: number;
   heightPx: number;
+  format: 'rgba8';
   hasAlpha: boolean;
-  fileDpi: number | null;     // read from PNG pHYs or JPEG JFIF/EXIF; null if absent
+  fileDpi: number | null;
 }
 
 interface EditSteps {
-  crop: CropRect | null;      // integer pixels of the original
+  crop: CropRect | null;
   tonal: TonalAdjustments;
   color: ColorAdjustments;
-  detail: DetailSettings;     // CLAHE, sharpen, adaptive threshold; lengths in mm
+  detail: DetailSettings;
   dither: DitherSettings;
 }
 ```
 
-The document is a small, immutable, plain-data value. Every change produces a new document; unchanged parts are shared by reference.
+- `id` is new for every loaded file.
+- `source` refers to the original; it does not carry the pixels (see section 5). `widthPx` and `heightPx` are the full resolution after EXIF orientation. `fileDpi` is what the file claims, if anything.
+- `mmPerPx` is the physical scale: millimetres per source pixel. `null` means the size has not been set.
+- `crop` is in integer pixels of the original.
+- `detail` holds CLAHE, sharpening and the adaptive threshold, with lengths in millimetres.
+- `vector` and `depth` are workflow settings read by the tracer and the relief generator.
 
-**The original image.** The document refers to the original through `sourceId`; it does not carry the pixels. A 6000x4000 RGBA image is 96 MB, so the decoded pixels live in one place, the worker, and are transferred there once when the file is loaded. The main thread keeps the `File` (the encoded bytes, a few MB) so the worker can be re-seeded if it restarts. This keeps undo snapshots cheap and keeps full-resolution buffers off the main thread.
+The document is a small, immutable, plain-data value. Every change produces a new document. Unchanged parts are shared by reference, so comparing a part of two documents is a reference comparison.
 
-Decoding happens in the worker with `createImageBitmap(file, { imageOrientation: 'from-image', premultiplyAlpha: 'none' })` and an `OffscreenCanvas`. Unpremultiplied alpha matters: premultiplied decoding loses colour precision at low alpha, which shows up as fringes after flattening.
+The edit steps run in a fixed order, defined by the pipeline (section 2). Recipes save them as an ordered list.
 
 ### Size and DPI
 
-Physical size is stored once, as `widthMm`. Everything else is derived:
+Physical size is stored once, as the scale `mmPerPx`. Everything else is derived:
 
-- `heightMm = widthMm * cropHeightPx / cropWidthPx` (pixels are square; the aspect ratio is the crop's).
-- `nativeDpi = cropWidthPx / (widthMm / 25.4)`, the DPI at which the cropped original exactly fills the physical size.
+- `widthMm = cropWidthPx * mmPerPx` and `heightMm = cropHeightPx * mmPerPx`
+- `dpi = 25.4 / mmPerPx`
 
-On load, `widthMm` comes from `fileDpi` when the file has one, else from an assumed 300 DPI, and the UI says the size was assumed. Changing the crop keeps `widthMm` fixed and lets the height and DPI follow; changing the size keeps the crop.
+**Cropping keeps the scale.** Cropping away half the image halves its width in millimetres; what remains keeps its physical size, and every millimetre-based parameter keeps its effect on the content. **Setting the size** is the operation that changes the scale. The user enters a width or a height for the current crop, and `mmPerPx` follows from it.
 
-In phase 1, export renders at the native resolution: a 6000x4000 original exports at 6000x4000 with the DPI that makes it the size shown. Phase 3 (#34) adds a dot pitch (the machine's line interval) to the document; when it is set, the export target becomes `size / pitch` and the pipeline resamples to it. That is one more optional field, not a second place where size lives.
+**Size is an explicit first step.** File DPI is not trusted. Many files say 72 or 96, which would make a phone photo more than a metre wide. On load:
 
-There is no other copy of width, height or DPI. `imageStore.metadata.dpi`, the Export panel's local DPI state, `CanvasSizeDialog`'s state and the per-layer `metadata` all go.
+- `mmPerPx` starts as `null` and the size dialog opens.
+- If the file has a DPI, it is offered as a suggestion with the size it gives ("file says 72 DPI: 2117 x 1411 mm"). The user can accept it with one click or type a width or height.
+- Until a size is set or accepted, the size is shown as "not set" everywhere it appears.
+
+**While the size is not set,** nothing that depends on physical size pretends to know it:
+
+- The controls with lengths in millimetres (sharpen radius, adaptive threshold block) are disabled with "Set the size to use this", and the pipeline skips those two steps.
+- Tone, colour, CLAHE and dithering do not depend on size; they work as normal.
+- Export is disabled.
+- Tracing and relief (phases 2 and 4) have lengths in millimetres too, so they also require a size.
+
+In phase 1, export renders at the source's own resolution: a 6000x4000 original exports at 6000x4000 at `25.4 / mmPerPx` DPI. Phase 3 (#34) adds a dot pitch (the machine's line interval). When the pitch is set, the export target becomes `size / pitch` and the pipeline resamples to it. That adds an optional field; it does not create a second place where size lives.
+
+`imageStore.metadata.dpi`, the Export panel's own DPI state, `CanvasSizeDialog`'s state and the per-layer `metadata` are all removed. They are replaced by values derived from the document.
 
 ### Undo and redo
 
@@ -60,234 +79,363 @@ A single `documentStore` owns the document and its history:
 ```ts
 interface DocumentState {
   doc: ImageDocument | null;
-  version: number;            // increases on every change to doc, including undo and redo
-  past: ImageDocument[];      // capped at 50
+  version: number;
+  past: ImageDocument[];
   future: ImageDocument[];
-  edit(update: (d: ImageDocument) => ImageDocument): void;   // one undo entry
-  beginGesture(): void;
-  updateGesture(update: (d: ImageDocument) => ImageDocument): void;  // live, no entry
-  endGesture(): void;         // one entry for the whole gesture, if anything changed
+  edit(update: (d: ImageDocument) => ImageDocument): void;
+  beginGesture(): GestureToken;
+  updateGesture(token: GestureToken, update: (d: ImageDocument) => ImageDocument): void;
+  endGesture(token: GestureToken): void;
   undo(): void;
   redo(): void;
-  load(file: File): Promise<void>;                           // new document, history cleared
+  load(file: File): Promise<void>;
 }
 ```
 
-- Every control that changes the document calls `edit` (a click, a checkbox, a preset chip, a reset) or the gesture trio (a slider drag, a crop drag). There is no other way to change the document, which is what #21 needs.
-- `edit` and `endGesture` compare the new document with the old one by value and record nothing when they are equal, so focusing and blurring a field leaves the stacks alone.
-- Undo and redo swap whole documents. Because the document includes crop, size, steps and workflow settings, undo covers all of them.
-- `version` is a store counter, not part of the document. Undo gives a new version number even though the document equals an earlier one, so a result computed for "the same document an hour ago" is never mistaken for current.
-- Derived data (preview pixels, trace results, heightmaps) is not in the history. It is recomputed from the document.
+- `past` is capped at 50 entries. `version` increases on every change to `doc`, including undo and redo, gesture updates and loads.
+- **One way in.** Every change to the document goes through `edit` or through a gesture. `edit` covers clicks, checkboxes, preset chips and resets: one call, one undo entry. A gesture covers a slider drag or a crop drag: the document updates live with no entries, and the whole gesture becomes one entry when it ends. Having one way in is what #21 needs.
+- **No-op changes record nothing.** `edit` and `endGesture` compare the new document with the old one by value and record nothing when they are equal. Focusing and then blurring a field leaves the stacks alone.
+- **Undo swaps whole documents.** The document includes the crop, scale, steps and workflow settings, so undo covers all of them.
+- **Undo gives a new version number.** It does so even though the document equals an earlier one, so an old result is never mistaken for current.
+- **Derived data is not in the history.** Preview pixels, trace results and heightmaps are recomputed from the document.
+
+**Gestures that are interrupted:**
+
+- **Undo or redo during a gesture** cancels the gesture: the document returns to its state before the gesture, nothing is recorded, and the key press does nothing more.
+- **`edit` during a gesture** ends the gesture first (recording it if it changed anything), then records the edit as its own entry.
+- **Loading a file during a gesture** discards the gesture along with the old document.
+- **An `endGesture` that never arrives.** `beginGesture` registers window-level `pointerup`, `pointercancel` and `blur` listeners. Any of them ends the gesture. Components also call `endGesture` when they unmount.
+- **Late calls are ignored.** `endGesture` can be called more than once safely. Every call carries the token from `beginGesture`, so an update or end from a gesture that has already finished is ignored.
 
 ## 2. The pipeline
 
 ### Signature
 
 ```ts
-interface RenderTarget { widthPx: number; heightPx: number }
-
-type Stage = 'prepared' | 'final';
-
-interface RenderOutput {
-  pixels: ArrayBuffer;        // RGBA8, opaque
+interface RenderTarget {
   widthPx: number;
   heightPx: number;
-  pxPerMm: number;            // target width / doc.widthMm
 }
 
-function render(doc: ImageDocument, source: DecodedSource, target: RenderTarget, stage: Stage): RenderOutput;
+type Stage = 'source' | 'prepared' | 'final';
+
+type PixelFormat = 'rgba8';
+
+interface RenderOutput {
+  format: PixelFormat;
+  pixels: ArrayBuffer;
+  widthPx: number;
+  heightPx: number;
+  pxPerMm: number | null;
+}
+
+function render(doc: ImageDocument, source: SourceHandle, target: RenderTarget, stage: Stage): RenderOutput;
 ```
 
-`render` is a pure function of the document, the source pixels it names, the target size and the stage. It runs in the worker. Preview, export, tracing and relief all call it; they differ only in the target and the stage. Targets come from three helpers, so no caller does its own arithmetic:
+`render` is a pure function of the document, the source it names, the target size and the stage. It runs in the worker. Preview, export, tracing and relief all call it; they differ only in the target and the stage. `pxPerMm` is the target width divided by the width in millimetres, or `null` while the size is not set.
 
-- `previewTarget(doc)`: the crop scaled so its longest edge is at most 2048 px.
-- `nativeTarget(doc)`: the crop at full resolution.
+Targets come from helpers, so no caller does its own arithmetic:
+
+- `previewTarget(doc, maxEdge = 2048)`: the crop scaled so its longest edge is at most `maxEdge`.
+- `nativeTarget(doc)`: the crop at the source's full resolution.
 - `deviceTarget(doc, pitchMm)`: added in phase 3 (#34).
 
-### Steps, in order
+**Regions (phase 3).** Inspecting a dither or a burn simulation at 1:1 cannot be done with a whole-image target capped at 2048 px. `RenderTarget` will gain an optional `region`: a rectangle of the crop, rendered at the target's scale. It is not built in phase 1. The rest of the pipeline does not assume the target covers the whole crop, so adding it does not change `render`'s signature.
 
-1. **Crop** to `steps.crop`, in original pixels.
-2. **Flatten transparency onto white**: `c' = round(c * a / 255 + 255 * (1 - a / 255))`, then `a = 255`. This is the only place alpha is read. Every later step, and everything downstream (dither, export, trace, relief), sees an opaque image where transparent means white, which means no burn. It happens before resampling because resampling unflattened RGBA averages the black of transparent pixels into the edges.
-3. **Resample** to the target. Area averaging for downscaling, bilinear for upscaling.
-4. **Tonal and colour** (per pixel, independent of resolution).
-5. **Detail**: CLAHE, then sharpen, then adaptive threshold. This moves sharpening before thresholding (#22).
-6. **Dither**, only for stage `final`.
+### Steps, in order, and the tone space of each
 
-Stage `prepared` stops after step 5. It is the input for tracing and relief. Stage `final` is what the preview shows and what raster export writes.
+| # | Step | Stage | Works on |
+|---|---|---|---|
+| 1 | Crop to `steps.crop` | `source` | source pixels |
+| 2 | Flatten transparency onto white | `source` | sRGB-encoded values |
+| 3 | Resample to the target | `source` | linear light |
+| 4 | Tonal and colour | `prepared` | sRGB-encoded values |
+| 5 | CLAHE, then sharpen, then adaptive threshold | `prepared` | sRGB-encoded values |
+| 6 | Dither | `final` | sRGB-encoded values today; #39 decides |
 
-Steps 1 to 3 are one new Rust export, `prepare_source(src, srcW, srcH, cropX, cropY, cropW, cropH, dstW, dstH) -> ptr`. Steps 4 to 6 are the existing `process_pipeline` with sharpening moved. All algorithms stay in Rust, so there is one implementation of each. The main-thread JavaScript tonal path (`applyFastTonalLUT` in `useWorker.ts`) is removed; it duplicates `tonal.rs` and is the source of one of the #19 races. If the worker round trip turns out too slow for slider drags, the fix is to make the worker path faster, not to add a second implementation. The plan lists `src/lib/fast-tonal.ts` as kept; after this change nothing in `src` uses it, so I propose deleting it and moving its tests to the WASM. See "Decisions to confirm".
+- **Stages.** `source` stops after step 3: the cropped, flattened, resampled image with no adjustments. Relief from a photo (phase 4) and background removal (phase 5) will want this. `prepared` stops after step 5: the input for tracing and tonal relief. `final` is what the preview shows and what raster export writes.
+- **Flattening** is `c' = round(c * a / 255 + 255 * (1 - a / 255))`, then `a = 255`. It is the only place alpha is read; every later step and every consumer sees an opaque image where transparent means white, which means no burn. It works on encoded values, which is how browsers and drawing programs show a logo on white, so the burn matches what the user saw. It comes before resampling, because resampling unflattened RGBA averages the black of transparent pixels into the edges.
+- **Resampling** works in linear light. The encoded values are decoded through a 256-entry sRGB-to-linear table, averaged over the area each output pixel covers (or interpolated bilinearly when enlarging), and encoded back. Averaging encoded values darkens fine detail: a one-pixel black and white checkerboard downsampled by two should give a linear average of 0.5, which encodes to 188, not 128.
+- **Steps 4 to 6 keep today's behaviour** on encoded values, so the existing tonal and dither property tests still apply. Sharpening moves before the threshold (#22).
 
-The worker caches the output of `prepare_source` for each (source, crop, target), so a slider drag repeats only steps 4 to 6.
+Steps 1 to 3 are one new Rust export:
+
+```
+prepare_source(src, srcW, srcH, cropX, cropY, cropW, cropH, dstW, dstH) -> ptr
+```
+
+Steps 4 to 6 are the existing `process_pipeline`, with sharpening moved. All algorithms stay in Rust, so each has one implementation.
+
+### Room for more than 8 bits
+
+Phase 1 implements 8 bits per channel only, but the interfaces carry a format so that a deeper path can be added without changing them:
+
+- `SourceInfo.format` and `RenderOutput.format` are `'rgba8'` today. A greyscale 16-bit or float format (`'gray16'`, `'grayf32'`) is a new member of `PixelFormat`.
+- **A deeper path enters at decoding.** `createImageBitmap` and the canvas give 8 bits per channel, so a 16-bit PNG or TIFF would need a decoder of our own, producing a `'gray16'` source.
+- **It also enters at `prepare_source`,** which would take the source format and produce the requested output format. It already decodes to linear light internally, so it does not need more than one code path per format.
+- **Tone steps and relief.** Tone steps on a 16-bit path would use a curve evaluated per value, or a 65,536-entry table, instead of the 256-entry table. Relief (phase 4) can then take a `'grayf32'` `source` or `prepared` render and keep more than 256 levels.
+- **Formats that are not implemented are rejected with an error.** They are never converted silently.
+
+### The main-thread tonal path is removed
+
+`applyFastTonalLUT` in `useWorker.ts` duplicates `tonal.rs`, and it is the source of one of the #19 races. It is removed, and `src/lib/fast-tonal.ts` is deleted, with its tests moved to the WASM.
+
+**Slider drags must stay responsive without it.** The budget for a tone-only preview render (steps 4 and 5 with only tonal and colour active, on a cached `source` render at 2048 px) is:
+
+- 25 ms of worker time
+- 50 ms from input event to the frame that shows it
+
+I will measure both in headless Chromium in the #16 pull request and report the numbers. If the budget is missed, a gesture renders at `previewTarget(doc, 1024)`, a quarter of the pixels, and the full preview target is rendered when the gesture ends. That keeps one implementation.
 
 ### Lengths in millimetres
 
-Parameters that measure a length in the image are stored in millimetres and converted at the start of each run by one function, `toRunParams(steps, pxPerMm)`:
+Parameters that measure a length in the image are stored in millimetres. One function, `toRunParams(steps, pxPerMm)`, converts them at the start of each run:
 
 | Parameter | Today | Stored as | Converted to |
 |---|---|---|---|
 | Sharpen radius | px, float | mm | `mm * pxPerMm`, float |
-| Adaptive threshold block | px, odd integer | mm | nearest odd integer >= 3 |
+| Adaptive threshold block | px, odd integer | mm | nearest odd integer, at least 3 |
 | CLAHE grid | tiles across the image | unchanged | already independent of resolution |
-| Dither matrix scale | dots | unchanged (see below) | none |
+| Dither matrix scale | dots | unchanged | none: a dither is defined on the dot grid |
 
-The tracer's tolerances, minimum area and denoise radius, and the relief smoothing and denoise radii, are also pixel lengths today. They convert with the same `pxPerMm` from the run, but the changes to those parameters belong to #32 (vector) and #44/#45 (relief), so phase 1 does not touch them. Phase 1 only makes `pxPerMm` available to them.
+The unsharp mask needs a change in #16 for the conversion to hold. It rounds its radius and clamps it to 1 to 5 px (`src/wasm/src/sharpen.rs:14`). The kernel extent becomes `ceil(3 * sigma)` with no upper clamp, and the blur runs one channel at a time so its scratch memory drops from 24 to 8 bytes per pixel (section 5).
 
-Two kernels need a change in #16 for this to hold. The unsharp mask rounds its radius and clamps it to 1 to 5 px (`src/wasm/src/sharpen.rs:14`), so a radius that is 2 px at preview size and 6 px at full size is cut to 5 px in the export. The kernel extent becomes `ceil(3 * sigma)` with no upper clamp. The adaptive threshold already accepts any block size.
+The tracer's tolerances and the relief radii are pixel lengths today as well. They will convert with the same `pxPerMm`, but changing them belongs to #32, #44 and #45. Phase 1 only makes `pxPerMm` available to them.
 
-The sliders change from pixels to millimetres. Default values are chosen to match today's defaults at 300 DPI: sharpen radius 1.5 px becomes 0.13 mm, adaptive block 15 px becomes 1.3 mm.
+The sliders change from pixels to millimetres. The new defaults match today's at 300 DPI: a sharpen radius of 1.5 px becomes 0.13 mm, and an adaptive block of 15 px becomes 1.3 mm.
 
-**Dithering is not converted.** A dither works on the dot grid; its matrix scale is a number of dots. A dither rendered at preview resolution is not a downscaled copy of the dither at export resolution, and cannot be. Phase 1 shows the preview-resolution dither as today. Phase 3 replaces it with the burn simulation (#41) at the device grid (#34). This affects how #16 is tested; see section 6.
+**A dither preview is not a scaled-down export.** A dither rendered at preview resolution is a different dither from the one at export resolution. Phase 1 shows the preview-resolution dither as today. Phase 3 replaces it with the burn simulation (#41), rendered at the device grid over a region.
 
-### Versioning and stale results
+### Schedulers and stale results
 
-All three of today's coordinators in `useWorker.ts` have the same defect: the code that dispatches the next job is a closure from an earlier render, so it can send old pixels, old dimensions, or commit a result for a document that has since changed. Patching each one leaves the pattern in place. Instead there is one scheduler class, created once outside React:
+All three of today's coordinators in `useWorker.ts` have the same defect. The code that sends the next job is a closure from an earlier render, so it can send old pixels or old dimensions, or commit a result for a document that has since changed. Patching each instance would leave the pattern in place. They are replaced by one scheduler class, with one instance per consumer, created once outside React:
 
 ```ts
-class RenderScheduler<Req, Res> {
+class RenderScheduler<Deps extends readonly unknown[], Req, Res> {
   constructor(opts: {
-    buildRequest: () => { version: number; req: Req } | null;   // reads current store state
-    run: (req: Req) => Promise<Res>;                             // the worker call
-    commit: (res: Res, version: number) => void;
-    currentVersion: () => number;
+    select: (doc: ImageDocument) => Deps;
+    enabled: () => boolean;
+    buildRequest: (doc: ImageDocument) => Req;
+    run: (req: Req) => Promise<Res>;
+    commit: (res: Res) => void;
+    fail: (err: unknown) => void;
   });
-  invalidate(): void;
+  onDocumentChange(doc: ImageDocument | null): void;
 }
 ```
 
-- `invalidate` is called from a store subscription whenever the document version changes. It only sets a dirty flag and starts a run if none is in flight. It never takes a payload.
-- A run starts by calling `buildRequest`, so the request is always built from the state at dispatch time. There is no queued payload to go stale.
-- When a run finishes, its result is committed only if its version still equals `currentVersion()`. Otherwise it is dropped. If the dirty flag is set, a new run starts, again from current state.
-- At most one run is in flight per scheduler. A newer request replaces a pending one; it never queues behind it.
+**Dependencies.** Each scheduler reads only part of the document, and `select` returns that part. When the document changes, the scheduler compares the new parts with the parts its last run used, by reference. If they are the same, nothing happens. Otherwise its own input version increases and it is marked dirty.
 
-There is one scheduler for the preview, one for tracing and one for relief. React components only read committed results from the store. Because the scheduler is plain TypeScript with an injected `run`, it is tested in Node with a fake worker whose promises the test resolves in any order (#19).
+| Scheduler | Reads |
+|---|---|
+| Preview | `source`, `mmPerPx`, `steps` |
+| Trace (phase 2) | `source`, `mmPerPx`, `steps.crop`, `steps.tonal`, `steps.color`, `steps.detail`, `vector` |
+| Relief (phase 4) | the parts its stage reads, plus `depth` |
 
-Export does not use a scheduler. It is a single call with the document as it was when the user clicked, and it writes that document even if the user changes something while it runs. The preview, which must follow the current document, uses the scheduler.
+So moving the dither slider does not rerun the trace, and changing a vector setting does not rerun the preview.
 
-### Worker API
+**Running.** A run starts by building its request from the current document, so a request is never older than the state it was sent in. There is no stored payload that could go stale. At most one run is in flight per scheduler, and a newer change replaces a pending one; it never queues behind it. `enabled` stops a scheduler while its tab is closed. The trace scheduler also waits for a gesture to end before running.
 
-```ts
-loadSource(file: File): Promise<SourceInfo>              // decode once, keep the pixels
-releaseSource(sourceId: string): void
-renderPreview(doc, version): Promise<{ version, output }>  // output transferred
-exportRaster(doc, format): Promise<{ bytes, filename }>   // encoded in the worker, bytes transferred
-trace(doc, version, target): Promise<{ version, result }>   // phase 2 fills this in
-relief(doc, version, target): Promise<{ version, heightmap }> // phase 4 fills this in
-```
+**Committing.** When a run finishes, its result is committed only if the run's input version is still the scheduler's current input version. Otherwise it is dropped. Then, if the scheduler is dirty, a new run starts from the current document. The input version is the version check: it changes exactly when something the scheduler reads changes. That way a trace is not thrown away because the dither slider moved during it, but it is thrown away if anything it read has changed.
 
-Full-resolution pixels never leave the worker. Export returns encoded file bytes. Results come back as transferred `ArrayBuffer`s. `imageWorker.ts` stays an orchestrator; the pipeline, target helpers, `toRunParams` and the cache go in `src/lib/pipeline/`, which `imageWorker.ts` imports, so the tests can call them without a worker.
+**Errors.** When a run rejects, `fail` records the error with its input version in `renderStore`, and the UI shows it once. The scheduler does not retry. It runs again only when its dependencies change again. An out-of-memory error also triggers the WASM instance reset described in section 5.
+
+**Export does not use a scheduler.** It is a single call with the document as it was when the user clicked. It writes that document even if the user changes something while it runs.
+
+The scheduler is plain TypeScript with an injected `run`, so it is tested in Node with a fake worker whose promises the test resolves in any order (#19).
 
 ## 3. What happens to the existing stores
 
 | Today | After phase 1 |
 |---|---|
 | `layerStore` (the current document model) | Removed. Replaced by `documentStore`. |
-| `imageStore` image fields (`originalBuffer`, `originalBitmap`, `metadata`, `previewBuffer`, `previewDimensions`) | Removed. The document holds the source and size; the preview result is in `renderStore`. |
-| `imageStore` view fields (zoom, pan, tool, split, substrate mask) | Kept, renamed `viewStore`. View state is not part of the document and not undoable. |
-| `imageStore` results (`previewProcessedBuffer`, `depthHeightMapBuffer`) and status | New `renderStore`: the latest committed result of each scheduler with its version, plus processing and error state. |
-| `editStore` settings (`tonal`, `color`, `detail`, `geometry`, `dither`, `vector`, `depth`) | Move into the document. |
-| `editStore` history | Moves into `documentStore`. The begin/commit logic is kept; it now snapshots the document. |
-| `editStore` vector result and its edits (cutline, smoothing, layer remove and toggle) | A trace result is derived, so it goes in `renderStore` and leaves the undo history. The cutline and node-smoothing actions act on it as today until phase 2 (#32) decides their place. |
+| `imageStore` image fields: `originalBuffer`, `originalBitmap`, `metadata`, `previewBuffer`, `previewDimensions` | Removed. The document holds the source and the scale; results go in `renderStore`. |
+| `imageStore` view fields: zoom, pan, tool, split, substrate mask | Kept, renamed `viewStore`. View state is not part of the document and not undoable. |
+| `imageStore` results (`previewProcessedBuffer`, `depthHeightMapBuffer`) and status | New `renderStore`: each scheduler's latest committed result and its error, plus export progress. |
+| `editStore` settings: `tonal`, `color`, `detail`, `geometry`, `dither`, `vector`, `depth` | Move into the document. |
+| `editStore` history | Moves into `documentStore`. The begin and commit logic is kept, and now snapshots the document. |
+| `editStore` vector result and its edits: cutline, smoothing, removing and toggling layers | The trace result is derived, so it moves to `renderStore` and leaves the undo history. The cutline and smoothing actions keep acting on it until phase 2. |
 
-### Multi-layer compositing
+**Vector edits lose undo until phase 2.** Cutline generation, node smoothing, and removing or toggling a vector layer will not be undoable during that time. This is recorded on #32.
 
-The plan drops multi-layer compositing "unless a workflow turns out to need it". None of the three workflows does: each starts from one image. `layerStore` is the current document model, so it cannot be left alongside the new one without two sources of truth. I propose removing it outright, with:
+### Multi-layer compositing is removed
+
+Confirmed by the owner. Removed:
 
 - `src/store/layerStore.ts`, `src/lib/compositor.ts`, `src/types/layer.ts`
 - `src/components/panels/LayersPanel.tsx` and its CSS
-- `src/lib/text-layer.ts`, `src/components/dialogs/TextLayerDialog.tsx` and its CSS, and `tests/unit/text-layer.test.ts`
-- the Layers tab, the Layer menu (new, duplicate, merge, flatten, reorder, cycle), the layer selector and alignment controls in `ToolSubheader`, the move and scale handles in `PreviewCanvas`, the Target Layer selector in `AdjustmentsPanel`, and the export scope selector in `ExportPanel` (#22)
-- the layer tests in `tests/unit/history-and-layers.test.ts` (the history tests are rewritten against the document)
+- text layers: `src/lib/text-layer.ts`, `src/components/dialogs/TextLayerDialog.tsx` and its CSS, and `tests/unit/text-layer.test.ts`
+- multi-image import
+- placing the image on a larger blank canvas. `CanvasSizeDialog`'s "canvas resize" mode goes with it; positioning an image on a larger work area is done in LightBurn.
+- the Layers tab and the Layer menu: new, duplicate, merge, flatten, reorder, cycle
+- the layer selector and alignment controls in `ToolSubheader`, the move and scale handles in `PreviewCanvas`, the Target Layer selector in `AdjustmentsPanel`, and the export scope selector in `ExportPanel` (#22)
+- the layer tests in `tests/unit/history-and-layers.test.ts`. The history tests there are rewritten against the document.
 
 Changes that follow:
 
 - Opening or dropping a second image replaces the document, after a confirmation if there are unsaved edits. Dropping several files opens the first and says the rest were ignored.
-- `CanvasSizeDialog` loses its "canvas resize" mode, which pads the canvas for layers to sit on. It becomes a physical size dialog: width or height in mm or inches, aspect locked to the crop, DPI shown as derived.
+- `CanvasSizeDialog` becomes the size dialog of section 1: width or height in mm or inches for the current crop, with the DPI shown as derived and the file's DPI offered as a suggestion.
 - The crop overlay writes `steps.crop` through a gesture instead of shifting layer transforms.
-- The material test grid's raster option opens the grid as a new document at its physical size, instead of adding a layer. Its vector option is unchanged. Both are reworked in phase 3 (#40).
-- `GeometryTransform` loses `rotation`, `flipHorizontal` and `flipVertical`. They are stored and sent to the worker today but nothing applies them and no control sets them. Crop is kept. If rotation or flipping is wanted, it can come back as a real step.
-
-**This is the owner's decision to confirm.** The cost is that text and multi-image layouts are no longer possible in this tool; they would be done in LightBurn or a drawing program.
+- The material test grid's raster option opens the grid as a new document with its scale set, instead of adding a layer. Its vector option is unchanged. Both are reworked in phase 3 (#40).
+- `GeometryTransform` loses `rotation`, `flipHorizontal` and `flipVertical`. They are stored and sent to the worker today, but nothing applies them and no control sets them. A 90-degree rotate is tracked as its own issue. Crop is kept.
 
 ## 4. Tracing and relief take their input from the pipeline
 
-Both run in the worker and start the same way:
+Both run in the worker and start from `render`.
 
-```ts
-const input = render(doc, source, target, 'prepared');   // flattened, cropped, adjusted, not dithered
-```
+- **Tracer (phase 2).** `trace(doc, target)` renders `prepared` at `nativeTarget(doc)` by default. It converts the vector settings from millimetres with `pxPerMm`, traces, and scales the paths by `1 / pxPerMm`, so the result is in millimetres. The overlay draws it at any zoom, and SVG and DXF write it directly (#30). This replaces today's tracing of the unadjusted preview (#23). Transparency is already white, so #18 holds for tracing without the tracer reading alpha.
+- **Relief (phase 4).** `relief(doc, target, stage)` renders `prepared` for tonal relief, or `source` for a photo sent to the depth model. It returns a heightmap with its `pxPerMm`. The 3D view asks for the preview target and export asks for the native target. Making the view and the export read one buffer (#42) is a choice of target inside phase 4.
 
-- **Tracer (phase 2).** `trace(doc, version, target)` renders `prepared` at `nativeTarget(doc)` by default, converts the vector settings from mm with `input.pxPerMm`, traces, and scales the paths by `1 / pxPerMm` so the result is in millimetres. The overlay draws it at any zoom by scaling mm to screen; SVG and DXF write it directly (#30). This replaces today's tracing of the unadjusted preview (#23), and transparency is already white, so #18 holds for tracing without the tracer reading alpha.
-- **Relief (phase 4).** `relief(doc, version, target)` renders `prepared` at the requested target and returns a 16-bit heightmap with its `pxPerMm`. The 3D view asks for the preview target; export asks for the native target. Making the view and the export read one buffer (#42) is then a choice of target inside phase 4, not a change to the core.
+What phases 2 and 4 add:
 
-What phases 2 and 4 add: their own algorithms, their worker function bodies, their settings in `doc.vector` and `doc.depth`, and their own scheduler instances. What they do not need to change: the document's shape outside their own settings, `render`, the targets, the scheduler, or the history.
+- their algorithms
+- their worker function bodies
+- their settings in `doc.vector` and `doc.depth`
+- their scheduler instances with their `select` functions
 
-One known exception: background removal (phase 5) produces a mask, and that mask has to be applied before transparency is flattened. It will be a new step between crop and flatten. The step order leaves room for it.
+What they do not need to change: the document's shape outside their own settings, `render`, the stages, the targets, the scheduler class or the history.
 
-## 5. Export
+**Background removal (phase 5)** produces a mask that has to be applied before flattening. It will be a new step between crop and flatten, still within the `source` stage. The step order leaves room for it.
 
-- Raster export calls `exportRaster(doc, format)`. The worker renders `final` at `nativeTarget(doc)` and encodes it.
-- **PNG** gets a new 8-bit encoder (greyscale or RGBA) that writes `pHYs` in pixels per metre. `canvas.toBlob` cannot write `pHYs`. The existing 16-bit encoder writes uncompressed deflate blocks, which would make a 6000x4000 file about 96 MB; both encoders switch to `CompressionStream('deflate')`, which browsers, workers and Node 18+ provide, so no dependency is added.
-- **BMP** already writes pixels per metre; it now receives the document's DPI.
-- **JPEG and WebP.** WebP has no standard DPI field. JPEG can carry DPI in its JFIF header, but `canvas.toBlob` does not write it and JPEG compression smears dithered and thresholded images. I propose removing both from the raster export list. See "Decisions to confirm".
-- The size shown in the Export panel is computed from the same target and DPI the export uses, from the document. The panel has no DPI input of its own.
+## 5. Worker, memory and size limits
 
-The heightmap exports in `DepthMapPanel` and the second heightmap button in `ExportPanel` are preview-sized too. They belong to #46 and #42 in phase 4 and are left alone, except that they will read the document's DPI once there is no other.
+### One worker
 
-## 6. Tests
+`src/workers/pool.ts` creates up to eight workers, and `comlink-setup.ts` hands out the first idle one. Each would need its own copy of the source. The pool is removed. There is one image worker, and `getComlinkWorker()` returns its proxy.
 
-All new tests follow `tests/unit/dither-properties.test.ts`: an independent reference implementation in the test, compared with the WASM through `tests/helpers/wasm.ts`.
+Sharing one source between several workers would need a `SharedArrayBuffer`, which requires cross-origin isolation headers on the Vercel deployment. If phase 2 finds that a native-resolution trace blocks the preview for too long, that is the route. It is not part of phase 1.
+
+### Who holds what
+
+| Item | Lives in | Owned and freed by |
+|---|---|---|
+| Encoded file (`File`) | Main thread and worker (a `Blob` reference, not a copy) | `documentStore`; dropped when another file is loaded |
+| Decoded source, RGBA8 | WASM memory, allocated once at load | The worker's `SourceHandle`; `deallocate` on `releaseSource`, which runs when another file is loaded |
+| `source`-stage render at the preview target | WASM memory | The worker's cache, keyed by (source, crop, target). One entry. Freed and replaced when the crop or target changes. |
+| `source`-stage render at the native target | WASM memory, for the length of one run | The run. Freed in a `finally` when the run ends; not cached in phase 1. |
+| Working copy for steps 4 to 6 | WASM memory | The run, freed in a `finally` |
+| Preview result | Copied out of WASM into a JavaScript `ArrayBuffer`, transferred to the main thread | `renderStore`; replaced by the next commit |
+| Export file | Encoded in the worker in row chunks read straight from WASM memory, streamed through `CompressionStream` | Transferred to the main thread as the finished file bytes |
+
+`prepare_source` returns a pointer to a new buffer of `dstW * dstH * 4` bytes. The caller owns it and frees it with the existing `deallocate(ptr, len)`, in a `finally`. That is the same contract as `allocate`.
+
+Decoding uses `createImageBitmap(file, { imageOrientation: 'from-image' })`, an `OffscreenCanvas` and `getImageData`. The 2D canvas stores premultiplied colour whatever `premultiplyAlpha` asks for, so `getImageData` returns values that went through premultiplication and back. Low-alpha pixels lose some colour precision on the way. That does not matter here: flattening multiplies by alpha again, and the result differs by at most one level from flattening the file's exact values. The #18 test compares at the WASM level, where it is exact.
+
+### Peak and steady-state memory
+
+During a native-resolution run on a source of N pixels, WASM memory holds about **17 bytes per pixel**:
+
+- 4 bytes for the source
+- 4 bytes for the native `source`-stage render
+- up to 9 bytes of scratch for the largest single step:
+  - adaptive threshold: 1 byte of grey plus 8 bytes of integral image
+  - sharpening after its rework: 8 bytes
+  - dither: 4 bytes
+
+Today's sharpening alone would need 24 bytes, for 32 bytes per pixel. Its rework in #16 is part of this design.
+
+**WASM memory never shrinks.** It can only grow; the proposal to release memory (`memory.discard` in the WebAssembly memory-control proposal) is at an early stage and not shipped. So after a large run, the worker would keep the high-water mark for as long as the page is open.
+
+To give the memory back, after any run that grew WASM memory beyond the steady-state size plus 256 MB, the worker:
+
+1. discards the instance and instantiates a new one from the compiled module, which takes milliseconds
+2. decodes the source again from the `File`, which takes about as long as the original load
+3. lets the preview cache refill on the next preview run
+
+The same reset follows an out-of-memory error. Nothing else lives in WASM between runs, so the reset is safe.
+
+**Steady state** is the source plus the preview cache, about `4N + 32 MB`. For a 6000x4000 photo that is about 130 MB, and for a 139-megapixel scan about 590 MB.
+
+### Largest accepted source
+
+The limit comes from three things:
+
+- **WASM memory.** In Chromium 153 (measured in this environment), WASM memory grows to 4 GiB. At 17 bytes per pixel and with headroom for the browser, the app accepts at most **150 megapixels**. That covers an A4 scan at 1200 DPI (9921 x 14031, 139 MP). An A3 scan at 1200 DPI (279 MP) is refused.
+- **Canvas size for decoding.** In Chromium 153 (measured here), an `OffscreenCanvas` works up to 65,535 px per side and up to 268,435,456 px in area, for example 16,384 x 16,384. MDN states that iOS limits the canvas to 4,096 x 4,096. I could not verify the limits for Firefox, desktop Safari or particular iOS versions: no browser other than Chromium is available in this environment, and the third-party table of results could not be fetched.
+- **Detection at run time,** so the design does not depend on a table. After decoding, the worker writes and reads back a sentinel pixel in the canvas's far corner. MDN says a canvas over the limit "renders the canvas unusable", so a failed read-back means the image is too large for this browser. The WASM allocation is checked the same way.
+
+**What the user sees above a limit:** a message giving the image's pixel size and the limit that was hit. They can then cancel or open the image at a reduced resolution they choose. When reduced, the document's source records both the file's size and the size opened, and the size dialog shows the reduction. A smaller image is never substituted silently.
+
+### Export blocks the preview, and shows progress
+
+A synchronous WASM call cannot be interrupted, and there is one worker. While an export runs, preview runs wait. The preview scheduler stays dirty and runs as soon as the export finishes, and the preview shows "Paused while exporting".
+
+The export reports progress through a callback passed with `Comlink.proxy`. It is called at stage boundaries:
+
+- preparing the source
+- adjusting
+- dithering
+- encoding, which reports a percentage, since it is chunked in JavaScript
+
+A Cancel button takes effect at the next boundary.
+
+## 6. Export
+
+- **Raster export** calls `exportRaster(doc, format, onProgress)`. The worker renders `final` at `nativeTarget(doc)` and encodes it.
+- **PNG** gets a new 8-bit encoder (greyscale or RGBA) that writes `pHYs` in pixels per metre. `canvas.toBlob` cannot write `pHYs`. The existing 16-bit encoder writes uncompressed deflate blocks, so a full-size file would be several times larger than needed. Both encoders switch to `CompressionStream('deflate')`, which browsers, workers and Node provide, so no dependency is added.
+- **BMP** already writes pixels per metre; it now gets the DPI from the document.
+- **JPEG and WebP** are removed from raster export (confirmed by the owner).
+- **The Export panel** shows the size and DPI computed from the same target and scale that the export uses. It has no DPI input of its own, and export is disabled while the size is not set.
+- **Heightmap exports** in `DepthMapPanel` and the second heightmap button in `ExportPanel` are preview-sized too. They belong to #46 and #42 in phase 4 and are left alone, except that they read the document's DPI.
+
+## 7. Tests
+
+New tests follow `tests/unit/dither-properties.test.ts`: an independent reference implementation in the test, compared with the WASM through `tests/helpers/wasm.ts`.
 
 | Issue | Test | Property measured |
 |---|---|---|
-| #15 | Crop, then change size, tonal, detail and dither in turn | `steps.crop` and the derived size are unchanged after each edit |
-| #15 | Size and DPI derivation | For several crops and sizes, `heightMm` and `nativeDpi` equal the formulas above |
-| #16 | `prepare_source` against a reference box filter | Every output pixel within 1 level of the reference |
-| #16 | Preview against downscaled native render, stage `prepared`, on a synthetic photo-like image with tonal, colour and sharpen applied | Mean absolute difference at most 1.0 level and 99th percentile at most 6 levels (out of 255). CLAHE and adaptive threshold have their own row below. |
-| #16 | Adaptive threshold at two resolutions with the block in mm | At most 2 % of pixels differ after downscaling and rethresholding |
-| #16 | Dither at two resolutions | Mean density over blocks of the same physical size (16 preview pixels across) matches within 2 levels (the dithers are not pixel-comparable across resolutions; see 2) |
-| #16 | `toRunParams` | Converted lengths for several `pxPerMm`; block sizes odd and at least 3 |
-| #18 | A logo on transparency against the same logo composited onto white by the test's reference | Identical bytes after flattening; identical dither output; identical trace (path count and coordinates); identical heightmap |
-| #17 | Export of a 6000x4000 source at a given width in mm | Decoded PNG and BMP are 6000x4000; `pHYs` and pixels-per-metre decode to `nativeDpi` within rounding to whole pixels per metre |
+| #15 | Crop, then change the size, tone, detail and dither in turn | The crop and scale are unchanged after each edit; the size follows the crop |
+| #15 | Size derivation | For several crops and scales, width, height and DPI equal the formulas in section 1; cropping keeps `mmPerPx` |
+| #15 | Size not set | Length-based steps are skipped; export refuses; setting the size enables both |
+| #16 | `prepare_source` against a reference linear-light box filter | Every output pixel within 1 level of the reference |
+| #16 | One-pixel black and white checkerboard downsampled by two | Every output pixel is 188, give or take 1 |
+| #16 | Preview against a downscaled native render, stage `prepared`, on a synthetic photo-like image with tone, colour and sharpening | Mean absolute difference at most 1.0 level, 99th percentile at most 6 levels |
+| #16 | Adaptive threshold at two resolutions, with the block in mm | At most 2% of pixels differ after downscaling and thresholding again |
+| #16 | Dither at two resolutions | Mean density over blocks of the same physical size (16 preview pixels across) matches within 2 levels |
+| #16 | `toRunParams` | Converted lengths for several values of `pxPerMm`; block sizes odd and at least 3 |
+| #16 | Sharpening at a radius over 5 px | The kernel extent follows sigma; no clamp |
+| #18 | A logo on transparency against the same logo composited onto white by the test's reference | Identical bytes after flattening; identical dither output, trace (path count and coordinates) and heightmap |
+| #17 | Export of a 3000x2000 source at a given scale | The decoded PNG and BMP are 3000x2000; `pHYs` and pixels per metre decode to `1000 / mmPerPx` within rounding to whole pixels per metre |
 | #17 | 8-bit PNG round trip through an independent inflate and decoder | Every byte matches the source |
-| #19 | Scheduler with a fake worker: start a run, change the document, resolve the old run, then the new one | The old result is never committed; the newest version is always committed last; no run is built from state older than the latest change |
-| #21 | Each kind of edit through `edit` and gestures, then undo | The previous document is restored by value; a no-op leaves both stacks unchanged |
-| #22 | Reset All, Auto Levels, sharpen before threshold | Reset All restores every step's defaults; Auto Levels sets black and white points from the histogram percentiles of a synthetic image; sharpening changes the thresholded result |
+| #19 | Scheduler with a fake worker: start a run, change something it reads, resolve the old run, then the new one | The old result is never committed; the newest is committed last; no request is built from older state |
+| #19 | Scheduler dependencies | A change to a part a scheduler does not read starts no run and does not discard a run in flight |
+| #19 | Scheduler errors | A rejected run reports once and does not rerun until its dependencies change |
+| #21 | Each kind of edit through `edit` and gestures, then undo | The previous document is restored, compared by value |
+| #21 | No-op changes | Both stacks are unchanged |
+| #21 | Undo, edit and load during a gesture; a gesture whose end never arrives | Each behaves as defined in section 1 |
+| #22 | Reset All | Restores every step's defaults |
+| #22 | Auto Levels on a synthetic image | Sets the black and white points from the histogram's percentiles |
+| #22 | Sharpening before the threshold | Sharpening changes the thresholded result |
 
-The tolerances in the #16 rows are my estimate of the error from resampling before against after a 3x3 sharpen. If the measured error is larger for a reason I can explain, I will say so in the pull request instead of loosening the number silently. CLAHE is excluded from the pixel comparison until #36 is fixed, because its edge bands depend on the image size.
+The tolerances in the #16 rows are estimates. If the measured error is larger for a reason I can explain, I will say so in the pull request rather than loosen the numbers silently. CLAHE is left out of the pixel comparison until #36 is fixed, because its edge bands depend on the image size.
 
-Browser checks for each pull request that changes the UI: load a large image (at least 6000x4000) and a transparent PNG, take screenshots of the preview and export panel at desktop, tablet and phone widths, export, and check the file's pixel size and DPI.
+Browser checks for each pull request that changes the UI:
 
-## 7. Order of work
+- load a 6000x4000 image and a transparent PNG
+- set the size
+- take screenshots of the preview, size dialog and export panel at desktop, tablet and phone widths
+- export, and check the file's pixel size and DPI
+- for #16, also measure the tone-only preview budget
 
-1. **#15** Document model, `documentStore`, `viewStore`, removal of layers. The preview keeps today's worker path, fed from the document, so the app works between pull requests.
-2. **#16 and #19 together.** The new pipeline and the scheduler replace `useWorker.ts`. Doing #16 on the old coordinator and then rewriting it for #19 would mean writing the coordinator twice.
-3. **#18** Flattening, already a step in #16, gets its tests across dither, trace and relief, and the alpha dropdown is removed.
-4. **#17** Full-resolution export, the PNG encoder, DPI from the document and from the source file.
-5. **#21** Undo on every control, using `edit` and gestures.
-6. **#22** Mislabeled controls.
-7. **#20** Viewport, on the new preview result.
+## 8. Order of work
 
-This differs from the suggested order only in pairing #19 with #16.
+1. **#15, part 1: document and stores.** `documentStore`, `viewStore` and `renderStore` are added, and the existing panels are adapted to read and write the document. The document becomes the only owner of the source, scale, steps and history, and the size dialog becomes the first step. The layer UI still works at preview resolution as today, but layer operations are not undoable in this state, and the preview still goes through the old worker path.
+2. **#15, part 2: removal.** Layers, text layers, multi-image import and canvas padding, as listed in section 3.
+3. **#16 and #19 together.** The pipeline, the single worker and the schedulers replace `useWorker.ts` and the pool. Building #16 on the old coordinator and then rewriting it for #19 would mean writing the coordinator twice.
+4. **#18.** Flattening is already a step from #16. This adds its tests across dither, trace and relief, and removes the alpha dropdown.
+5. **#17.** Full-resolution export, the PNG encoder and export progress.
+6. **#21.** Every control goes through `edit` or a gesture.
+7. **#22.** Mislabeled controls.
+8. **#20.** The viewport, on the new preview result.
 
-## 8. Corrections and gaps in the issues
+## 9. Corrections and gaps in the issues
 
-- **#16** says `imageWorker.ts` is 1,300 lines and needs splitting. Phase 0 already brought it to 238 lines of orchestration. Nothing left to do there.
-- **#16** lists dither scale among the parameters to store in mm. It should stay in dots: a dither is defined on the dot grid. For the same reason its done-when test cannot compare dithered output pixel for pixel across resolutions; section 6 compares block density instead.
-- **#16** asks for "a stated tolerance" without one. Section 6 proposes numbers.
-- **#16** does not mention that sharpening clamps its radius to 5 px, which breaks the preview against export comparison at full size. Section 2 lifts the clamp.
-- **#17** does not mention that the existing PNG encoder is uncompressed, which matters once exports are full size.
-- **#17** leaves open what happens to JPEG and WebP. See below.
-- **#15** does not mention that rotation and flip are stored but never applied. Section 3 removes them.
-- **#18** also covers the export of images that were transparent: they now export opaque, white where transparent. That is the intended meaning of "no burn", but a user who wants to keep transparency for another program loses it.
-- **Missing: source DPI and EXIF orientation.** #17 mentions the hard-coded 300 DPI; reading `pHYs` and JFIF/EXIF density is part of #17 here. Orientation is handled by decoding with `imageOrientation: 'from-image'`.
-- **Missing: memory on large images.** A full-resolution run of a 6000x4000 image needs the source, the prepared copy and working buffers in WASM memory: roughly 400 MB at peak. That is fine on a desktop and may fail on a phone. A failure will be reported with the image size, not replaced by a smaller export. I will open an issue to measure it and decide on a limit.
-- **Missing: saved recipes and material presets** store sharpen radius and block size in pixels. Recipes get a version 2 with millimetres; version 1 recipes and the built-in presets are converted assuming 300 DPI, and the conversion is tested.
-- **Missing: the dither panel's "alpha handling" select** is in #18 and is removed there, since flattening onto white is the only behaviour.
-
-## 9. Decisions to confirm
-
-1. **Remove multi-layer compositing**, with text layers and multi-image import, as listed in section 3.
-2. **Keep the edit steps in a fixed pipeline order** rather than as a list the user can reorder. The order is a property of the pipeline (crop, flatten, resample, tone, detail, dither), and a reorderable list adds UI no workflow asks for. Recipes still save the steps as an ordered list.
-3. **Delete the main-thread tonal path** (`src/lib/fast-tonal.ts`), which the plan lists as kept, so that the Rust core is the only tonal implementation.
-4. **Remove JPEG and WebP** from raster export; keep PNG and BMP, both with DPI.
-5. **Assume 300 DPI** when a file has no DPI, and label the size as assumed.
+- **#16 says `imageWorker.ts` has 1,300 lines.** Phase 0 already brought it to 238 lines of orchestration.
+- **#16 lists dither scale as a length to store in mm.** It stays in dots, and the comparison across resolutions uses block density.
+- **#16 asks for a stated tolerance without giving one.** Section 7 proposes numbers.
+- **#16 does not mention the sharpening clamp** at 5 px or its 24 bytes per pixel of scratch memory. Both are reworked as part of #16.
+- **#17 does not mention that the PNG encoder is uncompressed.**
+- **#17 suggests reading the file's DPI for the size.** The file's DPI is now only a suggestion, and the user sets the size explicitly.
+- **#15 does not mention the rotation and flip fields,** which are stored but never applied. They are removed, and a 90-degree rotate gets its own issue.
+- **#18: images with transparency export opaque,** with white where they were transparent. That is the intended meaning of "no burn", but transparency is not kept for use in other programs.
+- **Saved recipes need no migration.** Nothing can import one today, so there are no version 1 files to load. The format version is bumped and the built-in presets are converted to millimetres.
