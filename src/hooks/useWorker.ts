@@ -9,6 +9,15 @@ import { renderReliefPreview } from '../lib/depth-shader';
 import type { ProcessPreviewPayload } from '../types/worker-messages';
 
 /**
+ * Logs a failed worker request and shows it to the user in the error banner.
+ */
+function reportWorkerError(context: string, err: unknown): void {
+  console.error(`${context}:`, err);
+  const detail = err instanceof Error ? err.message : String(err);
+  useImageStore.getState().setErrorMessage(`${context}. ${detail}`);
+}
+
+/**
  * Production-grade asynchronous worker coordinator.
  * Implements:
  * 1. Immediate 0ms dispatch when worker is idle.
@@ -81,7 +90,7 @@ export function useWorkerPipeline() {
           setProcessedPreview(result.buffer, result.durationMs);
         }
       } catch (err) {
-        console.error('Worker processing error:', err);
+        reportWorkerError('Image processing failed', err);
       } finally {
         clearTimeout(spinnerTimer);
         isWorkerBusyRef.current = false;
@@ -194,7 +203,7 @@ export function useWorkerPipeline() {
           setVectorResult(vResult);
         }
       } catch (err) {
-        console.error('Vector computation error:', err);
+        reportWorkerError('Tracing failed', err);
       } finally {
         isVectorBusyRef.current = false;
         if (latestVectorPayloadRef.current) {
@@ -265,7 +274,7 @@ export function useWorkerPipeline() {
           setProcessedPreview(rgba.buffer as ArrayBuffer, elapsed);
         }
       } catch (err) {
-        console.error('Depth preview error:', err);
+        reportWorkerError('Depth map generation failed', err);
       } finally {
         isDepthBusyRef.current = false;
         setIsProcessing(false);

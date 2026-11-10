@@ -1,9 +1,7 @@
 import { create } from 'zustand';
 
 export type ToolTab =
-  | 'properties'
   | 'layers'
-  | 'cam'
   | 'adjustments'
   | 'dither'
   | 'vector'

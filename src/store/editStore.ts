@@ -15,8 +15,6 @@ import { smoothVectorResult } from '../lib/vector-smoother';
 import { useImageStore } from './imageStore';
 import { useLayerStore } from './layerStore';
 import { useUIStore } from './uiStore';
-import { useSceneStore } from '../core/scene-store';
-import type { SceneNode } from '../core/scene-graph';
 
 export const DEFAULT_TONAL: TonalAdjustments = {
   exposure: 0,
@@ -67,7 +65,6 @@ export const DEFAULT_DITHER: DitherConfig = {
   threshold: 128,
   serpentine: true,
   matrixScale: 1,
-  dotAngle: 45,
   invertedBurn: false,
   alphaHandling: 'white-ignore',
 };
@@ -120,9 +117,6 @@ export interface EditSnapshot {
   vectorResult: VectorResult | null;
   layers?: CanvasLayer[];
   activeLayerId?: string | null;
-  nodes?: Map<string, SceneNode>;
-  rootOrder?: string[];
-  selectedIds?: string[];
 }
 
 interface EditState {
@@ -186,7 +180,6 @@ interface EditState {
 
 const getSnapshot = (state: EditState): EditSnapshot => {
   const layerState = useLayerStore.getState();
-  const sceneState = useSceneStore.getState();
 
   return {
     tonal: { ...state.tonal },
@@ -203,9 +196,6 @@ const getSnapshot = (state: EditState): EditSnapshot => {
       transform: { ...l.transform },
     })),
     activeLayerId: layerState.activeLayerId,
-    nodes: new Map(sceneState.nodes),
-    rootOrder: [...sceneState.rootOrder],
-    selectedIds: [...sceneState.selectedIds],
   };
 };
 
@@ -411,15 +401,6 @@ export const useEditStore = create<EditState>((set, get) => ({
       useLayerStore.getState().updateCompositePreview();
     }
 
-    if (prev.nodes && prev.rootOrder) {
-      useSceneStore.setState({
-        nodes: prev.nodes,
-        rootOrder: prev.rootOrder,
-        selectedIds: prev.selectedIds ?? [],
-        revision: (useSceneStore.getState().revision || 0) + 1,
-      });
-    }
-
     set({
       tonal: prev.tonal,
       color: prev.color,
@@ -449,15 +430,6 @@ export const useEditStore = create<EditState>((set, get) => ({
         activeLayerId: next.activeLayerId ?? useLayerStore.getState().activeLayerId,
       });
       useLayerStore.getState().updateCompositePreview();
-    }
-
-    if (next.nodes && next.rootOrder) {
-      useSceneStore.setState({
-        nodes: next.nodes,
-        rootOrder: next.rootOrder,
-        selectedIds: next.selectedIds ?? [],
-        revision: (useSceneStore.getState().revision || 0) + 1,
-      });
     }
 
     set({

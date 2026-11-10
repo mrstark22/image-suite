@@ -10,9 +10,9 @@ const PRESETS: MaterialPreset[] = [
     id: 'white-oak',
     name: 'White Oak & Hardwood',
     category: 'Hardwood',
-    description: 'High micro-contrast with CLAHE and Blue Noise dithering to pop grain details without scorching.',
+    description: 'High micro-contrast with CLAHE and Floyd-Steinberg dithering to bring out grain detail.',
     recommendedDpi: 300,
-    recommendedDither: 'blue-noise',
+    recommendedDither: 'floyd-steinberg',
     recipe: {
       version: '1.0.0',
       name: 'White Oak Recipe',
@@ -21,7 +21,7 @@ const PRESETS: MaterialPreset[] = [
       steps: [
         { id: '1', type: 'tonal', enabled: true, timestamp: Date.now(), params: { ...DEFAULT_TONAL, brightness: 5, contrast: 15, gamma: 1.1, blackPoint: 10, whitePoint: 250, clarity: 20 } },
         { id: '2', type: 'detail', enabled: true, timestamp: Date.now(), params: { clahe: true, claheClipLimit: 3.0, claheGridSize: 8, unsharpStrength: 25, unsharpRadius: 1.5, adaptiveThreshold: false, adaptiveBlockSize: 15, adaptiveConstant: 2 } },
-        { id: '3', type: 'dither', enabled: true, timestamp: Date.now(), params: { algorithm: 'blue-noise', threshold: 132, serpentine: true, matrixScale: 1, dotAngle: 45, invertedBurn: false } },
+        { id: '3', type: 'dither', enabled: true, timestamp: Date.now(), params: { algorithm: 'floyd-steinberg', threshold: 132, serpentine: true, matrixScale: 1, invertedBurn: false } },
       ],
     },
   },
@@ -29,9 +29,9 @@ const PRESETS: MaterialPreset[] = [
     id: 'dark-walnut',
     name: 'Dark Walnut & Mahogany',
     category: 'Hardwood',
-    description: 'Lifted gamma and Ostromoukhov variable diffusion to keep shadow details visible on dark wood.',
+    description: 'Lifted gamma and Floyd-Steinberg dithering to keep shadow detail visible on dark wood.',
     recommendedDpi: 300,
-    recommendedDither: 'ostromoukhov',
+    recommendedDither: 'floyd-steinberg',
     recipe: {
       version: '1.0.0',
       name: 'Dark Walnut Recipe',
@@ -39,7 +39,7 @@ const PRESETS: MaterialPreset[] = [
       updatedAt: Date.now(),
       steps: [
         { id: '1', type: 'tonal', enabled: true, timestamp: Date.now(), params: { ...DEFAULT_TONAL, brightness: 12, contrast: 10, gamma: 1.3, shadows: 20, whitePoint: 240, midtones: 15 } },
-        { id: '2', type: 'dither', enabled: true, timestamp: Date.now(), params: { algorithm: 'ostromoukhov', threshold: 124, serpentine: true, matrixScale: 1, dotAngle: 45, invertedBurn: false } },
+        { id: '2', type: 'dither', enabled: true, timestamp: Date.now(), params: { algorithm: 'floyd-steinberg', threshold: 124, serpentine: true, matrixScale: 1, invertedBurn: false } },
       ],
     },
   },
@@ -47,9 +47,9 @@ const PRESETS: MaterialPreset[] = [
     id: 'birch-ply',
     name: 'Baltic Birch Plywood',
     category: 'Plywood',
-    description: 'Matched for 0.1mm laser focal spot with Riemersma Hilbert curve dithering to prevent banding.',
+    description: 'Jarvis dithering for smooth tone on light plywood.',
     recommendedDpi: 254,
-    recommendedDither: 'riemersma',
+    recommendedDither: 'jarvis',
     recipe: {
       version: '1.0.0',
       name: 'Baltic Birch Recipe',
@@ -57,7 +57,7 @@ const PRESETS: MaterialPreset[] = [
       updatedAt: Date.now(),
       steps: [
         { id: '1', type: 'tonal', enabled: true, timestamp: Date.now(), params: { ...DEFAULT_TONAL, brightness: 0, contrast: 8, gamma: 1.0, blackPoint: 5, whitePoint: 255 } },
-        { id: '2', type: 'dither', enabled: true, timestamp: Date.now(), params: { algorithm: 'riemersma', threshold: 128, serpentine: true, matrixScale: 1, dotAngle: 45, invertedBurn: false } },
+        { id: '2', type: 'dither', enabled: true, timestamp: Date.now(), params: { algorithm: 'jarvis', threshold: 128, serpentine: true, matrixScale: 1, invertedBurn: false } },
       ],
     },
   },
@@ -75,7 +75,7 @@ const PRESETS: MaterialPreset[] = [
       updatedAt: Date.now(),
       steps: [
         { id: '1', type: 'tonal', enabled: true, timestamp: Date.now(), params: { ...DEFAULT_TONAL, brightness: 10, contrast: 25, gamma: 1.15, blackPoint: 15, whitePoint: 245, invert: true } },
-        { id: '2', type: 'dither', enabled: true, timestamp: Date.now(), params: { algorithm: 'atkinson', threshold: 135, serpentine: true, matrixScale: 1, dotAngle: 45, invertedBurn: true } },
+        { id: '2', type: 'dither', enabled: true, timestamp: Date.now(), params: { algorithm: 'atkinson', threshold: 135, serpentine: true, matrixScale: 1, invertedBurn: true } },
       ],
     },
   },
@@ -83,9 +83,9 @@ const PRESETS: MaterialPreset[] = [
     id: 'anodized-aluminum',
     name: 'Anodized Aluminum (Fiber Laser)',
     category: 'Anodized Metal',
-    description: '508 DPI high-density Blue Noise dither for crisp laser ablation on anodized coatings.',
+    description: 'High-density Floyd-Steinberg dither for crisp marking on anodized coatings.',
     recommendedDpi: 508,
-    recommendedDither: 'blue-noise',
+    recommendedDither: 'floyd-steinberg',
     recipe: {
       version: '1.0.0',
       name: 'Anodized Aluminum Recipe',
@@ -93,7 +93,7 @@ const PRESETS: MaterialPreset[] = [
       updatedAt: Date.now(),
       steps: [
         { id: '1', type: 'tonal', enabled: true, timestamp: Date.now(), params: { ...DEFAULT_TONAL, brightness: 0, contrast: 20, gamma: 1.0, blackPoint: 0, whitePoint: 255, clarity: 25 } },
-        { id: '2', type: 'dither', enabled: true, timestamp: Date.now(), params: { algorithm: 'blue-noise', threshold: 128, serpentine: true, matrixScale: 1, dotAngle: 45, invertedBurn: false } },
+        { id: '2', type: 'dither', enabled: true, timestamp: Date.now(), params: { algorithm: 'floyd-steinberg', threshold: 128, serpentine: true, matrixScale: 1, invertedBurn: false } },
       ],
     },
   },
@@ -101,9 +101,9 @@ const PRESETS: MaterialPreset[] = [
     id: 'leather',
     name: 'Veg-Tanned Leather',
     category: 'Leather',
-    description: '45° Halftone screen pattern that simulates shaded hot-foil burn stamps without burning through.',
+    description: 'Ordered Bayer pattern for an even, stamp-like shade without burning through.',
     recommendedDpi: 254,
-    recommendedDither: 'halftone-dot',
+    recommendedDither: 'bayer-4',
     recipe: {
       version: '1.0.0',
       name: 'Leather Recipe',
@@ -111,7 +111,7 @@ const PRESETS: MaterialPreset[] = [
       updatedAt: Date.now(),
       steps: [
         { id: '1', type: 'tonal', enabled: true, timestamp: Date.now(), params: { ...DEFAULT_TONAL, brightness: -5, contrast: 12, gamma: 0.9, blackPoint: 10, whitePoint: 250, midtones: -5 } },
-        { id: '2', type: 'dither', enabled: true, timestamp: Date.now(), params: { algorithm: 'halftone-dot', threshold: 128, serpentine: true, matrixScale: 1, dotAngle: 45, invertedBurn: false } },
+        { id: '2', type: 'dither', enabled: true, timestamp: Date.now(), params: { algorithm: 'bayer-4', threshold: 128, serpentine: true, matrixScale: 1, invertedBurn: false } },
       ],
     },
   },

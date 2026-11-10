@@ -1,12 +1,11 @@
-//! Advanced Dithering Engine in Native Rust
+//! Dithering Engine in Native Rust
 //! Implements:
 //! 1. Error Diffusion: Floyd-Steinberg (4-tap), Atkinson (6-tap), Jarvis (12-tap) with Serpentine scan
-//! 2. Ostromoukhov Variable-Coefficient Error Diffusion (anti-worming)
-//! 3. Riemersma Dithering (Hilbert space-filling curve with exponential error decay)
-//! 4. Ordered Bayer Matrices (2x2, 4x4, 8x8)
-//! 5. Blue Noise (Void-and-Cluster precomputed threshold matrix)
-//! 6. Knuth Dot Diffusion (Class matrix block distribution)
-//! 7. Halftone Dot Screening (Rotated screen angles 0-90 deg)
+//! 2. Ordered Bayer Matrices (2x2, 4x4, 8x8)
+//!
+//! Each algorithm is checked against an independent reference in
+//! `tests/unit/dither-properties.test.ts`. Add an algorithm only together with
+//! a test that measures its defining property.
 
 pub enum DitherAlgo {
     None,
@@ -16,31 +15,6 @@ pub enum DitherAlgo {
     Bayer2,
     Bayer4,
     Bayer8,
-    BlueNoise,
-    Ostromoukhov,
-    Riemersma,
-    KnuthDot,
-    HalftoneDot,
-}
-
-impl DitherAlgo {
-    #[allow(dead_code)]
-    pub fn from_str(s: &str) -> Self {
-        match s {
-            "floyd-steinberg" => DitherAlgo::FloydSteinberg,
-            "atkinson" => DitherAlgo::Atkinson,
-            "jarvis" => DitherAlgo::Jarvis,
-            "bayer-2" => DitherAlgo::Bayer2,
-            "bayer-4" => DitherAlgo::Bayer4,
-            "bayer-8" => DitherAlgo::Bayer8,
-            "blue-noise" => DitherAlgo::BlueNoise,
-            "ostromoukhov" => DitherAlgo::Ostromoukhov,
-            "riemersma" => DitherAlgo::Riemersma,
-            "knuth-dot" => DitherAlgo::KnuthDot,
-            "halftone-dot" => DitherAlgo::HalftoneDot,
-            _ => DitherAlgo::None,
-        }
-    }
 }
 
 pub struct DitherParams {
@@ -48,7 +22,6 @@ pub struct DitherParams {
     pub threshold: u8,
     pub serpentine: bool,
     pub matrix_scale: usize,
-    pub dot_angle: f32,
     pub inverted_burn: bool,
 }
 
@@ -121,12 +94,6 @@ pub fn apply_dithering(
             ];
             dither_error_diffusion(&mut gray, width, height, QUANT_THRESH, params.serpentine, &kernel);
         }
-        DitherAlgo::Ostromoukhov => {
-            dither_ostromoukhov(&mut gray, width, height, QUANT_THRESH, params.serpentine);
-        }
-        DitherAlgo::Riemersma => {
-            dither_riemersma(&mut gray, width, height, QUANT_THRESH);
-        }
         DitherAlgo::Bayer2 => {
             dither_bayer_2(&mut gray, width, height, params.matrix_scale.max(1));
         }
@@ -135,15 +102,6 @@ pub fn apply_dithering(
         }
         DitherAlgo::Bayer8 => {
             dither_bayer_8(&mut gray, width, height, params.matrix_scale.max(1));
-        }
-        DitherAlgo::BlueNoise => {
-            dither_blue_noise(&mut gray, width, height, params.matrix_scale.max(1));
-        }
-        DitherAlgo::KnuthDot => {
-            dither_knuth_dot(&mut gray, width, height);
-        }
-        DitherAlgo::HalftoneDot => {
-            dither_halftone(&mut gray, width, height, params.dot_angle, params.matrix_scale.max(1));
         }
     }
 
@@ -199,107 +157,6 @@ fn dither_error_diffusion(
                     gray[n_idx] += err * weight;
                 }
             }
-
-            x += step_x;
-        }
-    }
-}
-
-/// Ostromoukhov Variable-Coefficient Error Diffusion
-fn dither_ostromoukhov(
-    gray: &mut [f32],
-    width: usize,
-    height: usize,
-    threshold: f32,
-    serpentine: bool,
-) {
-    let w = width as isize;
-    let h = height as isize;
-
-    for y in 0..h {
-        let is_reverse = serpentine && y % 2 == 1;
-        let (start_x, end_x, step_x) = if is_reverse {
-            (w - 1, -1, -1)
-        } else {
-            (0, w, 1)
-        };
-
-        let mut x = start_x;
-        while x != end_x {
-            let idx = (y * w + x) as usize;
-            let old_val = gray[idx];
-            let new_val = if old_val >= threshold { 255.0 } else { 0.0 };
-            gray[idx] = new_val;
-            let err = old_val - new_val;
-
-            // Dynamic coefficients based on input intensity
-            let norm = (old_val.clamp(0.0, 255.0)) / 255.0;
-            let w_right = 0.5 + 0.3 * (norm * std::f32::consts::PI).sin();
-            let w_bl = 0.15;
-            let w_bottom = (1.0 - (w_right + w_bl)).max(0.0);
-
-            let nx1 = x + if is_reverse { -1 } else { 1 };
-            if nx1 >= 0 && nx1 < w {
-                gray[(y * w + nx1) as usize] += err * w_right;
-            }
-
-            if y + 1 < h {
-                let nx0 = x + if is_reverse { 1 } else { -1 };
-                if nx0 >= 0 && nx0 < w {
-                    gray[((y + 1) * w + nx0) as usize] += err * w_bl;
-                }
-                gray[((y + 1) * w + x) as usize] += err * w_bottom;
-            }
-
-            x += step_x;
-        }
-    }
-}
-
-/// Riemersma Dithering using 16-tap exponential decay memory buffer
-fn dither_riemersma(gray: &mut [f32], width: usize, height: usize, threshold: f32) {
-    const HISTORY_SIZE: usize = 16;
-    let mut history = [0.0f32; HISTORY_SIZE];
-    let mut weights = [0.0f32; HISTORY_SIZE];
-    let mut total_w = 0.0f32;
-    let decay = 0.85f32;
-
-    for i in 0..HISTORY_SIZE {
-        weights[i] = decay.powi(i as i32);
-        total_w += weights[i];
-    }
-    for i in 0..HISTORY_SIZE {
-        weights[i] /= total_w;
-    }
-
-    let mut h_idx = 0usize;
-    let w = width as isize;
-    let h = height as isize;
-
-    // Hilbert-like serpentine traversal
-    for y in 0..h {
-        let is_reverse = y % 2 == 1;
-        let (start_x, end_x, step_x) = if is_reverse {
-            (w - 1, -1, -1)
-        } else {
-            (0, w, 1)
-        };
-
-        let mut x = start_x;
-        while x != end_x {
-            let idx = (y * w + x) as usize;
-            let mut sum_err = 0.0f32;
-            for i in 0..HISTORY_SIZE {
-                let slot = (h_idx + HISTORY_SIZE - i) % HISTORY_SIZE;
-                sum_err += history[slot] * weights[i];
-            }
-
-            let old_val = gray[idx] + sum_err;
-            let new_val = if old_val >= threshold { 255.0 } else { 0.0 };
-            gray[idx] = new_val;
-
-            history[h_idx] = old_val - new_val;
-            h_idx = (h_idx + 1) % HISTORY_SIZE;
 
             x += step_x;
         }
@@ -362,75 +219,6 @@ fn dither_bayer_8(gray: &mut [f32], width: usize, height: usize, scale: usize) {
         for x in 0..width {
             let bx = (x / scale) % 8;
             let thresh = (bayer8[by][bx] + 0.5) * factor;
-            let idx = y * width + x;
-            gray[idx] = if gray[idx] >= thresh { 255.0 } else { 0.0 };
-        }
-    }
-}
-
-/// Blue Noise (Void-and-Cluster 64x64 hash lookup)
-fn dither_blue_noise(gray: &mut [f32], width: usize, height: usize, scale: usize) {
-    const B_SIZE: usize = 64;
-
-    for y in 0..height {
-        let my = (y / scale) % B_SIZE;
-        for x in 0..width {
-            let mx = (x / scale) % B_SIZE;
-            // Deterministic high-frequency void-and-cluster hash
-            let h = (((mx as u64 * 183613753) ^ (my as u64 * 314159265)) % 65536) as f32 / 65536.0;
-            let thresh = h * 255.0;
-            let idx = y * width + x;
-            gray[idx] = if gray[idx] >= thresh { 255.0 } else { 0.0 };
-        }
-    }
-}
-
-/// Knuth's Dot Diffusion
-fn dither_knuth_dot(gray: &mut [f32], width: usize, height: usize) {
-    // 8x8 Knuth Dot class matrix
-    let class_matrix = [
-        [34, 48, 40, 32, 29, 15, 23, 31],
-        [42, 58, 56, 50, 21, 5, 7, 13],
-        [46, 62, 64, 52, 17, 1, 3, 11],
-        [36, 54, 60, 44, 27, 9, 19, 25],
-        [28, 14, 22, 30, 35, 49, 41, 33],
-        [20, 4, 6, 12, 43, 59, 57, 51],
-        [16, 0, 2, 10, 47, 63, 65, 53],
-        [26, 8, 18, 24, 37, 55, 61, 45],
-    ];
-    let factor = 255.0 / 66.0;
-
-    for y in 0..height {
-        let cy = y % 8;
-        for x in 0..width {
-            let cx = x % 8;
-            let thresh = class_matrix[cy][cx] as f32 * factor;
-            let idx = y * width + x;
-            gray[idx] = if gray[idx] >= thresh { 255.0 } else { 0.0 };
-        }
-    }
-}
-
-/// Halftone Dot Screen with Screen Angle Rotation
-fn dither_halftone(gray: &mut [f32], width: usize, height: usize, angle_deg: f32, dot_scale: usize) {
-    let rad = angle_deg.to_radians();
-    let cos_a = rad.cos();
-    let sin_a = rad.sin();
-    let period = (6.0 * dot_scale as f32).max(2.0);
-    let half_p = period / 2.0;
-
-    for y in 0..height {
-        let y_f = y as f32;
-        for x in 0..width {
-            let x_f = x as f32;
-            let rx = x_f * cos_a - y_f * sin_a;
-            let ry = x_f * sin_a + y_f * cos_a;
-
-            let cx = ((rx.rem_euclid(period)) - half_p).abs() / half_p;
-            let cy = ((ry.rem_euclid(period)) - half_p).abs() / half_p;
-            let dist = (cx * cx + cy * cy).sqrt();
-            let thresh = (dist * 255.0 * 0.9).min(255.0);
-
             let idx = y * width + x;
             gray[idx] = if gray[idx] >= thresh { 255.0 } else { 0.0 };
         }

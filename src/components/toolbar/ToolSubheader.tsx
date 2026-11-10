@@ -15,15 +15,11 @@ import {
   Crop,
   Type,
   Minus,
-  PenTool,
-  Square,
-  MousePointer,
 } from 'lucide-react';
 import { useImageStore } from '../../store/imageStore';
 import { useLayerStore } from '../../store/layerStore';
 import { useEditStore } from '../../store/editStore';
 import { useUIStore } from '../../store/uiStore';
-import { useSceneStore } from '../../core/scene-store';
 import type { VectorMode } from '../../types/vector';
 import styles from './ToolSubheader.module.css';
 
@@ -32,9 +28,6 @@ export const ToolSubheader: React.FC = () => {
 
   const canvasTool = useImageStore((s) => s.canvasTool);
   const setCanvasTool = useImageStore((s) => s.setCanvasTool);
-
-  const activeTool = useSceneStore((s) => s.activeTool);
-  const setActiveTool = useSceneStore((s) => s.setActiveTool);
 
   const layers = useLayerStore((s) => s.layers);
   const activeLayerId = useLayerStore((s) => s.activeLayerId);
@@ -84,47 +77,12 @@ export const ToolSubheader: React.FC = () => {
       <div className={styles.leftGroup}>
         <div className={styles.toolGroup}>
           <button
-            className={`${styles.toolBtn} ${activeTool === 'move' ? styles.toolBtnActive : ''}`}
-            onClick={() => {
-              setActiveTool('move');
-              setCanvasTool('move');
-            }}
-            title="Move & Transform Tool (V) - Select, move, and scale objects"
+            className={`${styles.toolBtn} ${canvasTool === 'move' ? styles.toolBtnActive : ''}`}
+            onClick={() => setCanvasTool('move')}
+            title="Move Tool (V) - Drag to move the active layer, drag a corner to scale it"
           >
             <Move size={12} />
-            <span>Select (V)</span>
-          </button>
-          <button
-            className={`${styles.toolBtn} ${activeTool === 'node' ? styles.toolBtnActive : ''}`}
-            onClick={() => setActiveTool('node')}
-            title="Direct Node Edit Tool (A) - Edit anchor points & Bezier nodes"
-          >
-            <MousePointer size={12} />
-            <span>Node (A)</span>
-          </button>
-          <button
-            className={`${styles.toolBtn} ${activeTool === 'pen' ? styles.toolBtnActive : ''}`}
-            onClick={() => setActiveTool('pen')}
-            title="Bezier Pen Tool (P) - Draw precision vector paths"
-          >
-            <PenTool size={12} />
-            <span>Pen (P)</span>
-          </button>
-          <button
-            className={`${styles.toolBtn} ${activeTool === 'text' ? styles.toolBtnActive : ''}`}
-            onClick={() => setActiveTool('text')}
-            title="Direct Canvas Text Tool (T) - Click canvas to type typography"
-          >
-            <Type size={12} />
-            <span>Text (T)</span>
-          </button>
-          <button
-            className={`${styles.toolBtn} ${activeTool === 'shape' ? styles.toolBtnActive : ''}`}
-            onClick={() => setActiveTool('shape')}
-            title="Parametric Shape Tool (U) - Draw rectangles, circles, stars"
-          >
-            <Square size={12} />
-            <span>Shape (U)</span>
+            <span>Move (V)</span>
           </button>
           <button
             className={`${styles.toolBtn} ${canvasTool === 'pan' ? styles.toolBtnActive : ''}`}

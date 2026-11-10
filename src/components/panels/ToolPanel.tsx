@@ -9,11 +9,9 @@ import {
   Download,
   Sun,
   Moon,
-  Settings2,
 } from 'lucide-react';
 import { useUIStore, type ToolTab } from '../../store/uiStore';
 import { useLayerStore } from '../../store/layerStore';
-import { useSceneStore } from '../../core/scene-store';
 import styles from './ToolPanel.module.css';
 
 interface ToolItem {
@@ -29,13 +27,9 @@ export const ToolPanel: React.FC = () => {
   const theme = useUIStore((s) => s.theme);
   const toggleTheme = useUIStore((s) => s.toggleTheme);
   const layerCount = useLayerStore((s) => s.layers.length);
-  const selectedCount = useSceneStore((s) => s.selectedIds.length);
 
   const tools: ToolItem[] = [
-    { id: 'properties', label: 'Inspector', icon: <Settings2 size={18} />, badge: selectedCount > 0 ? selectedCount : undefined },
     { id: 'layers', label: 'Layers', icon: <Layers size={18} />, badge: layerCount > 1 ? layerCount : undefined },
-    // CAM is hidden for now until further development:
-    // { id: 'cam', label: 'CAM/Laser', icon: <Cpu size={18} /> },
     { id: 'adjustments', label: 'Tonal', icon: <SlidersHorizontal size={18} /> },
     { id: 'dither', label: 'Dither', icon: <Grid size={18} /> },
     { id: 'vector', label: 'Vector', icon: <PenTool size={18} /> },

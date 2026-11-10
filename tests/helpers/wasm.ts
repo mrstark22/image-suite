@@ -46,7 +46,6 @@ export interface PipelineOptions {
   ditherThreshold?: number;
   serpentine?: boolean;
   ditherScale?: number;
-  dotAngle?: number;
   invertedBurn?: boolean;
 }
 
@@ -189,7 +188,6 @@ export function runPipeline(
       o.ditherThreshold ?? 128,
       o.serpentine ? 1 : 0,
       o.ditherScale ?? 1,
-      o.dotAngle ?? 45,
       o.invertedBurn ? 1 : 0
     );
     // Re-read the view: memory may have grown and detached the old buffer.
