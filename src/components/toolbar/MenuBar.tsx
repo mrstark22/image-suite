@@ -2,15 +2,11 @@ import React, { useState, useRef, useEffect } from 'react';
 import {
   Sparkles,
   FolderOpen,
-  Plus,
-  FilePlus,
   Download,
   BookOpen,
   Trash2,
   Undo2,
   Redo2,
-  Copy,
-  Minimize2,
   Layers,
   Columns,
   Flame,
@@ -21,20 +17,19 @@ import {
   Grid,
   Keyboard,
   HelpCircle,
-  Type,
 } from 'lucide-react';
 import { useImageStore } from '../../store/imageStore';
 import { useEditStore } from '../../store/editStore';
-import { useLayerStore } from '../../store/layerStore';
+import { openImageFiles, confirmReplaceInBrowser } from '../../lib/open-image';
 import { useUIStore } from '../../store/uiStore';
 import styles from './MenuBar.module.css';
 
 export const MenuBar: React.FC = () => {
   const [openMenu, setOpenMenu] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const addLayerInputRef = useRef<HTMLInputElement>(null);
 
   const metadata = useImageStore((s) => s.metadata);
+  const previewDims = useImageStore((s) => s.previewDimensions);
   const isProcessing = useImageStore((s) => s.isProcessing);
   const durationMs = useImageStore((s) => s.processingDurationMs);
   const setZoom = useImageStore((s) => s.setZoom);
@@ -46,19 +41,7 @@ export const MenuBar: React.FC = () => {
   const canUndo = useEditStore((s) => s.canUndo);
   const canRedo = useEditStore((s) => s.canRedo);
   const resetAll = useEditStore((s) => s.resetAll);
-
-  const layers = useLayerStore((s) => s.layers);
-  const activeLayerId = useLayerStore((s) => s.activeLayerId);
-  const importImageFiles = useLayerStore((s) => s.importImageFiles);
-  const createEmptyLayer = useLayerStore((s) => s.createEmptyLayer);
-  const duplicateLayer = useLayerStore((s) => s.duplicateLayer);
-  const removeLayer = useLayerStore((s) => s.removeLayer);
-  const mergeLayerDown = useLayerStore((s) => s.mergeLayerDown);
-  const flattenAllLayers = useLayerStore((s) => s.flattenAllLayers);
-  const moveLayerUp = useLayerStore((s) => s.moveLayerUp);
-  const moveLayerDown = useLayerStore((s) => s.moveLayerDown);
-  const cycleActiveLayer = useLayerStore((s) => s.cycleActiveLayer);
-  const clearAllLayers = useLayerStore((s) => s.clearAllLayers);
+  const startNewImage = useEditStore((s) => s.startNewImage);
 
   const isSplitView = useUIStore((s) => s.isSplitView);
   const isInvertedBurn = useUIStore((s) => s.isInvertedBurn);
@@ -73,7 +56,6 @@ export const MenuBar: React.FC = () => {
   const setCanvasSizeDialogOpen = useUIStore((s) => s.setCanvasSizeDialogOpen);
   const setTestGridDialogOpen = useUIStore((s) => s.setTestGridDialogOpen);
   const setShortcutsDialogOpen = useUIStore((s) => s.setShortcutsDialogOpen);
-  const setTextDialogOpen = useUIStore((s) => s.setTextDialogOpen);
 
   const substrateMask = useImageStore((s) => s.substrateMask);
   const setSubstrateMask = useImageStore((s) => s.setSubstrateMask);
@@ -91,15 +73,20 @@ export const MenuBar: React.FC = () => {
 
   const handleOpenFiles = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
-      await importImageFiles(Array.from(e.target.files));
+      const files = Array.from(e.target.files);
       if (fileInputRef.current) fileInputRef.current.value = '';
-      if (addLayerInputRef.current) addLayerInputRef.current.value = '';
+      try {
+        await openImageFiles(files, confirmReplaceInBrowser);
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : 'Failed to load image file';
+        useImageStore.getState().setErrorMessage(message);
+      }
     }
   };
 
   const handleClearWorkspace = () => {
-    clearAllLayers();
     clearImage();
+    startNewImage();
     setOpenMenu(null);
   };
 
@@ -109,15 +96,6 @@ export const MenuBar: React.FC = () => {
         ref={fileInputRef}
         type="file"
         accept="image/*"
-        multiple
-        style={{ display: 'none' }}
-        onChange={handleOpenFiles}
-      />
-      <input
-        ref={addLayerInputRef}
-        type="file"
-        accept="image/*"
-        multiple
         style={{ display: 'none' }}
         onChange={handleOpenFiles}
       />
@@ -151,38 +129,8 @@ export const MenuBar: React.FC = () => {
                     setOpenMenu(null);
                   }}
                 >
-                  <span className={styles.itemLabel}><FolderOpen size={14} /> Open Image(s)...</span>
+                  <span className={styles.itemLabel}><FolderOpen size={14} /> Open Image...</span>
                   <span className={styles.itemShortcut}>Ctrl+O</span>
-                </button>
-                <button
-                  className={styles.dropdownItem}
-                  disabled={!metadata}
-                  onClick={() => {
-                    addLayerInputRef.current?.click();
-                    setOpenMenu(null);
-                  }}
-                >
-                  <span className={styles.itemLabel}><Plus size={14} /> Import Image as Layer...</span>
-                </button>
-                <button
-                  className={styles.dropdownItem}
-                  onClick={() => {
-                    createEmptyLayer();
-                    setActiveTab('layers');
-                    setOpenMenu(null);
-                  }}
-                >
-                  <span className={styles.itemLabel}><FilePlus size={14} /> New Blank Layer</span>
-                </button>
-                <button
-                  className={styles.dropdownItem}
-                  onClick={() => {
-                    setTextDialogOpen(true);
-                    setOpenMenu(null);
-                  }}
-                >
-                  <span className={styles.itemLabel}><Type size={14} /> Add Typography / Monogram...</span>
-                  <span className={styles.itemShortcut}>T</span>
                 </button>
                 <button
                   className={styles.dropdownItem}
@@ -191,7 +139,7 @@ export const MenuBar: React.FC = () => {
                     setOpenMenu(null);
                   }}
                 >
-                  <span className={styles.itemLabel}><Maximize size={14} /> Canvas Size & Resolution...</span>
+                  <span className={styles.itemLabel}><Maximize size={14} /> Physical Size & Resolution...</span>
                 </button>
                 <div className={styles.menuDivider} />
                 <button
@@ -280,150 +228,6 @@ export const MenuBar: React.FC = () => {
                   }}
                 >
                   <span className={styles.itemLabel}>Reset All Parameters</span>
-                </button>
-              </div>
-            )}
-          </div>
-
-          {/* LAYER MENU */}
-          <div className={styles.menuItemWrapper}>
-            <button
-              className={`${styles.menuBtn} ${openMenu === 'layer' ? styles.menuBtnActive : ''}`}
-              onClick={(e) => {
-                e.stopPropagation();
-                setOpenMenu(openMenu === 'layer' ? null : 'layer');
-              }}
-            >
-              Layer
-            </button>
-            {openMenu === 'layer' && (
-              <div className={styles.dropdownMenu}>
-                <button
-                  className={styles.dropdownItem}
-                  onClick={() => {
-                    createEmptyLayer();
-                    setActiveTab('layers');
-                    setOpenMenu(null);
-                  }}
-                >
-                  <span className={styles.itemLabel}><FilePlus size={14} /> New Blank Layer</span>
-                </button>
-                <button
-                  className={styles.dropdownItem}
-                  onClick={() => {
-                    setTextDialogOpen(true);
-                    setOpenMenu(null);
-                  }}
-                >
-                  <span className={styles.itemLabel}><Type size={14} /> Add Typography / Monogram...</span>
-                  <span className={styles.itemShortcut}>T</span>
-                </button>
-                <button
-                  className={styles.dropdownItem}
-                  disabled={!activeLayerId}
-                  onClick={() => {
-                    if (activeLayerId) duplicateLayer(activeLayerId);
-                    setOpenMenu(null);
-                  }}
-                >
-                  <span className={styles.itemLabel}><Copy size={14} /> Duplicate Layer</span>
-                  <span className={styles.itemShortcut}>Ctrl+D</span>
-                </button>
-                <button
-                  className={styles.dropdownItem}
-                  disabled={!activeLayerId || layers.length <= 1}
-                  onClick={() => {
-                    if (activeLayerId) removeLayer(activeLayerId);
-                    setOpenMenu(null);
-                  }}
-                >
-                  <span className={styles.itemLabel}><Trash2 size={14} /> Delete Layer</span>
-                  <span className={styles.itemShortcut}>Del</span>
-                </button>
-                <div className={styles.menuDivider} />
-                <button
-                  className={styles.dropdownItem}
-                  disabled={!activeLayerId || layers.length <= 1}
-                  onClick={() => {
-                    if (activeLayerId) mergeLayerDown(activeLayerId);
-                    setOpenMenu(null);
-                  }}
-                >
-                  <span className={styles.itemLabel}><Minimize2 size={14} /> Merge Down</span>
-                  <span className={styles.itemShortcut}>Ctrl+E</span>
-                </button>
-                <button
-                  className={styles.dropdownItem}
-                  disabled={layers.length <= 1}
-                  onClick={() => {
-                    flattenAllLayers();
-                    setOpenMenu(null);
-                  }}
-                >
-                  <span className={styles.itemLabel}><Layers size={14} /> Flatten All Layers</span>
-                  <span className={styles.itemShortcut}>Ctrl+Shift+E</span>
-                </button>
-                <div className={styles.menuDivider} />
-                <button
-                  className={styles.dropdownItem}
-                  disabled={!activeLayerId}
-                  onClick={() => {
-                    if (activeLayerId) moveLayerUp(activeLayerId);
-                    setOpenMenu(null);
-                  }}
-                >
-                  <span className={styles.itemLabel}>Bring Forward</span>
-                  <span className={styles.itemShortcut}>Ctrl+]</span>
-                </button>
-                <button
-                  className={styles.dropdownItem}
-                  disabled={!activeLayerId}
-                  onClick={() => {
-                    if (activeLayerId) moveLayerDown(activeLayerId);
-                    setOpenMenu(null);
-                  }}
-                >
-                  <span className={styles.itemLabel}>Send Backward</span>
-                  <span className={styles.itemShortcut}>Ctrl+[</span>
-                </button>
-              </div>
-            )}
-          </div>
-
-          {/* SELECT MENU */}
-          <div className={styles.menuItemWrapper}>
-            <button
-              className={`${styles.menuBtn} ${openMenu === 'select' ? styles.menuBtnActive : ''}`}
-              onClick={(e) => {
-                e.stopPropagation();
-                setOpenMenu(openMenu === 'select' ? null : 'select');
-              }}
-            >
-              Select
-            </button>
-            {openMenu === 'select' && (
-              <div className={styles.dropdownMenu}>
-                <button
-                  className={styles.dropdownItem}
-                  disabled={layers.length <= 1}
-                  onClick={() => {
-                    cycleActiveLayer('next');
-                    setOpenMenu(null);
-                  }}
-                >
-                  <span className={styles.itemLabel}>Next Layer</span>
-                  <span className={styles.itemShortcut}>]</span>
-                </button>
-                <button
-                  className={styles.dropdownItem}
-                  disabled={layers.length <= 1}
-                  onClick={() => {
-                    cycleActiveLayer('prev');
-                    setOpenMenu(null);
-                  }}
-                >
-                  <span className={styles.itemLabel}>Previous Layer</span>
-                  <span className={styles.itemShortcut}>[</span>
                 </button>
               </div>
             )}
@@ -592,21 +396,18 @@ export const MenuBar: React.FC = () => {
           <div
             className={styles.telemetry}
             onClick={() => setCanvasSizeDialogOpen(true)}
-            title="Click to adjust Canvas Size, Dimensions, and Resolution (DPI)"
+            title="Click to set the physical size and resolution (DPI)"
             style={{ cursor: 'pointer' }}
           >
             <span className={`${styles.pulseDot} ${isProcessing ? styles.processingDot : ''}`} />
             <span style={{ textDecoration: 'underline dotted', textUnderlineOffset: 3 }}>
-              {metadata.width}×{metadata.height}px
+              {previewDims
+                ? `${Math.round(previewDims.width / previewDims.scale)}×${Math.round(previewDims.height / previewDims.scale)}`
+                : `${metadata.width}×${metadata.height}`}
+              px
             </span>
             <span style={{ color: 'var(--text-muted)' }}>•</span>
             <span>{metadata.dpi} DPI</span>
-            {layers.length > 1 && (
-              <>
-                <span style={{ color: 'var(--text-muted)' }}>•</span>
-                <span style={{ color: 'var(--accent-primary)', fontWeight: 600 }}>{layers.length} Layers</span>
-              </>
-            )}
             <span style={{ color: 'var(--text-muted)' }}>•</span>
             <span style={{ color: 'var(--accent-primary)', fontFamily: 'var(--font-mono)' }}>
               {isProcessing ? '...' : `${durationMs.toFixed(1)}ms`}

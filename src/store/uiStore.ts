@@ -1,7 +1,6 @@
 import { create } from 'zustand';
 
 export type ToolTab =
-  | 'layers'
   | 'adjustments'
   | 'dither'
   | 'vector'
@@ -24,7 +23,6 @@ interface UIState {
   isCanvasSizeDialogOpen: boolean;
   isTestGridDialogOpen: boolean;
   isShortcutsDialogOpen: boolean;
-  isTextDialogOpen: boolean;
 
   // Actions
   setActiveTab: (tab: ToolTab) => void;
@@ -41,7 +39,6 @@ interface UIState {
   setCanvasSizeDialogOpen: (open: boolean) => void;
   setTestGridDialogOpen: (open: boolean) => void;
   setShortcutsDialogOpen: (open: boolean) => void;
-  setTextDialogOpen: (open: boolean) => void;
 }
 
 export const useUIStore = create<UIState>((set) => ({
@@ -58,7 +55,6 @@ export const useUIStore = create<UIState>((set) => ({
   isCanvasSizeDialogOpen: false,
   isTestGridDialogOpen: false,
   isShortcutsDialogOpen: false,
-  isTextDialogOpen: false,
 
   setActiveTab: (activeTab) => set({ activeTab }),
   toggleSplitView: () => set((state) => ({ isSplitView: !state.isSplitView })),
@@ -82,5 +78,4 @@ export const useUIStore = create<UIState>((set) => ({
   setCanvasSizeDialogOpen: (isCanvasSizeDialogOpen) => set({ isCanvasSizeDialogOpen }),
   setTestGridDialogOpen: (isTestGridDialogOpen) => set({ isTestGridDialogOpen }),
   setShortcutsDialogOpen: (isShortcutsDialogOpen) => set({ isShortcutsDialogOpen }),
-  setTextDialogOpen: (isTextDialogOpen) => set({ isTextDialogOpen }),
 }));

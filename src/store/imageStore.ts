@@ -1,7 +1,8 @@
 import { create } from 'zustand';
-import type { ImageMetadata, PreviewDimensions } from '../types/image';
+import type { ImageMetadata, PreviewDimensions, CropRect } from '../types/image';
+import { cropRgba } from '../lib/crop';
 
-export type CanvasTool = 'move' | 'pan' | 'crop';
+export type CanvasTool = 'pan' | 'crop';
 
 export type SubstrateMask = 'none' | 'circle' | 'rounded-rect' | 'oval' | 'hexagon';
 
@@ -12,7 +13,11 @@ interface ImageState {
   originalBitmap: ImageBitmap | null;
   metadata: ImageMetadata | null;
 
-  // Dual-Resolution Preview Bitmap & Buffer
+  // Preview of the whole image, before cropping
+  sourcePreviewBuffer: ArrayBuffer | null;
+  sourcePreviewDimensions: PreviewDimensions | null;
+
+  // Preview after cropping: what every panel works on
   previewBuffer: ArrayBuffer | null;
   previewProcessedBuffer: ArrayBuffer | null;
   depthHeightMapBuffer: ArrayBuffer | null;
@@ -44,6 +49,8 @@ interface ImageState {
     previewDims: PreviewDimensions,
     preserveViewport?: boolean
   ) => void;
+  /** Derives the cropped preview from the whole-image preview. `null` shows the whole image. */
+  applyCrop: (rect: CropRect | null) => void;
   setProcessedPreview: (buffer: ArrayBuffer, durationMs: number) => void;
   setDepthHeightMapBuffer: (buffer: ArrayBuffer) => void;
   setCanvasTool: (tool: CanvasTool) => void;
@@ -55,7 +62,7 @@ interface ImageState {
   setErrorMessage: (msg: string | null) => void;
   resetViewport: () => void;
   fitToViewport: (containerW: number, containerH: number) => void;
-  setCanvasSize: (width: number, height: number, dpi?: number) => void;
+  setDpi: (dpi: number) => void;
   clearImage: () => void;
 }
 
@@ -65,13 +72,15 @@ export const useImageStore = create<ImageState>((set, get) => ({
   originalBitmap: null,
   metadata: null,
 
+  sourcePreviewBuffer: null,
+  sourcePreviewDimensions: null,
   previewBuffer: null,
   previewProcessedBuffer: null,
   depthHeightMapBuffer: null,
   previewDimensions: null,
   previewVersion: 0,
 
-  canvasTool: 'move',
+  canvasTool: 'pan',
   substrateMask: 'none',
   substrateCornerRadius: 5,
   zoom: 1.0,
@@ -93,6 +102,8 @@ export const useImageStore = create<ImageState>((set, get) => ({
         originalBuffer: buffer,
         originalBitmap: bitmap,
         metadata,
+        sourcePreviewBuffer: previewBuffer,
+        sourcePreviewDimensions: previewDims,
         previewBuffer,
         previewProcessedBuffer: previewBuffer.slice(0),
         previewDimensions: previewDims,
@@ -101,6 +112,22 @@ export const useImageStore = create<ImageState>((set, get) => ({
         pan: shouldPreserve ? state.pan : { x: 0, y: 0 },
         isLoading: false,
         errorMessage: null,
+      };
+    }),
+
+  applyCrop: (rect) =>
+    set((state) => {
+      const source = state.sourcePreviewBuffer;
+      const sourceDims = state.sourcePreviewDimensions;
+      if (!source || !sourceDims) return {};
+      const cropped = rect
+        ? cropRgba(source, sourceDims.width, sourceDims.height, rect)
+        : { buffer: source, width: sourceDims.width, height: sourceDims.height };
+      return {
+        previewBuffer: cropped.buffer,
+        previewProcessedBuffer: cropped.buffer.slice(0),
+        previewDimensions: { width: cropped.width, height: cropped.height, scale: sourceDims.scale },
+        previewVersion: state.previewVersion + 1,
       };
     }),
 
@@ -148,35 +175,8 @@ export const useImageStore = create<ImageState>((set, get) => ({
     set({ zoom: Math.max(0.05, fitScale), pan: { x: 0, y: 0 } });
   },
 
-  setCanvasSize: (width: number, height: number, dpi?: number) =>
-    set((state) => {
-      const currentDims = state.previewDimensions || { width, height, scale: 1 };
-      const currentMeta = state.metadata || {
-        name: 'Canvas',
-        width,
-        height,
-        dpi: dpi || 300,
-        aspectRatio: width / height,
-        originalSizeBytes: width * height * 4,
-        format: 'image/png',
-        hasAlpha: true,
-      };
-
-      return {
-        previewDimensions: {
-          ...currentDims,
-          width,
-          height,
-        },
-        metadata: {
-          ...currentMeta,
-          width,
-          height,
-          dpi: dpi ?? currentMeta.dpi,
-          aspectRatio: width / height,
-        },
-      };
-    }),
+  setDpi: (dpi) =>
+    set((state) => (state.metadata ? { metadata: { ...state.metadata, dpi } } : {})),
 
   clearImage: () =>
     set({
@@ -184,6 +184,8 @@ export const useImageStore = create<ImageState>((set, get) => ({
       originalBuffer: null,
       originalBitmap: null,
       metadata: null,
+      sourcePreviewBuffer: null,
+      sourcePreviewDimensions: null,
       previewBuffer: null,
       previewProcessedBuffer: null,
       depthHeightMapBuffer: null,

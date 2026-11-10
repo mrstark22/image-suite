@@ -57,26 +57,7 @@
   color: #000;
 }
 
-.divider {
-  width: 1px;
-  height: 18px;
-  background: var(--border-subtle);
-}
-
-.layerSelectorWrapper {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.label {
-  color: var(--text-tertiary);
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-
-.layerSelect {
+.modeSelect {
   background: var(--bg-surface);
   color: var(--text-primary);
   border: 1px solid var(--border-subtle);
@@ -88,7 +69,7 @@
   max-width: 180px;
 }
 
-.layerSelect:focus {
+.modeSelect:focus {
   border-color: var(--accent-primary);
 }
 

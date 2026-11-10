@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Check, X } from 'lucide-react';
 import { useImageStore } from '../../store/imageStore';
-import { useLayerStore } from '../../store/layerStore';
+import { useEditStore } from '../../store/editStore';
 import styles from './CanvasCropOverlay.module.css';
 
 type AspectRatio = 'free' | '1:1' | '4:3' | '16:9' | '3:2';
@@ -12,7 +12,15 @@ export const CanvasCropOverlay: React.FC = () => {
   const dims = useImageStore((s) => s.previewDimensions);
   const metadata = useImageStore((s) => s.metadata);
   const zoom = useImageStore((s) => s.zoom);
-  const applyCanvasCrop = useLayerStore((s) => s.applyCanvasCrop);
+  const cropTo = useEditStore((s) => s.cropTo);
+
+  const applyCanvasCrop = useCallback(
+    (box: { x: number; y: number; width: number; height: number }) => {
+      cropTo(box);
+      setCanvasTool('pan');
+    },
+    [cropTo, setCanvasTool]
+  );
 
   const [ratio, setRatio] = useState<AspectRatio>('free');
   const [cropBox, setCropBox] = useState<{ x: number; y: number; width: number; height: number }>({
@@ -52,7 +60,7 @@ export const CanvasCropOverlay: React.FC = () => {
         applyCanvasCrop(cropBox);
       } else if (e.key === 'Escape') {
         e.preventDefault();
-        setCanvasTool('move');
+        setCanvasTool('pan');
       }
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -197,7 +205,7 @@ export const CanvasCropOverlay: React.FC = () => {
             {cropBox.width}×{cropBox.height}px ({mmW}×{mmH}mm)
           </span>
 
-          <button className={styles.btnCancel} onClick={() => setCanvasTool('move')} title="Cancel Crop (Esc)">
+          <button className={styles.btnCancel} onClick={() => setCanvasTool('pan')} title="Cancel Crop (Esc)">
             <X size={12} style={{ verticalAlign: 'middle' }} /> Cancel
           </button>
           <button className={styles.btnApply} onClick={() => applyCanvasCrop(cropBox)} title="Apply Crop (Enter)">

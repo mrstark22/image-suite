@@ -68,7 +68,7 @@ These come from the problems that motivated the project. Each becomes an automat
 - The current flood-fill background removal, and the silent luminance heuristic that stands in for AI depth when the model fails.
 - Scene graph, drawing tools (pen, node, shape, text), grouping, booleans, project file.
 - CAM, toolpaths, G-code. The `.lbrn2` exporter writes an invented JSON format, not LightBurn's.
-- Multi-layer compositing, unless a workflow turns out to need it. Still present after phase 0: the layer store is the current document model, so it is replaced or removed with the new document in phase 1 (#15).
+- Multi-layer compositing, text layers, multi-image import and placing an image on a larger blank canvas (done in LightBurn instead). Removed in phase 1 (#15), before the new document model.
 - WebGPU dither path and the divergent JavaScript fallbacks.
 - Mislabeled algorithms: "blue noise" (a hash), "Riemersma" (no Hilbert curve), "Knuth dot diffusion" (a threshold screen), "Ostromoukhov" (invented weights), halftone (tone error up to 25 points). They return only as real implementations.
 - Batch processing.

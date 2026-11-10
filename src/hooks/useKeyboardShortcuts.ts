@@ -1,6 +1,5 @@
 import { useEffect } from 'react';
 import { useEditStore } from '../store/editStore';
-import { useLayerStore } from '../store/layerStore';
 import { useImageStore } from '../store/imageStore';
 import { useUIStore } from '../store/uiStore';
 
@@ -9,15 +8,6 @@ export function useKeyboardShortcuts() {
   const redo = useEditStore((s) => s.redo);
   const canUndo = useEditStore((s) => s.canUndo);
   const canRedo = useEditStore((s) => s.canRedo);
-
-  const activeLayerId = useLayerStore((s) => s.activeLayerId);
-  const removeLayer = useLayerStore((s) => s.removeLayer);
-  const duplicateLayer = useLayerStore((s) => s.duplicateLayer);
-  const mergeLayerDown = useLayerStore((s) => s.mergeLayerDown);
-  const flattenAllLayers = useLayerStore((s) => s.flattenAllLayers);
-  const moveLayerUp = useLayerStore((s) => s.moveLayerUp);
-  const moveLayerDown = useLayerStore((s) => s.moveLayerDown);
-  const cycleActiveLayer = useLayerStore((s) => s.cycleActiveLayer);
 
   const setCanvasTool = useImageStore((s) => s.setCanvasTool);
   const setZoom = useImageStore((s) => s.setZoom);
@@ -68,31 +58,6 @@ export function useKeyboardShortcuts() {
       if (isCtrlOrCmd) {
         const key = e.key.toLowerCase();
 
-        // Duplicate: Ctrl+D
-        if (key === 'd') {
-          if (activeLayerId) {
-            e.preventDefault();
-            duplicateLayer(activeLayerId);
-          }
-          return;
-        }
-
-        // Merge Down: Ctrl+E (without shift)
-        if (key === 'e' && !e.shiftKey) {
-          if (activeLayerId) {
-            e.preventDefault();
-            mergeLayerDown(activeLayerId);
-          }
-          return;
-        }
-
-        // Flatten All Layers: Ctrl+Shift+E
-        if (key === 'e' && e.shiftKey) {
-          e.preventDefault();
-          flattenAllLayers();
-          return;
-        }
-
         // Zoom In: Ctrl++ or Ctrl+=
         if (key === '=' || key === '+') {
           e.preventDefault();
@@ -113,32 +78,8 @@ export function useKeyboardShortcuts() {
           resetViewport();
           return;
         }
-
-        // Move Layer in Stack: Ctrl+[ / Ctrl+]
-        if (e.key === ']') {
-          if (activeLayerId) {
-            e.preventDefault();
-            moveLayerUp(activeLayerId);
-          }
-          return;
-        }
-        if (e.key === '[') {
-          if (activeLayerId) {
-            e.preventDefault();
-            moveLayerDown(activeLayerId);
-          }
-          return;
-        }
       } else {
         // Tool mode hotkeys (without Ctrl)
-        if (e.key.toLowerCase() === 'v') {
-          setCanvasTool('move');
-          return;
-        }
-        if (e.key.toLowerCase() === 't') {
-          useUIStore.getState().setTextDialogOpen(true);
-          return;
-        }
         if (e.key.toLowerCase() === 'h') {
           setCanvasTool('pan');
           return;
@@ -152,26 +93,6 @@ export function useKeyboardShortcuts() {
           useUIStore.getState().setShortcutsDialogOpen(true);
           return;
         }
-
-        // Cycle Active Layers: [ and ]
-        if (e.key === ']') {
-          e.preventDefault();
-          cycleActiveLayer('next');
-          return;
-        }
-        if (e.key === '[') {
-          e.preventDefault();
-          cycleActiveLayer('prev');
-          return;
-        }
-
-        // Delete active layer
-        if (e.key === 'Delete' || e.key === 'Backspace') {
-          e.preventDefault();
-          if (activeLayerId) {
-            removeLayer(activeLayerId);
-          }
-        }
       }
     };
 
@@ -182,14 +103,6 @@ export function useKeyboardShortcuts() {
     redo,
     canUndo,
     canRedo,
-    activeLayerId,
-    removeLayer,
-    duplicateLayer,
-    mergeLayerDown,
-    flattenAllLayers,
-    moveLayerUp,
-    moveLayerDown,
-    cycleActiveLayer,
     setCanvasTool,
     setZoom,
     resetViewport,

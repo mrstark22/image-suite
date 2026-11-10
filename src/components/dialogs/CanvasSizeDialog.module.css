@@ -65,32 +65,12 @@
   gap: 16px;
 }
 
-.presetBar {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
 
-.presetChip {
-  background: var(--bg-canvas);
-  border: 1px solid var(--border-subtle);
-  color: var(--text-secondary);
-  font-size: 11px;
-  padding: 4px 8px;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  transition: all var(--transition-fast);
-}
 
-.presetChip:hover {
-  background: var(--bg-surface-hover);
-  color: var(--text-primary);
-  border-color: var(--accent-primary);
-}
 
 .inputGrid {
   display: grid;
-  grid-template-columns: 1fr auto 1fr;
+  grid-template-columns: 1fr 1fr;
   gap: 8px;
   align-items: flex-end;
 }
@@ -137,60 +117,12 @@
   padding-left: 4px;
 }
 
-.lockBtn {
-  background: var(--bg-input);
-  border: 1px solid var(--border-medium);
-  color: var(--text-secondary);
-  padding: 6px 8px;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  height: 32px;
-  transition: all var(--transition-fast);
-}
 
-.lockBtnActive {
-  background: var(--bg-surface-active);
-  color: var(--accent-primary);
-  border-color: var(--accent-primary);
-}
 
-.modeSelect {
-  display: flex;
-  gap: 8px;
-  margin-top: 4px;
-}
 
-.modeOption {
-  flex: 1;
-  background: var(--bg-canvas);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-sm);
-  padding: 8px 12px;
-  cursor: pointer;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  transition: all var(--transition-fast);
-}
 
-.modeOptionActive {
-  background: var(--bg-surface-active);
-  border-color: var(--accent-primary);
-}
 
-.modeTitle {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-primary);
-}
 
-.modeDesc {
-  font-size: 10px;
-  color: var(--text-tertiary);
-}
 
 .footer {
   display: flex;
@@ -232,4 +164,30 @@
 
 .applyBtn:hover {
   opacity: 0.9;
+}
+
+.readout {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-primary);
+}
+
+.unitRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.unitSelect {
+  background: var(--bg-input);
+  color: var(--text-primary);
+  border: 1px solid var(--border-medium);
+  border-radius: var(--radius-sm);
+  padding: 3px 8px;
+  font-size: 11px;
+}
+
+.applyBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }

@@ -1,19 +1,18 @@
 import React, { useRef, useState } from 'react';
 import { Upload, Image, ShieldCheck, Sparkles } from 'lucide-react';
 import { generateTestPattern } from '../../lib/sample-images';
-import { useLayerStore } from '../../store/layerStore';
+import { openImageFiles } from '../../lib/open-image';
 import { useImageStore } from '../../store/imageStore';
 import styles from './DropZone.module.css';
 
 export const DropZone: React.FC = () => {
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const importImageFiles = useLayerStore((s) => s.importImageFiles);
   const setErrorMessage = useImageStore((s) => s.setErrorMessage);
 
   const handleProcessFiles = async (files: File[]) => {
     try {
-      await importImageFiles(files);
+      await openImageFiles(files);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Failed to load image file';
       setErrorMessage(message);
@@ -59,16 +58,15 @@ export const DropZone: React.FC = () => {
         <Upload size={28} />
       </div>
 
-      <h2 className={styles.title}>Drop your image(s) to prepare & vectorize</h2>
+      <h2 className={styles.title}>Drop your image to prepare & vectorize</h2>
       <p className={styles.subtitle}>
-        Supports multiple image layers. 100% Client-side. Zero cloud uploads.
+        One image at a time. 100% Client-side. Zero cloud uploads.
       </p>
 
       <input
         ref={fileInputRef}
         type="file"
         accept="image/png,image/jpeg,image/webp,image/svg+xml,image/bmp,image/tiff"
-        multiple
         className={styles.fileInput}
         onChange={handleFileChange}
       />
