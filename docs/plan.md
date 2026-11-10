@@ -145,6 +145,15 @@ Selecting a machine and material loads the matching calibration. A calibration m
 - **Card 1, power and speed.** A grid where each cell is a short tone ramp. The user picks the cell with solid blacks, no charring and a visible lightest step.
 - **Card 2, tone response (optional).** A fine ramp at the chosen setting. The user marks where steps stop being distinguishable, by eye or from a photo of the card. This becomes the tone curve.
 
+### Reading a card from a photo
+
+Instead of judging the card by eye, the user can photograph or scan it and let the tool measure it (issue #56).
+
+- Cards carry burned corner markers and unburned reference patches, so one picture is enough to locate the card, correct perspective and even out the lighting.
+- The tool measures each patch's darkness relative to the bare material, builds the tone response curve from the measurements, ranks the power and speed cells by usable tone range, and flags cells with discolouration around the patch.
+- The tool proposes; the user confirms or overrides. Choosing by eye stays available.
+- Limits: phone cameras apply their own tone processing, so readings are relative within one photo, and a flatbed scan is the most repeatable. A photo cannot measure depth, so relief calibration still uses measured depths.
+
 ### Relief calibration
 
 - **Depth card.** A stepped ramp of grey levels burned at the chosen speed, power range and passes.
@@ -197,7 +206,7 @@ Work is tracked in GitHub issues. Each phase has a tracking issue with its work 
 | 0. Safety net and cleanup | #1 | #7 to #14 |
 | 1. Core | #2 | #15 to #22 |
 | 2. Vector | #3 | #23 to #32 |
-| 3. Profiles and photo | #4 | #33 to #41 |
+| 3. Profiles and photo | #4 | #33 to #41, #56 |
 | 4. Relief | #5 | #42 to #48 |
 | 5. Background removal | #6 | #49 to #50 |
 | UI redesign (alongside phase 1) | #51 | #52 to #55 |
