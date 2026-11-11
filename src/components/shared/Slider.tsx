@@ -156,14 +156,18 @@ export const DocumentSlider: React.FC<DocumentSliderProps> = ({ update, reset, .
   const startDrag = () => {
     gesture.startDrag();
     // The pointer can be released outside the track, where onPointerUp does
-    // not fire; the store ends the gesture itself, and this ends the drag.
+    // not fire, or outside the window, where no pointerup arrives at all; the
+    // store ends the gesture itself on window blur, and so does this, so a key
+    // press or typed value afterwards is an edit, not a change to a dead gesture.
     const forget = () => {
       window.removeEventListener('pointerup', forget);
       window.removeEventListener('pointercancel', forget);
+      window.removeEventListener('blur', forget);
       gesture.endDrag();
     };
     window.addEventListener('pointerup', forget);
     window.addEventListener('pointercancel', forget);
+    window.addEventListener('blur', forget);
   };
 
   return (

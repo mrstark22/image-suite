@@ -5,7 +5,7 @@ import { useUIStore } from '../store/uiStore';
 import { detailRunParams, pxPerMmAt } from '../lib/document-size';
 import { getComlinkWorker } from '../lib/comlink-setup';
 import { applyFastTonalLUT } from '../lib/fast-tonal';
-import { createWorkerJobs, type WorkerJobs } from '../lib/worker-jobs';
+import { createWorkerJobs, dropJobsForTab, type WorkerJobs } from '../lib/worker-jobs';
 
 /** Created once, outside React, so a job never runs with a render's stale closure. */
 let jobs: WorkerJobs | null = null;
@@ -47,6 +47,11 @@ export function useWorkerPipeline() {
   const activeTab = useUIStore((s) => s.activeTab);
 
   const directDestBufferRef = useRef<ArrayBuffer | null>(null);
+
+  // A job whose output the new tab does not show must not commit it.
+  useEffect(() => {
+    dropJobsForTab(workerJobs(), activeTab);
+  }, [activeTab]);
 
   // 1. Tonal & Dithering Pipeline
   useEffect(() => {

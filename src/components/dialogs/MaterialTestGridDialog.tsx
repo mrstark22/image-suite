@@ -1,11 +1,19 @@
-import React, { useState } from 'react';
+import React, { useEffect, useReducer, useState } from 'react';
 import { Grid, X, Check } from 'lucide-react';
 import { confirmReplaceInBrowser } from '../../lib/open-image';
 import { useDocumentStore, hasUnsavedEdits } from '../../store/documentStore';
 import { previewDpi, useRenderStore } from '../../store/renderStore';
 import { useUIStore } from '../../store/uiStore';
 import { generateTestGridVector } from '../../lib/test-grid-generator';
-import { DEFAULT_TEST_GRID_DPI, openTestGridRaster } from '../../lib/test-grid-document';
+import { openTestGridRaster } from '../../lib/test-grid-document';
+import {
+  INITIAL_GRID_FORM,
+  GRID_FIELD_LIMITS,
+  committedGridValues,
+  fieldText,
+  gridFormReducer,
+  type GridField,
+} from '../../lib/test-grid-form';
 import styles from './MaterialTestGridDialog.module.css';
 
 interface Props {
@@ -15,20 +23,43 @@ interface Props {
 
 export const MaterialTestGridDialog: React.FC<Props> = ({ isOpen, onClose }) => {
   const [type, setType] = useState<'grayscale-step' | 'power-matrix'>('power-matrix');
-  const [rows, setRows] = useState<number>(5);
-  const [cols, setCols] = useState<number>(5);
-  const [boxSizeMm, setBoxSizeMm] = useState<number>(10);
-  const [gapMm, setGapMm] = useState<number>(2);
+  // Typed text is kept until it is committed (blur, Enter or Generate), so
+  // a clamp cannot replace the first digit before the second is typed.
+  const [form, dispatch] = useReducer(gridFormReducer, INITIAL_GRID_FORM);
   const [targetMode, setTargetMode] = useState<'raster' | 'vector'>('raster');
-  // The raster grid's own resolution, independent of the open image.
-  const [gridDpi, setGridDpi] = useState<number>(DEFAULT_TEST_GRID_DPI);
   const [error, setError] = useState<string | null>(null);
 
   const doc = useDocumentStore((s) => s.doc);
   const addVectorLayer = useRenderStore((s) => s.addVectorLayer);
   const toggleVectorOverlay = useUIStore((s) => s.toggleVectorOverlay);
 
+  // A refused grid's message and half-typed text do not survive closing the dialog.
+  useEffect(() => {
+    if (!isOpen) {
+      setError(null);
+      dispatch({ type: 'discardDrafts' });
+    }
+  }, [isOpen]);
+
   if (!isOpen) return null;
+
+  /** Props for one of the dialog's number fields. */
+  const numberField = (field: GridField, step: number) => ({
+    type: 'number',
+    className: styles.input,
+    value: fieldText(form, field),
+    min: GRID_FIELD_LIMITS[field].min,
+    max: GRID_FIELD_LIMITS[field].max,
+    step,
+    onChange: (e: React.ChangeEvent<HTMLInputElement>) => {
+      setError(null);
+      dispatch({ type: 'type', field, text: e.target.value });
+    },
+    onBlur: () => dispatch({ type: 'commit', field }),
+    onKeyDown: (e: React.KeyboardEvent<HTMLInputElement>) => {
+      if (e.key === 'Enter') dispatch({ type: 'commit', field });
+    },
+  });
 
   // The vector grid is drawn over the preview, so it needs the preview's
   // resolution, which needs the size.
@@ -36,6 +67,8 @@ export const MaterialTestGridDialog: React.FC<Props> = ({ isOpen, onClose }) => 
   const canGenerate = targetMode === 'raster' || vectorDpi !== null;
 
   const handleGenerate = async () => {
+    const { rows, cols, boxSizeMm, gapMm, dpi: gridDpi } = committedGridValues(form);
+    for (const field of Object.keys(form.drafts) as GridField[]) dispatch({ type: 'commit', field });
     if (targetMode === 'vector') {
       if (vectorDpi === null) return;
       const vectorLayer = generateTestGridVector({
@@ -84,7 +117,10 @@ export const MaterialTestGridDialog: React.FC<Props> = ({ isOpen, onClose }) => 
             <select
               className={styles.select}
               value={type}
-              onChange={(e) => setType(e.target.value as typeof type)}
+              onChange={(e) => {
+                setError(null);
+                setType(e.target.value as typeof type);
+              }}
             >
               <option value="power-matrix">Power vs. Speed Matrix (Laser / CNC Substrate Calibration)</option>
               <option value="grayscale-step">Grayscale Step Wedge (0% to 100% Black Density)</option>
@@ -94,67 +130,29 @@ export const MaterialTestGridDialog: React.FC<Props> = ({ isOpen, onClose }) => 
           <div className={styles.row}>
             <div className={styles.formGroup}>
               <label className={styles.label}>Rows (Power / Steps)</label>
-              <input
-                type="number"
-                className={styles.input}
-                value={rows}
-                min={1}
-                max={15}
-                onChange={(e) => setRows(Math.max(1, parseInt(e.target.value) || 1))}
-              />
+              <input {...numberField('rows', 1)} />
             </div>
             <div className={styles.formGroup}>
               <label className={styles.label}>Columns (Speed / Steps)</label>
-              <input
-                type="number"
-                className={styles.input}
-                value={cols}
-                min={1}
-                max={15}
-                onChange={(e) => setCols(Math.max(1, parseInt(e.target.value) || 1))}
-              />
+              <input {...numberField('cols', 1)} />
             </div>
           </div>
 
           <div className={styles.row}>
             <div className={styles.formGroup}>
               <label className={styles.label}>Box Size (mm)</label>
-              <input
-                type="number"
-                className={styles.input}
-                value={boxSizeMm}
-                min={2}
-                max={50}
-                step={0.5}
-                onChange={(e) => setBoxSizeMm(Math.max(2, parseFloat(e.target.value) || 2))}
-              />
+              <input {...numberField('boxSizeMm', 0.5)} />
             </div>
             <div className={styles.formGroup}>
               <label className={styles.label}>Spacing Gap (mm)</label>
-              <input
-                type="number"
-                className={styles.input}
-                value={gapMm}
-                min={0}
-                max={20}
-                step={0.5}
-                onChange={(e) => setGapMm(Math.max(0, parseFloat(e.target.value) || 0))}
-              />
+              <input {...numberField('gapMm', 0.5)} />
             </div>
           </div>
 
           {targetMode === 'raster' && (
             <div className={styles.formGroup}>
               <label className={styles.label}>Grid Resolution (DPI)</label>
-              <input
-                type="number"
-                className={styles.input}
-                value={gridDpi}
-                min={50}
-                max={1200}
-                step={1}
-                onChange={(e) => setGridDpi(Math.min(1200, Math.max(50, parseFloat(e.target.value) || DEFAULT_TEST_GRID_DPI)))}
-              />
+              <input {...numberField('dpi', 1)} />
             </div>
           )}
 
@@ -163,7 +161,10 @@ export const MaterialTestGridDialog: React.FC<Props> = ({ isOpen, onClose }) => 
             <select
               className={styles.select}
               value={targetMode}
-              onChange={(e) => setTargetMode(e.target.value as any)}
+              onChange={(e) => {
+                setError(null);
+                setTargetMode(e.target.value as typeof targetMode);
+              }}
             >
               <option value="raster">Open as Image, Replacing the Current One (Grayscale Burn Levels)</option>
               <option value="vector">Vector Cut Grid Overlay (Red #FF0000 Paths)</option>

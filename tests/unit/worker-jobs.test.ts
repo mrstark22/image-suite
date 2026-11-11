@@ -4,10 +4,10 @@
  * with a buffer from the render that started the earlier job.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
-import { LatestJobRunner, createWorkerJobs, type PipelineWorker } from '../../src/lib/worker-jobs';
+import { LatestJobRunner, createWorkerJobs, dropJobsForTab, type PipelineWorker } from '../../src/lib/worker-jobs';
 import { useRenderStore } from '../../src/store/renderStore';
 import { useDocumentStore } from '../../src/store/documentStore';
-import { DEFAULT_COLOR, DEFAULT_DETAIL, DEFAULT_DITHER, DEFAULT_TONAL, setCrop } from '../../src/lib/document';
+import { DEFAULT_COLOR, DEFAULT_DEPTH, DEFAULT_DETAIL, DEFAULT_DITHER, DEFAULT_TONAL, setCrop } from '../../src/lib/document';
 import { detailRunParams } from '../../src/lib/document-size';
 import type { ProcessPreviewPayload, ProcessPreviewResult } from '../../src/types/worker-messages';
 import { decodedImage, resetStores } from '../helpers/documents';
@@ -117,5 +117,52 @@ describe('preview jobs', () => {
     expect(new Uint8Array(second.buffer)).toEqual(new Uint8Array(cropped.buffer));
     // Nothing for the old size was committed.
     expect(useRenderStore.getState().processed?.byteLength).toBe(10 * 8 * 4);
+  });
+});
+
+describe('changing tab (re-review finding D)', () => {
+  beforeEach(() => {
+    resetStores();
+  });
+
+  it('a relief job that finishes after leaving the 3D tab does not write the preview', async () => {
+    useDocumentStore.getState().open(decodedImage(12, 10));
+    const reply = deferred<{ heightMapBuffer: ArrayBuffer }>();
+    const worker = { processDepth: () => reply.promise } as unknown as PipelineWorker;
+    const jobs = createWorkerJobs(() => worker, (next) => next());
+    const source = useRenderStore.getState().source!;
+    const before = useRenderStore.getState().processed;
+
+    jobs.depth.submit({ buffer: source.buffer, width: source.width, height: source.height, config: DEFAULT_DEPTH });
+    dropJobsForTab(jobs, 'adjustments');
+    reply.resolve({ heightMapBuffer: new Uint16Array(12 * 10).fill(30000).buffer });
+    await settle();
+
+    expect(useRenderStore.getState().processed).toBe(before);
+    expect(useRenderStore.getState().depthHeightMap ?? null).toBeNull();
+  });
+
+  it('a preview job that finishes after entering the 3D tab does not write the preview', async () => {
+    useDocumentStore.getState().open(decodedImage(12, 10));
+    const reply = deferred<ProcessPreviewResult>();
+    const worker = { processImage: () => reply.promise } as unknown as PipelineWorker;
+    const jobs = createWorkerJobs(() => worker, (next) => next());
+    const source = useRenderStore.getState().source!;
+    const before = useRenderStore.getState().processed;
+
+    jobs.preview.submit({
+      buffer: source.buffer,
+      width: source.width,
+      height: source.height,
+      tonal: DEFAULT_TONAL,
+      color: DEFAULT_COLOR,
+      detail: detailRunParams(DEFAULT_DETAIL, null),
+      dither: DEFAULT_DITHER,
+    });
+    dropJobsForTab(jobs, 'depth');
+    reply.resolve({ buffer: new ArrayBuffer(12 * 10 * 4), width: 12, height: 10, durationMs: 1 });
+    await settle();
+
+    expect(useRenderStore.getState().processed).toBe(before);
   });
 });

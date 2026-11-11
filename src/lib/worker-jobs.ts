@@ -6,6 +6,7 @@ import type {
   ProcessVectorPayload,
 } from '../types/worker-messages';
 import { useRenderStore } from '../store/renderStore';
+import type { ToolTab } from '../store/uiStore';
 import { renderReliefPreview } from './depth-shader';
 import { fitsDimensions } from './crop';
 
@@ -142,4 +143,15 @@ export function createWorkerJobs(
   }, schedule);
 
   return { preview, vector, depth };
+}
+
+/**
+ * Drops the results of jobs whose output the tab no longer shows. The relief
+ * job and the preview job both write the preview, so a relief job that
+ * finishes after leaving the 3D tab, or a preview job that finishes after
+ * entering it, would otherwise paint over what the new tab shows.
+ */
+export function dropJobsForTab(jobs: WorkerJobs, activeTab: ToolTab): void {
+  if (activeTab === 'depth') jobs.preview.invalidate();
+  else jobs.depth.invalidate();
 }
