@@ -1,10 +1,10 @@
 import { create } from 'zustand';
 import type { ImageDocument } from '../types/document';
 import type { VectorLayer, VectorResult } from '../types/vector';
-import { cropInPreview, cropRgba, type PreviewSource } from '../lib/crop';
-import { cropRectOf, MM_PER_INCH, pxPerMmAt } from '../lib/document-size';
+import type { PreviewSource } from '../lib/crop';
+import { MM_PER_INCH } from '../lib/document-size';
 import { sameValue } from '../lib/document';
-import { sourcePixels } from '../lib/source-registry';
+import type { SourceStage } from '../types/worker-messages';
 import { generateCutlineLayer } from '../lib/cutline-generator';
 import { smoothVectorResult } from '../lib/vector-smoother';
 import { useDocumentStore } from './documentStore';
@@ -16,11 +16,25 @@ import { useDocumentStore } from './documentStore';
  * Trace edits (cutlines, node smoothing, removing or hiding vector layers) act
  * on the trace result here, so they are not undoable until phase 2 (#32).
  */
+/** Background removal's result: replaces the `source`-stage render it was computed from. */
+interface BackgroundRemoval {
+  key: string;
+  pixels: ArrayBuffer;
+  /** The `source`-stage pixels before removal, for Restore. */
+  original: ArrayBuffer;
+}
+
 interface RenderState {
-  /** The cropped, unadjusted preview the worker path processes. */
+  /**
+   * The `source`-stage render (cropped, flattened, resampled, unadjusted) at
+   * the preview target, as the worker last sent it. It changes together with
+   * `processed`, so the two always have the same size.
+   */
   source: PreviewSource | null;
   /** The latest committed preview, the same size as `source`. */
   processed: ArrayBuffer | null;
+  /** Background removal applied to the current `source`, if any. Not part of the document. */
+  backgroundRemoval: BackgroundRemoval | null;
   /** Increases on every commit to `processed`, so the canvas redraws. */
   previewVersion: number;
   depthHeightMap: ArrayBuffer | null;
@@ -35,16 +49,22 @@ interface RenderState {
   processingDurationMs: number;
   errorMessage: string | null;
 
-  setProcessedPreview: (buffer: ArrayBuffer, durationMs: number) => void;
+  /**
+   * Commits a render: its pixels become the preview and, when it carries one,
+   * its `source`-stage render becomes `source`. Returns false, committing
+   * nothing, when the render was made from a `source`-stage render that is
+   * neither the one carried nor the one held (the caller renders again).
+   */
+  commitRender: (render: { key: string; sourceStage: SourceStage | null; pixels: ArrayBuffer; durationMs: number }) => boolean;
   setDepthHeightMap: (buffer: ArrayBuffer | null) => void;
   /**
-   * Replaces the pixels of the preview source (background removal) with
-   * `buffer`, computed from `from`. Does nothing and returns false unless the
-   * current source is still that image and crop at that size. The pixels are
-   * not part of the document: a new crop or image discards them.
+   * Replaces the `source`-stage pixels (background removal) with `buffer`,
+   * computed from `from`. Does nothing and returns false unless the current
+   * source is still that render. The pixels are not part of the document: a
+   * new crop or image discards them.
    */
   replaceSourcePixels: (buffer: ArrayBuffer, from: PreviewSource) => boolean;
-  /** Restores the preview source from the document. */
+  /** Undoes background removal. */
   restoreSource: () => void;
   setVectorResult: (result: VectorResult | null) => void;
   setAutoTrace: (autoTrace: boolean) => void;
@@ -61,26 +81,13 @@ interface RenderState {
   setErrorMessage: (message: string | null) => void;
 }
 
-/** The cropped preview of `doc`, or `null` when its source pixels are not available. */
-export function derivePreviewSource(doc: ImageDocument): PreviewSource | null {
-  const pixels = sourcePixels(doc.source.sourceId);
-  if (!pixels) return null;
-  const crop = cropRectOf(doc);
-  const inPreview = cropInPreview(
-    crop,
-    doc.source.widthPx,
-    doc.source.heightPx,
-    pixels.previewWidth,
-    pixels.previewHeight
-  );
-  const cropped = cropRgba(pixels.preview, pixels.previewWidth, pixels.previewHeight, inPreview);
-  return {
-    sourceId: doc.source.sourceId,
-    crop,
-    buffer: cropped.buffer,
-    width: cropped.width,
-    height: cropped.height,
-  };
+/**
+ * Pixels per millimetre of `source` (a render of `source.crop`) for `doc`, or
+ * `null` while the size is not set. Measured from the render shown, so guides
+ * and rulers match it even while a newer render is on its way.
+ */
+export function pxPerMmOfSource(doc: ImageDocument, source: Pick<PreviewSource, 'width' | 'crop'>): number | null {
+  return doc.mmPerPx === null ? null : source.width / (source.crop.width * doc.mmPerPx);
 }
 
 /** Preview pixels per inch of the open document, or `null` while its size is not set. */
@@ -88,7 +95,7 @@ export function previewDpi(): number | null {
   const doc = useDocumentStore.getState().doc;
   const source = useRenderStore.getState().source;
   if (!doc || !source) return null;
-  const pxPerMm = pxPerMmAt(doc, source.width);
+  const pxPerMm = pxPerMmOfSource(doc, source);
   return pxPerMm === null ? null : pxPerMm * MM_PER_INCH;
 }
 
@@ -102,6 +109,7 @@ function summed(layers: VectorLayer[]): Pick<VectorResult, 'totalPaths' | 'total
 const EMPTY_RESULTS = {
   source: null,
   processed: null,
+  backgroundRemoval: null,
   depthHeightMap: null,
   vectorResult: null,
   autoTrace: true,
@@ -116,42 +124,56 @@ export const useRenderStore = create<RenderState>((set, get) => ({
   traceRequest: 0,
   errorMessage: null,
 
-  setProcessedPreview: (buffer, durationMs) =>
-    set((s) => ({
-      processed: buffer,
-      previewVersion: s.previewVersion + 1,
-      isProcessing: false,
-      processingDurationMs: durationMs,
-    })),
+  commitRender: ({ key, sourceStage, pixels, durationMs }) => {
+    const held = get().source;
+    if (!sourceStage && held?.key !== key) return false;
+    const doc = useDocumentStore.getState().doc;
+    if (!doc) return false;
+    set((s) => {
+      const source = sourceStage
+        ? {
+            key: sourceStage.key,
+            sourceId: doc.source.sourceId,
+            crop: sourceStage.crop,
+            buffer: sourceStage.pixels,
+            width: sourceStage.width,
+            height: sourceStage.height,
+          }
+        : s.source;
+      // Background removal belongs to the render it was computed from.
+      const removal = s.backgroundRemoval?.key === source?.key ? s.backgroundRemoval : null;
+      return {
+        source: removal && source ? { ...source, buffer: removal.pixels } : source,
+        backgroundRemoval: removal,
+        processed: pixels,
+        previewVersion: s.previewVersion + 1,
+        processingDurationMs: durationMs,
+      };
+    });
+    return true;
+  },
 
   setDepthHeightMap: (depthHeightMap) => set({ depthHeightMap }),
 
   replaceSourcePixels: (buffer, from) => {
     const current = get().source;
-    const same =
-      current !== null &&
-      current.sourceId === from.sourceId &&
-      sameValue(current.crop, from.crop) &&
-      current.width === from.width &&
-      current.height === from.height &&
-      buffer.byteLength === current.width * current.height * 4;
+    const same = current !== null && current.key === from.key && buffer.byteLength === current.width * current.height * 4;
     if (!same) return false;
-    set((s) => ({
+    const original = get().backgroundRemoval?.original ?? current.buffer;
+    set({
       source: { ...current, buffer },
-      processed: buffer.slice(0),
-      previewVersion: s.previewVersion + 1,
-    }));
+      backgroundRemoval: { key: current.key, pixels: buffer, original },
+    });
     return true;
   },
 
   restoreSource: () => {
-    const doc = useDocumentStore.getState().doc;
-    const source = doc ? derivePreviewSource(doc) : null;
-    set((s) => ({
-      source,
-      processed: source ? source.buffer.slice(0) : null,
-      previewVersion: s.previewVersion + 1,
-    }));
+    const { source, backgroundRemoval } = get();
+    if (!source || !backgroundRemoval || backgroundRemoval.key !== source.key) {
+      set({ backgroundRemoval: null });
+      return;
+    }
+    set({ source: { ...source, buffer: backgroundRemoval.original }, backgroundRemoval: null });
   },
 
   setVectorResult: (vectorResult) => set({ vectorResult, isVectorStale: false }),
@@ -225,38 +247,20 @@ export const useRenderStore = create<RenderState>((set, get) => ({
 }));
 
 // Keep the derived results in step with the document. A new document starts
-// with no results; a new crop gets a new preview source; changing the tracing
-// settings while auto-trace is off marks the trace stale.
+// with no results (the schedulers render it); a new crop drops the relief;
+// changing the tracing settings while auto-trace is off marks the trace stale.
 useDocumentStore.subscribe((state, prev) => {
   const doc = state.doc;
   const before = prev.doc;
   if (doc === before) return;
 
-  if (!doc) {
+  if (!doc || !before || doc.id !== before.id) {
     useRenderStore.setState((s) => ({ ...EMPTY_RESULTS, errorMessage: null, previewVersion: s.previewVersion + 1 }));
     return;
   }
 
-  if (!before || doc.id !== before.id) {
-    const source = derivePreviewSource(doc);
-    useRenderStore.setState((s) => ({
-      ...EMPTY_RESULTS,
-      errorMessage: null,
-      source,
-      processed: source ? source.buffer.slice(0) : null,
-      previewVersion: s.previewVersion + 1,
-    }));
-    return;
-  }
-
   if (doc.source !== before.source || !sameValue(doc.steps.crop, before.steps.crop)) {
-    const source = derivePreviewSource(doc);
-    useRenderStore.setState((s) => ({
-      source,
-      processed: source ? source.buffer.slice(0) : null,
-      depthHeightMap: null,
-      previewVersion: s.previewVersion + 1,
-    }));
+    useRenderStore.setState({ depthHeightMap: null });
   }
 
   // By value: Reset All and recipes build a new vector object even when nothing in it changes.

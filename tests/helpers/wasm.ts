@@ -102,13 +102,18 @@ export interface Wasm {
 
 let cached: Promise<Wasm> | null = null;
 
-/** Loads and instantiates the committed WASM binary once per test process. */
-export function loadWasm(): Promise<Wasm> {
-  if (!cached) {
-    cached = WebAssembly.instantiate(fs.readFileSync(WASM_PATH), { env: {} }).then((m) => ({
+/**
+ * Loads and instantiates the committed WASM binary, once per test process.
+ * With `fresh`, a new instance with its own memory, for tests that hold
+ * state in the module (the pipeline's source and cache).
+ */
+export function loadWasm(options: { fresh?: boolean } = {}): Promise<Wasm> {
+  const instantiate = () =>
+    WebAssembly.instantiate(fs.readFileSync(WASM_PATH), { env: {} }).then((m) => ({
       exports: m.instance.exports as unknown as WasmExports,
     }));
-  }
+  if (options.fresh) return instantiate();
+  cached ??= instantiate();
   return cached;
 }
 

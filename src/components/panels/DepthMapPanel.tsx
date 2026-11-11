@@ -4,7 +4,7 @@ import { useDocumentStore } from '../../store/documentStore';
 import { previewDpi, useRenderStore } from '../../store/renderStore';
 import { DEFAULT_DEPTH, setDepth } from '../../lib/document';
 import { DocumentSlider } from '../shared/Slider';
-import { getComlinkWorker } from '../../lib/comlink-setup';
+import { getPipeline } from '../../lib/pipeline-client';
 import { encodeBmpGrayscale8, encodeBmpRgb24 } from '../../lib/bmp-encoder';
 import { encodePngGrayscale16 } from '../../lib/png-encoder';
 import { renderReliefPreview } from '../../lib/depth-shader';
@@ -59,7 +59,7 @@ export const DepthMapPanel: React.FC = () => {
     setExportTypeDone(null);
 
     try {
-      const worker = getComlinkWorker();
+      const worker = getPipeline();
       const bufCopy = previewBuffer.slice(0);
       const result = await worker.processDepth({
         buffer: bufCopy,
@@ -97,7 +97,7 @@ export const DepthMapPanel: React.FC = () => {
     setExportTypeDone(null);
 
     try {
-      const worker = getComlinkWorker();
+      const worker = getPipeline();
       const bufCopy = previewBuffer.slice(0);
       const result = await worker.processDepth({
         buffer: bufCopy,
@@ -137,7 +137,7 @@ export const DepthMapPanel: React.FC = () => {
     setExportTypeDone(null);
 
     try {
-      const worker = getComlinkWorker();
+      const worker = getPipeline();
       const bufCopy = previewBuffer.slice(0);
       const result = await worker.processDepth({
         buffer: bufCopy,

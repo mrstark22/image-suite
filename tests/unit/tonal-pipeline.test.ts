@@ -1,13 +1,14 @@
 /**
  * Tests for the tonal stage and the detail filters, run through the real
- * WebAssembly pipeline and compared with the TypeScript fast path.
+ * WebAssembly pipeline and compared with an independent TypeScript reference
+ * (`tests/helpers/tonal-reference.ts`).
  *
  * Tests marked `it.fails` record defects that are known and tracked. They pass
  * while the defect exists. When a defect is fixed the test starts failing:
  * change `it.fails` to `it` in the same commit as the fix.
  */
 import { describe, it, expect, beforeAll } from 'vitest';
-import { buildTonalLUT } from '../../src/lib/fast-tonal';
+import { buildTonalLUT } from '../helpers/tonal-reference';
 import { DEFAULT_TONAL } from '../../src/lib/document';
 import type { TonalAdjustments } from '../../src/types/image';
 import { grayImage, loadWasm, redChannel, runPipeline, type PipelineOptions, type Wasm } from '../helpers/wasm';
@@ -45,14 +46,14 @@ const SLIDERS: Array<{ name: keyof TonalAdjustments & keyof PipelineOptions; val
 ];
 
 describe('tonal lookup table', () => {
-  it('is the identity at default settings, in both implementations', () => {
+  it('is the identity at default settings, in Rust and in the reference', () => {
     const identity = Array.from({ length: 256 }, (_, i) => i);
     expect(Array.from(tsLut({}))).toEqual(identity);
     expect(Array.from(wasmLut({}))).toEqual(identity);
   });
 
   for (const { name, values } of SLIDERS) {
-    it(`${name}: TypeScript and Rust agree within one level`, () => {
+    it(`${name}: the reference and Rust agree within one level`, () => {
       for (const value of values) {
         const ts = tsLut({ [name]: value });
         const rust = wasmLut({ [name]: value });
@@ -72,7 +73,7 @@ describe('tonal lookup table', () => {
     });
   }
 
-  it('combined settings: TypeScript and Rust agree within one level', () => {
+  it('combined settings: the reference and Rust agree within one level', () => {
     const combo = { exposure: 0.5, contrast: 30, shadows: 40, highlights: -30, gamma: 1.4, blackPoint: 12, whitePoint: 240 };
     const ts = tsLut(combo);
     const rust = wasmLut(combo);
@@ -97,6 +98,11 @@ describe('tonal lookup table', () => {
   it('positive contrast steepens the midtones and negative contrast flattens them', () => {
     expect(midtoneSlope(wasmLut({ contrast: 60 }))).toBeGreaterThan(1.1);
     expect(midtoneSlope(wasmLut({ contrast: -60 }))).toBeLessThan(0.9);
+  });
+
+  it('raising the midtones lightens mid-grey', () => {
+    expect(wasmLut({ midtones: 50 })[128]).toBeGreaterThan(128);
+    expect(wasmLut({ midtones: -50 })[128]).toBeLessThan(128);
   });
 
   it('exposure and brightness move mid-grey in the direction of their sign', () => {

@@ -1,8 +1,7 @@
 import { create } from 'zustand';
 import type { DocumentUpdate, GestureToken, ImageDocument } from '../types/document';
 import { createDocument, sameValue } from '../lib/document';
-import { decodeImageFile, type DecodedImage } from '../lib/image-loader';
-import { registerSource, releaseSources } from '../lib/source-registry';
+import { decodeImageFile, type LoadedSource } from '../lib/image-loader';
 
 /** Most undo entries kept. */
 export const HISTORY_LIMIT = 50;
@@ -40,20 +39,29 @@ export interface DocumentState {
   undo(): void;
   /** Redoes the last undone entry; during a gesture, cancels the gesture instead. */
   redo(): void;
-  /** Decodes `file` and opens it as a new document, replacing the current one. */
-  load(file: File, decode?: (file: File) => Promise<DecodedImage>): Promise<void>;
   /**
-   * Opens an already decoded image as a new document. The size starts as not
-   * set unless `mmPerPx` is given (as for a generated test grid).
+   * Has the pipeline decode `file`, then opens it as a new document, replacing
+   * the current one. If another load starts meanwhile, the later one wins.
    */
-  open(image: DecodedImage, mmPerPx?: number | null): void;
-  /** Closes the document and releases its source. */
+  load(file: File, decode?: (file: File, sourceId: string) => Promise<LoadedSource>): Promise<void>;
+  /**
+   * Opens a source the pipeline already holds as a new document. The size
+   * starts as not set unless `mmPerPx` is given (as for a generated test grid).
+   */
+  open(source: LoadedSource, mmPerPx?: number | null): void;
+  /** Closes the document. The schedulers' connection releases the worker's copy of its source. */
   close(): void;
 }
 
 let nextGestureToken = 0;
 let nextDocumentId = 0;
+let nextSourceId = 0;
 let loadSequence = 0;
+
+/** A new id for a source about to be loaded into the pipeline. */
+export function newSourceId(): string {
+  return `source-${++nextSourceId}`;
+}
 
 /** Removes the window listeners of the gesture in progress, if any. */
 let detachGestureListeners: (() => void) | null = null;
@@ -198,9 +206,9 @@ export const useDocumentStore = create<DocumentState>((set, get) => {
       });
     },
 
-    load: async (file, decode = decodeImageFile) => {
+    load: async (file, decode = (f, sourceId) => decodeImageFile(f, sourceId)) => {
       const sequence = ++loadSequence;
-      const image = await decode(file);
+      const image = await decode(file, newSourceId());
       // A later load has started (or finished) since this one began; it wins.
       if (sequence !== loadSequence) return;
       get().open(image);
@@ -209,18 +217,11 @@ export const useDocumentStore = create<DocumentState>((set, get) => {
     open: (image, mmPerPx = null) => {
       loadSequence++;
       const id = `doc-${++nextDocumentId}`;
-      const sourceId = `${id}-source`;
-      registerSource(sourceId, {
-        file: image.file,
-        preview: image.preview,
-        previewWidth: image.previewWidth,
-        previewHeight: image.previewHeight,
-      });
       replace(
         createDocument(
           id,
           {
-            sourceId,
+            sourceId: image.sourceId,
             name: image.name,
             widthPx: image.widthPx,
             heightPx: image.heightPx,
@@ -235,7 +236,6 @@ export const useDocumentStore = create<DocumentState>((set, get) => {
 
     close: () => {
       loadSequence++;
-      releaseSources();
       replace(null);
     },
   };

@@ -2,7 +2,7 @@ import type { ImageDocument } from '../types/document';
 import type { RenderOutput, RenderTarget, Stage } from '../types/render';
 import type { RustWasmEngine } from '../wasm/wasm-bridge';
 import { cropRectOf } from './document-size';
-import { pxPerMmOf } from './render-target';
+import { pxPerMmOf, sourceStageKey } from './render-target';
 import { toRunParams } from './run-params';
 
 /**
@@ -10,12 +10,6 @@ import { toRunParams } from './run-params';
  * refused without trying. Below it, what fails on the device is reported.
  */
 export const MAX_SOURCE_PIXELS = 150_000_000;
-
-/** Identifies a `source`-stage render: the source, the crop and the target size. */
-export function sourceStageKey(doc: ImageDocument, target: RenderTarget): string {
-  const c = cropRectOf(doc);
-  return `${doc.source.sourceId}|${c.x},${c.y},${c.width},${c.height}|${target.widthPx}x${target.heightPx}`;
-}
 
 /** Thrown when an image is larger than this device or the pipeline can hold. */
 export class TooLargeError extends Error {

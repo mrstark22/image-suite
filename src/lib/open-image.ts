@@ -1,7 +1,7 @@
 import { useDocumentStore, hasUnsavedEdits } from '../store/documentStore';
 import { useRenderStore } from '../store/renderStore';
 import { useUIStore } from '../store/uiStore';
-import type { DecodedImage } from './image-loader';
+import type { LoadedSource } from './image-loader';
 
 /** Message shown when more than one file is dropped or chosen at once. */
 export function ignoredFilesMessage(openedName: string, ignoredCount: number): string {
@@ -19,7 +19,7 @@ export function ignoredFilesMessage(openedName: string, ignoredCount: number): s
 export async function openImageFiles(
   files: File[],
   confirmReplace: () => boolean = () => true,
-  decode?: (file: File) => Promise<DecodedImage>
+  decode?: (file: File, sourceId: string) => Promise<LoadedSource>
 ): Promise<void> {
   if (files.length === 0) return;
   if (hasUnsavedEdits() && !confirmReplace()) return;

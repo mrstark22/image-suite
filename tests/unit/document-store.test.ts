@@ -272,7 +272,7 @@ describe('interrupted gestures', () => {
     const token = store().beginGesture();
     store().updateGesture(token, setTonal({ brightness: 30 }));
 
-    await store().load(new File([], 'next.png'), async () => decodedImage(12, 9, 12, 9, null, 'next.png'));
+    await store().load(new File([], 'next.png'), async () => decodedImage(12, 9, null, 'next.png'));
 
     expect(store().gesture).toBeNull();
     expect(currentDoc().source.name).toBe('next.png');
@@ -332,7 +332,7 @@ describe('interrupted gestures', () => {
 describe('loading', () => {
   it('starts the size as not set, with default steps and no history', async () => {
     store().edit(setScale(0.1));
-    await store().load(new File([], 'b.png'), async () => decodedImage(10, 10, 10, 10, 96, 'b.png'));
+    await store().load(new File([], 'b.png'), async () => decodedImage(10, 10, 96, 'b.png'));
     const doc = currentDoc();
     expect(doc.mmPerPx).toBeNull();
     expect(doc.source.fileDpi).toBe(96);
@@ -345,9 +345,9 @@ describe('loading', () => {
     let releaseSlow: () => void = () => {};
     const slow = store().load(
       new File([], 'slow.png'),
-      () => new Promise((resolve) => (releaseSlow = () => resolve(decodedImage(5, 5, 5, 5, null, 'slow.png'))))
+      () => new Promise((resolve) => (releaseSlow = () => resolve(decodedImage(5, 5, null, 'slow.png'))))
     );
-    await store().load(new File([], 'fast.png'), async () => decodedImage(6, 6, 6, 6, null, 'fast.png'));
+    await store().load(new File([], 'fast.png'), async () => decodedImage(6, 6, null, 'fast.png'));
     releaseSlow();
     await slow;
     expect(currentDoc().source.name).toBe('fast.png');

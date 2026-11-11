@@ -269,43 +269,6 @@ export class RustWasmEngine {
     );
   }
 
-  public process(
-    inputBuffer: ArrayBuffer,
-    params: WasmPipelineParams
-  ): { buffer: ArrayBuffer; durationMs: number } {
-    if (!this.exports) {
-      throw new Error('Rust WebAssembly engine is not initialized');
-    }
-
-    const { width, height } = params;
-    const byteLength = width * height * 4;
-    const startTime = performance.now();
-
-    // 1. Allocate Linear Memory in WASM
-    const ptr = this.exports.allocate(byteLength);
-    if (!ptr) {
-      throw new Error('Failed to allocate WebAssembly linear memory');
-    }
-
-    try {
-      // 2. Copy input pixels directly into WASM linear memory
-      const wasmMemoryView = new Uint8Array(this.exports.memory.buffer, ptr, byteLength);
-      wasmMemoryView.set(new Uint8Array(inputBuffer));
-
-      this.processInPlace(ptr, params);
-
-      // 4. Create clean output buffer from processed linear memory
-      const outputCopy = new ArrayBuffer(byteLength);
-      new Uint8Array(outputCopy).set(new Uint8Array(this.exports.memory.buffer, ptr, byteLength));
-
-      const durationMs = performance.now() - startTime;
-      return { buffer: outputCopy, durationMs };
-    } finally {
-      // 5. Always explicitly free pointer to guarantee zero memory leaks
-      this.exports.deallocate(ptr, byteLength);
-    }
-  }
-
   public vectorize(
     inputBuffer: ArrayBuffer,
     width: number,

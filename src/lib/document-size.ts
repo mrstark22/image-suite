@@ -1,5 +1,5 @@
-import type { CropRect, DetailRunParams } from '../types/image';
-import type { DetailSettings, ImageDocument } from '../types/document';
+import type { CropRect } from '../types/image';
+import type { ImageDocument } from '../types/document';
 
 /**
  * Physical size, derived from the document. The scale `mmPerPx` (millimetres
@@ -75,31 +75,4 @@ export function exportResolution(doc: ImageDocument, renderWidthPx: number): { d
     throw new Error('Set the size before exporting: the file needs a physical size to carry.');
   }
   return { dpi: pxPerMm * MM_PER_INCH, pxPerMm };
-}
-
-/** The nearest odd integer to `value`, and at least 3. */
-export function nearestOddAtLeast3(value: number): number {
-  const odd = 2 * Math.round((value - 1) / 2) + 1;
-  return Math.max(3, odd);
-}
-
-/**
- * The detail settings as the worker runs them on an image with `pxPerMm`
- * pixels per millimetre. While the size is not set (`pxPerMm` is null) the two
- * length-based steps, sharpening and the adaptive threshold, are skipped.
- *
- * Stopgap location: in #16 this becomes part of `toRunParams` in the pipeline.
- */
-export function detailRunParams(detail: DetailSettings, pxPerMm: number | null): DetailRunParams {
-  const sized = pxPerMm !== null;
-  return {
-    clahe: detail.clahe,
-    claheClipLimit: detail.claheClipLimit,
-    claheGridSize: detail.claheGridSize,
-    unsharpStrength: sized ? detail.unsharpStrength : 0,
-    unsharpRadiusPx: sized ? detail.unsharpRadiusMm * pxPerMm : 0,
-    adaptiveThreshold: sized && detail.adaptiveThreshold,
-    adaptiveBlockPx: sized ? nearestOddAtLeast3(detail.adaptiveBlockMm * pxPerMm) : 3,
-    adaptiveConstant: detail.adaptiveConstant,
-  };
 }

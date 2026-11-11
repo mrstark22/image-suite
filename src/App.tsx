@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Toolbar } from './components/toolbar/Toolbar';
 import { ToolPanel } from './components/panels/ToolPanel';
 import { PreviewCanvas } from './components/canvas/PreviewCanvas';
@@ -15,7 +15,7 @@ import { MaterialTestGridDialog } from './components/dialogs/MaterialTestGridDia
 import { ShortcutsDialog } from './components/dialogs/ShortcutsDialog';
 import { ErrorBanner } from './components/shared/ErrorBanner';
 import { useUIStore } from './store/uiStore';
-import { useWorkerPipeline } from './hooks/useWorker';
+import { startSchedulers } from './lib/schedulers';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import styles from './App.module.css';
 
@@ -27,7 +27,10 @@ export const App: React.FC = () => {
   const setShortcutsDialogOpen = useUIStore((s) => s.setShortcutsDialogOpen);
 
   // Initialize the Web Worker execution pipeline & global keyboard shortcuts
-  useWorkerPipeline();
+  // The preview, trace and relief schedulers: created once, outside React.
+  useEffect(() => {
+    startSchedulers();
+  }, []);
   useKeyboardShortcuts();
 
   const renderActivePanel = () => {
