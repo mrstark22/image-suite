@@ -52,7 +52,7 @@ These come from the problems that motivated the project. Each becomes an automat
 
 ### Keep (measured as correct in the November audit)
 
-- Tonal LUT maths (`src/lib/fast-tonal.ts`, `src/wasm/src/tonal.rs`), except the clarity term.
+- Tonal LUT maths (`src/wasm/src/tonal.rs`; the TypeScript copy is now a test reference, `tests/helpers/tonal-reference.ts`), except the clarity term.
 - Floyd-Steinberg, Jarvis-Judice-Ninke, Atkinson and Bayer dithers (`src/wasm/src/dither.rs`).
 - Outline tracer on clean shapes: exact coordinates, correct holes (`src/wasm/src/vector.rs`).
 - 16-bit PNG and BMP encoders (`src/lib/png-encoder.ts`, `src/lib/bmp-encoder.ts`).
@@ -235,18 +235,18 @@ Labels: `phase` marks the tracking issues; `area: infra`, `area: core`, `area: v
 
 To fix as each piece is ported. Verified in the audit unless marked.
 
-- Clarity is inverted: positive values flatten midtones (`src/lib/fast-tonal.ts:180`, `src/wasm/src/tonal.rs:93`).
+- Clarity is inverted: positive values flatten midtones (`src/wasm/src/tonal.rs:93`).
 - CLAHE darkens the bottom and right bands when the image is not divisible by the grid (`src/wasm/src/clahe.rs`). Reported, reproduced by the audit.
 - The dither threshold slider is a brightness bias that speckles pure white and black (`src/wasm/src/dither.rs:68`). Reported.
-- Tracing uses the unprocessed preview, ignoring adjustments (`src/hooks/useWorker.ts:180`).
+- Tracing uses the unadjusted render of the crop, ignoring adjustments (the trace scheduler in `src/lib/schedulers.ts`; #23).
 - K-means seeds from evenly spaced pixel positions, which often coincide (`src/wasm/src/vector.rs:843`).
 - "Optimize & Smooth Nodes" throws on WASM trace output (`src/lib/vector-smoother.ts:27`).
 - Tracing stops silently at 4,000 contours (`src/wasm/src/vector.rs:153`). Reported.
 - Checkboxes, preset chips and reset buttons in the adjustments panel are not undoable. Reported.
-- Stale worker results can overwrite the current preview (`src/hooks/useWorker.ts`). Reported.
-- Relief: transparent pixels count as ink, so a logo on a transparent background gives a flat map (`src/wasm/src/depth.rs:40`). Reported. Fixed by flattening transparency in the core.
+- Stale worker results can overwrite the current preview. Reported. Fixed in #19: the schedulers in `src/lib/render-scheduler.ts` commit a result only if nothing it read has changed.
+- Relief: transparent pixels count as ink, so a logo on a transparent background gives a flat map (`src/wasm/src/depth.rs:40`). Reported. Fixed by flattening transparency in the core: since #16 the relief reads the flattened `source` stage; #18 adds its test.
 - Relief: the Export panel's heightmap button sends 16-bit data down the 8-bit path (`src/components/panels/ExportPanel.tsx:316`).
-- Relief: AI depth falls back to a heuristic with no message (`src/lib/ai-depth.ts:127`), and its cache key is weak (`src/workers/imageWorker.ts:28`).
+- Relief: AI depth falls back to a heuristic with no message (`src/lib/ai-depth.ts:127`), and its cache key is weak (`src/workers/pipeline-api.ts`, `computeQuickBufferHash`).
 - Existing tests check output shape, not correctness.
 
 ## Open questions

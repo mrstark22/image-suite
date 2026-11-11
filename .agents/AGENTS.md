@@ -71,7 +71,7 @@ The exported functions take long positional argument lists. Their order is writt
 - `src/wasm/src/` — Rust core (snake_case modules)
 - `src/wasm/pkg/` — compiled core (committed)
 - `src/wasm/wasm-bridge.ts` — loads the core, moves buffers in and out
-- `src/workers/` — Web Worker entry and pool
+- `src/workers/` — the one Web Worker: its entry, its API (`pipeline-api.ts`) and strip decoding
 - `src/store/` — Zustand stores (`*Store.ts`)
 - `src/components/` — React components (PascalCase)
 - `src/hooks/` — React hooks (`use*`)
