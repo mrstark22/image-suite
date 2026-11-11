@@ -1,27 +1,40 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Check, X } from 'lucide-react';
-import { useImageStore } from '../../store/imageStore';
-import { useEditStore } from '../../store/editStore';
-import { filePxPerPreviewPx, pxToLength } from '../../lib/image-size';
+import { useDocumentStore } from '../../store/documentStore';
+import { useRenderStore } from '../../store/renderStore';
+import { useViewStore } from '../../store/viewStore';
+import { previewBoxToSource } from '../../lib/crop';
+import { setCrop } from '../../lib/document';
 import styles from './CanvasCropOverlay.module.css';
 
 type AspectRatio = 'free' | '1:1' | '4:3' | '16:9' | '3:2';
 
+/**
+ * The crop tool. The box is drawn on the preview as shown; applying it sets
+ * `steps.crop` in source pixels as one undo entry. The scale is kept, so the
+ * physical size follows the crop.
+ */
 export const CanvasCropOverlay: React.FC = () => {
-  const canvasTool = useImageStore((s) => s.canvasTool);
-  const setCanvasTool = useImageStore((s) => s.setCanvasTool);
-  const dims = useImageStore((s) => s.previewDimensions);
-  const metadata = useImageStore((s) => s.metadata);
-  const wholePreview = useImageStore((s) => s.sourcePreviewDimensions);
-  const zoom = useImageStore((s) => s.zoom);
-  const cropTo = useEditStore((s) => s.cropTo);
+  const canvasTool = useViewStore((s) => s.canvasTool);
+  const setCanvasTool = useViewStore((s) => s.setCanvasTool);
+  const source = useRenderStore((s) => s.source);
+  const mmPerPx = useDocumentStore((s) => s.doc?.mmPerPx ?? null);
+  const zoom = useViewStore((s) => s.zoom);
+  const dimsWidth = source?.width ?? 0;
+  const dimsHeight = source?.height ?? 0;
+  const dims = useMemo(
+    () => (dimsWidth > 0 ? { width: dimsWidth, height: dimsHeight } : null),
+    [dimsWidth, dimsHeight]
+  );
 
   const applyCanvasCrop = useCallback(
     (box: { x: number; y: number; width: number; height: number }) => {
-      cropTo(box);
+      const current = useRenderStore.getState().source;
+      const rect = current ? previewBoxToSource(current, box) : null;
+      if (rect) useDocumentStore.getState().edit(setCrop(rect));
       setCanvasTool('pan');
     },
-    [cropTo, setCanvasTool]
+    [setCanvasTool]
   );
 
   const [ratio, setRatio] = useState<AspectRatio>('free');
@@ -151,13 +164,12 @@ export const CanvasCropOverlay: React.FC = () => {
 
   if (canvasTool !== 'crop' || !dims) return null;
 
-  // The box is in preview pixels; size it in file pixels, which the DPI refers to.
-  const dpi = metadata?.dpi || 300;
-  const fileScale = metadata && wholePreview ? filePxPerPreviewPx(metadata, wholePreview) : { x: 1, y: 1 };
-  const fileW = Math.round(cropBox.width * fileScale.x);
-  const fileH = Math.round(cropBox.height * fileScale.y);
-  const mmW = pxToLength(fileW, dpi, 'mm').toFixed(1);
-  const mmH = pxToLength(fileH, dpi, 'mm').toFixed(1);
+  // The box is in preview pixels; the crop it makes is in source pixels.
+  const inSource = source ? previewBoxToSource(source, cropBox) : null;
+  const fileW = inSource?.width ?? 0;
+  const fileH = inSource?.height ?? 0;
+  const physical =
+    mmPerPx === null ? 'size not set' : `${(fileW * mmPerPx).toFixed(1)}×${(fileH * mmPerPx).toFixed(1)}mm`;
 
   return (
     <div className={styles.cropContainer} style={{ width: dims.width, height: dims.height }}>
@@ -208,7 +220,7 @@ export const CanvasCropOverlay: React.FC = () => {
           </select>
 
           <span className={styles.cropDimLabel}>
-            {fileW}×{fileH}px ({mmW}×{mmH}mm)
+            {fileW}×{fileH}px ({physical})
           </span>
 
           <button className={styles.btnCancel} onClick={() => setCanvasTool('pan')} title="Cancel Crop (Esc)">

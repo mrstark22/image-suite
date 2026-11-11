@@ -10,7 +10,7 @@ import { DepthMapPanel } from './components/panels/DepthMapPanel';
 import { AIPanel } from './components/panels/AIPanel';
 import { ExportPanel } from './components/panels/ExportPanel';
 import { MaterialPresetDialog } from './components/dialogs/MaterialPresetDialog';
-import { CanvasSizeDialog } from './components/dialogs/CanvasSizeDialog';
+import { SizeDialog } from './components/dialogs/SizeDialog';
 import { MaterialTestGridDialog } from './components/dialogs/MaterialTestGridDialog';
 import { ShortcutsDialog } from './components/dialogs/ShortcutsDialog';
 import { ErrorBanner } from './components/shared/ErrorBanner';
@@ -62,7 +62,7 @@ export const App: React.FC = () => {
         {renderActivePanel()}
       </div>
       <MaterialPresetDialog />
-      <CanvasSizeDialog />
+      <SizeDialog />
       <MaterialTestGridDialog isOpen={isTestGridDialogOpen} onClose={() => setTestGridDialogOpen(false)} />
       <ShortcutsDialog isOpen={isShortcutsDialogOpen} onClose={() => setShortcutsDialogOpen(false)} />
     </div>

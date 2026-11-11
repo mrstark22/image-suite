@@ -8,7 +8,7 @@
  */
 import { describe, it, expect, beforeAll } from 'vitest';
 import { buildTonalLUT } from '../../src/lib/fast-tonal';
-import { DEFAULT_TONAL } from '../../src/store/editStore';
+import { DEFAULT_TONAL } from '../../src/lib/document';
 import type { TonalAdjustments } from '../../src/types/image';
 import { grayImage, loadWasm, redChannel, runPipeline, type PipelineOptions, type Wasm } from '../helpers/wasm';
 

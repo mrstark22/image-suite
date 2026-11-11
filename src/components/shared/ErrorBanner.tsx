@@ -1,6 +1,6 @@
 import React from 'react';
 import { AlertTriangle, X } from 'lucide-react';
-import { useImageStore } from '../../store/imageStore';
+import { useRenderStore } from '../../store/renderStore';
 import styles from './ErrorBanner.module.css';
 
 /**
@@ -8,8 +8,8 @@ import styles from './ErrorBanner.module.css';
  * Renders nothing when there is no error.
  */
 export const ErrorBanner: React.FC = () => {
-  const errorMessage = useImageStore((s) => s.errorMessage);
-  const setErrorMessage = useImageStore((s) => s.setErrorMessage);
+  const errorMessage = useRenderStore((s) => s.errorMessage);
+  const setErrorMessage = useRenderStore((s) => s.setErrorMessage);
 
   if (!errorMessage) return null;
 

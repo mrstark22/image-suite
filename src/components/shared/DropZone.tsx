@@ -2,13 +2,13 @@ import React, { useRef, useState } from 'react';
 import { Upload, Image, ShieldCheck, Sparkles } from 'lucide-react';
 import { generateTestPattern } from '../../lib/sample-images';
 import { openImageFiles } from '../../lib/open-image';
-import { useImageStore } from '../../store/imageStore';
+import { useRenderStore } from '../../store/renderStore';
 import styles from './DropZone.module.css';
 
 export const DropZone: React.FC = () => {
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const setErrorMessage = useImageStore((s) => s.setErrorMessage);
+  const setErrorMessage = useRenderStore((s) => s.setErrorMessage);
 
   const handleProcessFiles = async (files: File[]) => {
     try {

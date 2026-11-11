@@ -9,6 +9,19 @@ export interface TestGridOptions {
   type: 'grayscale-step' | 'power-matrix';
 }
 
+/** Pixel size of the raster grid `options` describe, computed without generating it. */
+export function testGridSizePx(options: TestGridOptions): { width: number; height: number } {
+  const { rows, cols, boxSizeMm, gapMm, dpi } = options;
+  const mmToPx = (mm: number) => Math.round((mm / 25.4) * dpi);
+  const boxPx = mmToPx(boxSizeMm);
+  const gapPx = mmToPx(gapMm);
+  const marginPx = mmToPx(5); // 5mm margin
+  return {
+    width: marginPx * 2 + cols * boxPx + (cols - 1) * gapPx,
+    height: marginPx * 2 + rows * boxPx + (rows - 1) * gapPx,
+  };
+}
+
 /**
  * Generates an image buffer containing a calibrated material test grid or step wedge.
  */
@@ -24,8 +37,7 @@ export function generateTestGridRaster(options: TestGridOptions): {
   const gapPx = mmToPx(gapMm);
   const marginPx = mmToPx(5); // 5mm margin
 
-  const width = marginPx * 2 + cols * boxPx + (cols - 1) * gapPx;
-  const height = marginPx * 2 + rows * boxPx + (rows - 1) * gapPx;
+  const { width, height } = testGridSizePx(options);
 
   const totalBytes = width * height * 4;
   const buffer = new ArrayBuffer(totalBytes);

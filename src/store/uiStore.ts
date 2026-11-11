@@ -20,7 +20,7 @@ interface UIState {
   isPresetDialogOpen: boolean;
   isExportDialogOpen: boolean;
   isSettingsDialogOpen: boolean;
-  isCanvasSizeDialogOpen: boolean;
+  isSizeDialogOpen: boolean;
   isTestGridDialogOpen: boolean;
   isShortcutsDialogOpen: boolean;
 
@@ -36,7 +36,7 @@ interface UIState {
   setPresetDialogOpen: (open: boolean) => void;
   setExportDialogOpen: (open: boolean) => void;
   setSettingsDialogOpen: (open: boolean) => void;
-  setCanvasSizeDialogOpen: (open: boolean) => void;
+  setSizeDialogOpen: (open: boolean) => void;
   setTestGridDialogOpen: (open: boolean) => void;
   setShortcutsDialogOpen: (open: boolean) => void;
 }
@@ -52,7 +52,7 @@ export const useUIStore = create<UIState>((set) => ({
   isPresetDialogOpen: false,
   isExportDialogOpen: false,
   isSettingsDialogOpen: false,
-  isCanvasSizeDialogOpen: false,
+  isSizeDialogOpen: false,
   isTestGridDialogOpen: false,
   isShortcutsDialogOpen: false,
 
@@ -75,7 +75,7 @@ export const useUIStore = create<UIState>((set) => ({
   setPresetDialogOpen: (isPresetDialogOpen) => set({ isPresetDialogOpen }),
   setExportDialogOpen: (isExportDialogOpen) => set({ isExportDialogOpen }),
   setSettingsDialogOpen: (isSettingsDialogOpen) => set({ isSettingsDialogOpen }),
-  setCanvasSizeDialogOpen: (isCanvasSizeDialogOpen) => set({ isCanvasSizeDialogOpen }),
+  setSizeDialogOpen: (isSizeDialogOpen) => set({ isSizeDialogOpen }),
   setTestGridDialogOpen: (isTestGridDialogOpen) => set({ isTestGridDialogOpen }),
   setShortcutsDialogOpen: (isShortcutsDialogOpen) => set({ isShortcutsDialogOpen }),
 }));

@@ -1,6 +1,6 @@
 # Phase 1 design: document, pipeline and units
 
-Status: approved on PR #64, with the second review's points folded in. Covers issues #15 to #22 (tracking issue #2). Nothing here is implemented yet.
+Status: approved on PR #64, with the second review's points folded in. Covers issues #15 to #22 (tracking issue #2). Sections 1 and 3 are implemented by #15 (parts 1 and 2); the rest is not implemented yet. Where part 2 differs from this text, a note says so.
 
 ## 1. The document
 
@@ -106,6 +106,13 @@ interface DocumentState {
 - **Loading a file during a gesture** discards the gesture along with the old document.
 - **An `endGesture` that never arrives.** `beginGesture` registers window-level `pointerup`, `pointercancel` and `blur` listeners. Any of them ends the gesture. Components also call `endGesture` when they unmount.
 - **Late calls are ignored.** `endGesture` can be called more than once safely. Every call carries the token from `beginGesture`, so an update or end from a gesture that has already finished is ignored.
+
+**As built in #15 part 2** (where it differs from the above):
+
+- **The crop overlay records its crop with `edit`, not a gesture.** The box is dragged as local state on the cropped preview and applied with Enter or Apply, as one entry. Updating `steps.crop` live during the drag would re-crop the preview under the box being dragged.
+- **A slider's number field commits with `edit` on Enter or blur, not a gesture.** Focusing the field cannot start a gesture: the click that focuses it ends with a `pointerup`, which would end the gesture at once. Typing is held as a draft until it is committed; Escape abandons it. Dragging the track is a gesture; arrow keys on the track are one `edit` per step.
+- **A slider drag ends when a value key is pressed on the track**, as well as at pointerup. If the store ends a gesture itself (window blur, load) and no pointerup reaches the page, the next arrow key is then an `edit` rather than an update to a gesture that is over. Pointer moves after Ctrl+Z has cancelled a drag still go to the cancelled gesture and are ignored.
+- **Lengths in mm do not yet keep their physical effect for sharpening.** The radius is converted to preview pixels, but the unsharp mask still clamps its kernel to 1–5 px until its rework in #16.
 
 ## 2. The pipeline
 

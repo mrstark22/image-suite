@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { Download, CheckCircle, Sun, Layers, Sparkles, Image as ImageIcon } from 'lucide-react';
-import { useEditStore } from '../../store/editStore';
-import { useImageStore } from '../../store/imageStore';
-import { Slider } from '../shared/Slider';
+import { useDocumentStore } from '../../store/documentStore';
+import { previewDpi, useRenderStore } from '../../store/renderStore';
+import { DEFAULT_DEPTH, setDepth } from '../../lib/document';
+import { DocumentSlider } from '../shared/Slider';
 import { getComlinkWorker } from '../../lib/comlink-setup';
 import { encodeBmpGrayscale8, encodeBmpRgb24 } from '../../lib/bmp-encoder';
 import { encodePngGrayscale16 } from '../../lib/png-encoder';
@@ -38,11 +39,14 @@ const MATERIALS: Array<{ id: ReliefMaterial; label: string; color: string }> = [
 ];
 
 export const DepthMapPanel: React.FC = () => {
-  const depth = useEditStore((s) => s.depth);
-  const setDepth = useEditStore((s) => s.setDepth);
-  const previewBuffer = useImageStore((s) => s.previewBuffer);
-  const dims = useImageStore((s) => s.previewDimensions);
-  const metadata = useImageStore((s) => s.metadata);
+  const depth = useDocumentStore((s) => s.doc?.depth ?? DEFAULT_DEPTH);
+  const edit = useDocumentStore((s) => s.edit);
+  const sourceName = useDocumentStore((s) => s.doc?.source.name ?? null);
+  // Heightmap files carry a resolution, so they need the size (preview-sized until #46).
+  const sizeSet = useDocumentStore((s) => s.doc?.mmPerPx != null);
+  const source = useRenderStore((s) => s.source);
+  const previewBuffer = source?.buffer ?? null;
+  const dims = source;
 
   const [isExporting, setIsExporting] = useState(false);
   const [exportTypeDone, setExportTypeDone] = useState<'png16' | 'cnc' | 'shaded' | null>(null);
@@ -71,7 +75,7 @@ export const DepthMapPanel: React.FC = () => {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      const baseName = metadata?.name.replace(/\.[^/.]+$/, '') || 'heightmap';
+      const baseName = sourceName?.replace(/\.[^/.]+$/, '') || 'heightmap';
       a.download = `${baseName}-16Bit-CNC-Heightmap-${dims.width}x${dims.height}.png`;
       a.click();
       URL.revokeObjectURL(url);
@@ -103,14 +107,15 @@ export const DepthMapPanel: React.FC = () => {
       });
 
       const depth16Data = new Uint16Array(result.heightMapBuffer);
-      const dpi = metadata?.dpi || 300;
+      const dpi = previewDpi();
+      if (dpi === null) return;
 
       const bmpBuffer = encodeBmpGrayscale8(depth16Data, dims.width, dims.height, dpi);
       const blob = new Blob([bmpBuffer], { type: 'image/bmp' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      const baseName = metadata?.name.replace(/\.[^/.]+$/, '') || 'heightmap';
+      const baseName = sourceName?.replace(/\.[^/.]+$/, '') || 'heightmap';
       a.download = `${baseName}-8Bit-CNC-depth-${dims.width}x${dims.height}.bmp`;
       a.click();
       URL.revokeObjectURL(url);
@@ -143,14 +148,15 @@ export const DepthMapPanel: React.FC = () => {
 
       const depth16Data = new Uint16Array(result.heightMapBuffer);
       const shadedRgba = renderReliefPreview(depth16Data, dims.width, dims.height, depth);
-      const dpi = metadata?.dpi || 300;
+      const dpi = previewDpi();
+      if (dpi === null) return;
 
       const bmpBuffer = encodeBmpRgb24(shadedRgba, dims.width, dims.height, dpi);
       const blob = new Blob([bmpBuffer], { type: 'image/bmp' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      const baseName = metadata?.name.replace(/\.[^/.]+$/, '') || 'relief';
+      const baseName = sourceName?.replace(/\.[^/.]+$/, '') || 'relief';
       a.download = `${baseName}-3D-shaded-render-${depth.material || 'walnut'}-${dims.width}x${dims.height}.bmp`;
       a.click();
       URL.revokeObjectURL(url);
@@ -184,7 +190,7 @@ export const DepthMapPanel: React.FC = () => {
                 key={vm.id}
                 className={`${styles.cardButton} ${isActive ? styles.cardButtonActive : ''}`}
                 style={{ width: '100%', padding: '8px 10px' }}
-                onClick={() => setDepth({ viewMode: vm.id })}
+                onClick={() => edit(setDepth({ viewMode: vm.id }))}
               >
                 <span className={styles.cardTitle} style={{ fontSize: 12 }}>{vm.label}</span>
                 <span className={styles.cardDesc}>{vm.desc}</span>
@@ -217,7 +223,7 @@ export const DepthMapPanel: React.FC = () => {
                       fontSize: 11,
                       color: 'var(--text-primary)',
                     }}
-                    onClick={() => setDepth({ material: m.id })}
+                    onClick={() => edit(setDepth({ material: m.id }))}
                   >
                     <span
                       style={{
@@ -251,7 +257,7 @@ export const DepthMapPanel: React.FC = () => {
                 key={src.id}
                 className={`${styles.cardButton} ${isActive ? styles.cardButtonActive : ''}`}
                 style={{ width: '100%', padding: '8px 10px' }}
-                onClick={() => setDepth({ source: src.id })}
+                onClick={() => edit(setDepth({ source: src.id }))}
               >
                 <span className={styles.cardTitle} style={{ fontSize: 12 }}>{src.title}</span>
                 <span className={styles.cardDesc}>{src.desc}</span>
@@ -276,7 +282,7 @@ export const DepthMapPanel: React.FC = () => {
                 <button
                   key={b.id}
                   className={`${styles.cardButton} ${isActive ? styles.cardButtonActive : ''}`}
-                  onClick={() => setDepth({ bevelStyle: b.id })}
+                  onClick={() => edit(setDepth({ bevelStyle: b.id }))}
                 >
                   <span className={styles.cardTitle}>{b.title}</span>
                   <span className={styles.cardDesc}>{b.desc}</span>
@@ -286,74 +292,74 @@ export const DepthMapPanel: React.FC = () => {
           </div>
         )}
 
-        <Slider
+        <DocumentSlider
           label="Relief Depth Exaggeration"
           value={depth.depthScale}
           min={1.0}
           max={10.0}
           step={0.5}
           unit="×"
-          onChange={(v) => setDepth({ depthScale: v })}
-          onReset={() => setDepth({ depthScale: 3.0 })}
+          update={(v) => setDepth({ depthScale: v })}
+          reset={setDepth({ depthScale: 3.0 })}
         />
 
         {depth.source === 'ai-estimation' && (
           <>
-            <Slider
+            <DocumentSlider
               label="3D AI Base Volume"
               value={depth.aiWeight ?? 75}
               min={0}
               max={100}
               step={5}
               unit="%"
-              onChange={(v) => setDepth({ aiWeight: v })}
-              onReset={() => setDepth({ aiWeight: 75 })}
+              update={(v) => setDepth({ aiWeight: v })}
+              reset={setDepth({ aiWeight: 75 })}
             />
 
-            <Slider
+            <DocumentSlider
               label="Tonal Label & Text Relief"
               value={depth.tonalBlend ?? 35}
               min={0}
               max={100}
               step={5}
               unit="%"
-              onChange={(v) => setDepth({ tonalBlend: v })}
-              onReset={() => setDepth({ tonalBlend: 35 })}
+              update={(v) => setDepth({ tonalBlend: v })}
+              reset={setDepth({ tonalBlend: 35 })}
             />
 
-            <Slider
+            <DocumentSlider
               label="Surface Denoising"
               value={depth.surfaceDenoise ?? 2.0}
               min={0}
               max={8}
               step={0.5}
               unit="px"
-              onChange={(v) => setDepth({ surfaceDenoise: v })}
-              onReset={() => setDepth({ surfaceDenoise: 2.0 })}
+              update={(v) => setDepth({ surfaceDenoise: v })}
+              reset={setDepth({ surfaceDenoise: 2.0 })}
             />
           </>
         )}
 
-        <Slider
+        <DocumentSlider
           label="Light Source Angle"
           value={depth.lightAngle ?? 315}
           min={0}
           max={360}
           step={5}
           unit="°"
-          onChange={(v) => setDepth({ lightAngle: v })}
-          onReset={() => setDepth({ lightAngle: 315 })}
+          update={(v) => setDepth({ lightAngle: v })}
+          reset={setDepth({ lightAngle: 315 })}
         />
 
-        <Slider
+        <DocumentSlider
           label="Anti-Terracing Smoothing"
           value={depth.smoothingRadius}
           min={0}
           max={15}
           step={0.5}
           unit="px"
-          onChange={(v) => setDepth({ smoothingRadius: v })}
-          onReset={() => setDepth({ smoothingRadius: 2.0 })}
+          update={(v) => setDepth({ smoothingRadius: v })}
+          reset={setDepth({ smoothingRadius: 2.0 })}
         />
 
         <div className={styles.toggleRow} style={{ marginTop: 12 }}>
@@ -367,7 +373,7 @@ export const DepthMapPanel: React.FC = () => {
             type="checkbox"
             className={styles.checkbox}
             checked={depth.invertZ}
-            onChange={(e) => setDepth({ invertZ: e.target.checked })}
+            onChange={(e) => edit(setDepth({ invertZ: e.target.checked }))}
           />
         </div>
       </div>
@@ -375,11 +381,12 @@ export const DepthMapPanel: React.FC = () => {
       {/* Export Actions */}
       <div className={styles.section}>
         <div className={styles.sectionTitle}>Manufacturing & Render Output</div>
+        {!sizeSet && <div className={styles.controlNote}>Set the size to export.</div>}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           <button
             className={styles.primaryActionBtn}
             onClick={handleExport16BitPng}
-            disabled={isExporting || !previewBuffer}
+            disabled={isExporting || !previewBuffer || !sizeSet}
             title="Lossless 16-Bit (65,536 depth levels) for Vectric, Carbide Create Pro, LightBurn"
           >
             {exportTypeDone === 'png16' ? (
@@ -401,7 +408,7 @@ export const DepthMapPanel: React.FC = () => {
               border: '1px solid var(--border-subtle)',
             }}
             onClick={handleExportCncBmp}
-            disabled={isExporting || !previewBuffer}
+            disabled={isExporting || !previewBuffer || !sizeSet}
             title="Standard 8-Bit (256 depth levels) Windows Grayscale BMP"
           >
             {exportTypeDone === 'cnc' ? (
@@ -423,7 +430,7 @@ export const DepthMapPanel: React.FC = () => {
               border: '1px dashed var(--border-subtle)',
             }}
             onClick={handleExportShadedBmp}
-            disabled={isExporting || !previewBuffer}
+            disabled={isExporting || !previewBuffer || !sizeSet}
             title="24-Bit Color Presentation Mockup Render (with substrate lighting & shadows)"
           >
             {exportTypeDone === 'shaded' ? (

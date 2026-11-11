@@ -1,13 +1,14 @@
 import React, { useRef, useEffect } from 'react';
-import { useImageStore } from '../../store/imageStore';
-import { useEditStore } from '../../store/editStore';
+import { useRenderStore } from '../../store/renderStore';
+import { useDocumentStore } from '../../store/documentStore';
+import { DEFAULT_TONAL } from '../../lib/document';
 import styles from './Histogram.module.css';
 
 export const Histogram: React.FC = () => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const previewProcessedBuffer = useImageStore((s) => s.previewProcessedBuffer);
-  const previewDimensions = useImageStore((s) => s.previewDimensions);
-  const tonal = useEditStore((s) => s.tonal);
+  const previewProcessedBuffer = useRenderStore((s) => s.processed);
+  const previewDimensions = useRenderStore((s) => s.source);
+  const tonal = useDocumentStore((s) => s.doc?.steps.tonal ?? DEFAULT_TONAL);
 
   useEffect(() => {
     const canvas = canvasRef.current;

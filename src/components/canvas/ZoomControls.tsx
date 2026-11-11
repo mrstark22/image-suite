@@ -1,15 +1,16 @@
 import React from 'react';
 import { ZoomIn, ZoomOut, Maximize, RotateCcw } from 'lucide-react';
-import { useImageStore } from '../../store/imageStore';
+import { useViewStore } from '../../store/viewStore';
+import { useDocumentStore } from '../../store/documentStore';
 import styles from './ZoomControls.module.css';
 
 export const ZoomControls: React.FC = () => {
-  const zoom = useImageStore((s) => s.zoom);
-  const setZoom = useImageStore((s) => s.setZoom);
-  const resetViewport = useImageStore((s) => s.resetViewport);
-  const previewBuffer = useImageStore((s) => s.previewBuffer);
+  const zoom = useViewStore((s) => s.zoom);
+  const setZoom = useViewStore((s) => s.setZoom);
+  const resetViewport = useViewStore((s) => s.resetViewport);
+  const hasDocument = useDocumentStore((s) => s.doc !== null);
 
-  if (!previewBuffer) return null;
+  if (!hasDocument) return null;
 
   return (
     <div className={styles.zoomBar}>

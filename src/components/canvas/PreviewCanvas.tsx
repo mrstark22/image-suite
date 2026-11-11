@@ -1,8 +1,10 @@
-import React, { useRef, useEffect, useState, useCallback } from 'react';
-import { useImageStore } from '../../store/imageStore';
-import { useEditStore } from '../../store/editStore';
+import React, { useRef, useEffect, useState, useCallback, useMemo } from 'react';
+import { useDocumentStore } from '../../store/documentStore';
+import { useRenderStore } from '../../store/renderStore';
+import { useViewStore } from '../../store/viewStore';
 import { openImageFiles, confirmReplaceInBrowser } from '../../lib/open-image';
-import { previewDpi, MM_PER_INCH } from '../../lib/image-size';
+import { pxPerMmAt } from '../../lib/document-size';
+import { DEFAULT_DEPTH } from '../../lib/document';
 import { fitsDimensions } from '../../lib/crop';
 import { useUIStore } from '../../store/uiStore';
 import { DropZone } from '../shared/DropZone';
@@ -16,31 +18,38 @@ export const PreviewCanvas: React.FC = () => {
   const containerRef = useRef<HTMLDivElement>(null);
   const offscreenOrigRef = useRef<HTMLCanvasElement | null>(null);
 
-  const previewBuffer = useImageStore((s) => s.previewBuffer);
-  const processedBuffer = useImageStore((s) => s.previewProcessedBuffer);
-  const depthHeightMapBuffer = useImageStore((s) => s.depthHeightMapBuffer);
-  const previewVersion = useImageStore((s) => s.previewVersion);
-  const dims = useImageStore((s) => s.previewDimensions);
-  const metadata = useImageStore((s) => s.metadata);
-  const wholePreview = useImageStore((s) => s.sourcePreviewDimensions);
-  const canvasTool = useImageStore((s) => s.canvasTool);
-  const substrateMask = useImageStore((s) => s.substrateMask);
-  const substrateCornerRadius = useImageStore((s) => s.substrateCornerRadius);
-  const zoom = useImageStore((s) => s.zoom);
-  const pan = useImageStore((s) => s.pan);
-  const setZoom = useImageStore((s) => s.setZoom);
-  const setPan = useImageStore((s) => s.setPan);
-  const splitPosition = useImageStore((s) => s.splitPosition);
-  const setSplitPosition = useImageStore((s) => s.setSplitPosition);
-  const fitToViewport = useImageStore((s) => s.fitToViewport);
+  const source = useRenderStore((s) => s.source);
+  const previewBuffer = source?.buffer ?? null;
+  const processedBuffer = useRenderStore((s) => s.processed);
+  const depthHeightMapBuffer = useRenderStore((s) => s.depthHeightMap);
+  const previewVersion = useRenderStore((s) => s.previewVersion);
+  const docId = useDocumentStore((s) => s.doc?.id ?? null);
+  // Preview pixels per mm, for guides measured in mm; null while the size is not set.
+  const pxPerMm = useDocumentStore((s) => (s.doc && source ? pxPerMmAt(s.doc, source.width) : null));
+  const canvasTool = useViewStore((s) => s.canvasTool);
+  const substrateMask = useViewStore((s) => s.substrateMask);
+  const substrateCornerRadius = useViewStore((s) => s.substrateCornerRadius);
+  const zoom = useViewStore((s) => s.zoom);
+  const pan = useViewStore((s) => s.pan);
+  const setZoom = useViewStore((s) => s.setZoom);
+  const setPan = useViewStore((s) => s.setPan);
+  const splitPosition = useViewStore((s) => s.splitPosition);
+  const setSplitPosition = useViewStore((s) => s.setSplitPosition);
+  const fitToViewport = useViewStore((s) => s.fitToViewport);
+  const dimsWidth = source?.width ?? 0;
+  const dimsHeight = source?.height ?? 0;
+  const dims = useMemo(
+    () => (dimsWidth > 0 ? { width: dimsWidth, height: dimsHeight } : null),
+    [dimsWidth, dimsHeight]
+  );
 
   const isSplitView = useUIStore((s) => s.isSplitView);
   const isInvertedBurn = useUIStore((s) => s.isInvertedBurn);
   const showVectorOverlay = useUIStore((s) => s.showVectorOverlay);
   const activeTab = useUIStore((s) => s.activeTab);
 
-  const vectorResult = useEditStore((s) => s.vectorResult);
-  const depthConfig = useEditStore((s) => s.depth);
+  const vectorResult = useRenderStore((s) => s.vectorResult);
+  const depthConfig = useDocumentStore((s) => s.doc?.depth ?? DEFAULT_DEPTH);
 
   // Interaction State
   const [isDraggingPan, setIsDraggingPan] = useState(false);
@@ -55,15 +64,15 @@ export const PreviewCanvas: React.FC = () => {
     panY: 0,
   });
 
-  // Auto-fit on initial first load
-  const hasAutoFittedRef = useRef(false);
+  // Fit each newly opened image to the view.
+  const fittedDocRef = useRef<string | null>(null);
   useEffect(() => {
-    if (dims && containerRef.current && !hasAutoFittedRef.current) {
-      hasAutoFittedRef.current = true;
+    if (dims && docId && containerRef.current && fittedDocRef.current !== docId) {
+      fittedDocRef.current = docId;
       const rect = containerRef.current.getBoundingClientRect();
-      fitToViewport(rect.width, rect.height);
+      fitToViewport(rect.width, rect.height, dims.width, dims.height);
     }
-  }, [dims, fitToViewport]);
+  }, [dims, docId, fitToViewport]);
 
   // Spacebar tracking for hand tool override
   useEffect(() => {
@@ -208,7 +217,7 @@ export const PreviewCanvas: React.FC = () => {
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
       openImageFiles(Array.from(e.dataTransfer.files), confirmReplaceInBrowser).catch((err: unknown) => {
         const message = err instanceof Error ? err.message : 'Failed to load image file';
-        useImageStore.getState().setErrorMessage(message);
+        useRenderStore.getState().setErrorMessage(message);
       });
     }
   };
@@ -324,18 +333,13 @@ export const PreviewCanvas: React.FC = () => {
                 fill="none"
               />
             )}
-            {substrateMask === 'rounded-rect' && (
+            {substrateMask === 'rounded-rect' && pxPerMm !== null && (
               <rect
                 x="4"
                 y="4"
                 width={dims.width - 8}
                 height={dims.height - 8}
-                rx={Math.round(
-                  (substrateCornerRadius / MM_PER_INCH) *
-                    (metadata && wholePreview
-                      ? previewDpi(metadata.dpi, metadata, wholePreview)
-                      : metadata?.dpi || 300)
-                )}
+                rx={Math.round(substrateCornerRadius * pxPerMm)}
                 stroke="var(--accent-primary, #38bdf8)"
                 strokeWidth="2"
                 strokeDasharray="6 4"

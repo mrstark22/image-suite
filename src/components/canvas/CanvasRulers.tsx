@@ -1,25 +1,28 @@
 import React, { useRef, useEffect, useState } from 'react';
-import { useImageStore } from '../../store/imageStore';
+import { useDocumentStore } from '../../store/documentStore';
+import { useRenderStore } from '../../store/renderStore';
+import { useViewStore } from '../../store/viewStore';
 import { useUIStore } from '../../store/uiStore';
-import { previewDpi } from '../../lib/image-size';
+import { MM_PER_INCH, pxPerMmAt } from '../../lib/document-size';
 import styles from './CanvasRulers.module.css';
 
 export const CanvasRulers: React.FC = () => {
   const showRulers = useUIStore((s) => s.showRulers);
-  const dims = useImageStore((s) => s.previewDimensions);
-  const metadata = useImageStore((s) => s.metadata);
-  const wholePreview = useImageStore((s) => s.sourcePreviewDimensions);
-  const zoom = useImageStore((s) => s.zoom);
-  const pan = useImageStore((s) => s.pan);
+  const source = useRenderStore((s) => s.source);
+  const dims = source;
+  const zoom = useViewStore((s) => s.zoom);
+  const pan = useViewStore((s) => s.pan);
+  // Preview pixels per mm; null while the size is not set, when only pixels can be shown.
+  const pxPerMm = useDocumentStore((s) => (s.doc && source ? pxPerMmAt(s.doc, source.width) : null));
 
   const topCanvasRef = useRef<HTMLCanvasElement>(null);
   const leftCanvasRef = useRef<HTMLCanvasElement>(null);
-  const [unit, setUnit] = useState<'mm' | 'in' | 'px'>('mm');
+  const [chosenUnit, setUnit] = useState<'mm' | 'in' | 'px'>('mm');
+  const unit = pxPerMm === null ? 'px' : chosenUnit;
   const [mousePos, setMousePos] = useState<{ x: number; y: number } | null>(null);
 
   // The rulers measure preview pixels, so use the preview's own resolution.
-  const fileDpi = metadata?.dpi || 300;
-  const dpi = metadata && wholePreview ? previewDpi(fileDpi, metadata, wholePreview) : fileDpi;
+  const dpi = (pxPerMm ?? 0) * MM_PER_INCH;
 
   // Track global mouse position for ruler crosshair indicators
   useEffect(() => {
@@ -202,6 +205,7 @@ export const CanvasRulers: React.FC = () => {
   if (!showRulers || !dims) return null;
 
   const cycleUnit = () => {
+    if (pxPerMm === null) return;
     if (unit === 'mm') setUnit('in');
     else if (unit === 'in') setUnit('px');
     else setUnit('mm');
@@ -209,7 +213,11 @@ export const CanvasRulers: React.FC = () => {
 
   return (
     <>
-      <div className={styles.rulerCorner} onClick={cycleUnit} title="Click to cycle units (mm, in, px)">
+      <div
+        className={styles.rulerCorner}
+        onClick={cycleUnit}
+        title={pxPerMm === null ? 'Set the size to measure in mm or inches' : 'Click to cycle units (mm, in, px)'}
+      >
         {unit}
       </div>
       <div className={styles.topRuler}>

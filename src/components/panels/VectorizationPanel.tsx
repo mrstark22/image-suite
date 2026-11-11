@@ -12,8 +12,10 @@ import {
   Sparkles,
   Zap,
 } from 'lucide-react';
-import { useEditStore } from '../../store/editStore';
-import { Slider } from '../shared/Slider';
+import { useDocumentStore } from '../../store/documentStore';
+import { useRenderStore } from '../../store/renderStore';
+import { DocumentSlider, Slider } from '../shared/Slider';
+import { DEFAULT_VECTOR, resetVector, setVector } from '../../lib/document';
 import { generateDXF } from '../../lib/dxf-export';
 import { generateProductionSVG } from '../../lib/svg-export';
 import type { VectorMode } from '../../types/vector';
@@ -26,29 +28,31 @@ const VECTOR_MODES: Array<{ id: VectorMode; title: string; desc: string }> = [
   { id: 'centerline', title: 'Centerline', desc: 'Single-stroke paths for V-carving' },
 ];
 
+/**
+ * Tracing settings (in the document, undoable) and the trace result with its
+ * edits (in renderStore, not undoable until phase 2, #32).
+ */
 export const VectorizationPanel: React.FC = () => {
-  const vector = useEditStore((s) => s.vector);
-  const vectorResult = useEditStore((s) => s.vectorResult);
-  const autoTrace = useEditStore((s) => s.autoTrace);
-  const isVectorStale = useEditStore((s) => s.isVectorStale);
-  const setVector = useEditStore((s) => s.setVector);
-  const setAutoTrace = useEditStore((s) => s.setAutoTrace);
-  const clearVectors = useEditStore((s) => s.clearVectors);
-  const resetVector = useEditStore((s) => s.resetVector);
-  const toggleVectorLayer = useEditStore((s) => s.toggleVectorLayer);
-  const removeVectorLayer = useEditStore((s) => s.removeVectorLayer);
-  const generateCutline = useEditStore((s) => s.generateCutline);
-  const smoothVectors = useEditStore((s) => s.smoothVectors);
+  const vector = useDocumentStore((s) => s.doc?.vector ?? DEFAULT_VECTOR);
+  const sizeSet = useDocumentStore((s) => s.doc?.mmPerPx != null);
+  const edit = useDocumentStore((s) => s.edit);
+  const vectorResult = useRenderStore((s) => s.vectorResult);
+  const autoTrace = useRenderStore((s) => s.autoTrace);
+  const isVectorStale = useRenderStore((s) => s.isVectorStale);
+  const setAutoTrace = useRenderStore((s) => s.setAutoTrace);
+  const requestTrace = useRenderStore((s) => s.requestTrace);
+  const clearVectors = useRenderStore((s) => s.clearVectors);
+  const toggleVectorLayer = useRenderStore((s) => s.toggleVectorLayer);
+  const removeVectorLayer = useRenderStore((s) => s.removeVectorLayer);
+  const generateCutline = useRenderStore((s) => s.generateCutline);
+  const smoothVectors = useRenderStore((s) => s.smoothVectors);
 
   const [cutlineOffsetMm, setCutlineOffsetMm] = useState<number>(2.0);
   const [cutlineSmoothness, setCutlineSmoothness] = useState<number>(3);
   const [smoothTolerance, setSmoothTolerance] = useState<number>(1.5);
   const [fitCurves, setFitCurves] = useState<boolean>(true);
 
-  const handleTraceNow = () => {
-    setAutoTrace(true);
-    setVector({ ...vector });
-  };
+  const handleTraceNow = () => requestTrace();
 
   const handleDownloadSVG = () => {
     if (!vectorResult) return;
@@ -98,7 +102,7 @@ export const VectorizationPanel: React.FC = () => {
           )}
           <button
             className={styles.headerIconBtn}
-            onClick={resetVector}
+            onClick={() => edit(resetVector)}
             title="Reset parameters to default"
           >
             <RotateCcw size={12} />
@@ -142,7 +146,7 @@ export const VectorizationPanel: React.FC = () => {
               <button
                 key={mode.id}
                 className={`${styles.modeCard} ${isActive ? styles.modeCardActive : ''}`}
-                onClick={() => setVector({ mode: mode.id })}
+                onClick={() => edit(setVector({ mode: mode.id }))}
               >
                 <span className={styles.modeCardTitle}>{mode.title}</span>
                 <span className={styles.modeCardDesc}>{mode.desc}</span>
@@ -157,47 +161,47 @@ export const VectorizationPanel: React.FC = () => {
         <div className={styles.sectionTitle}>Detection Settings</div>
 
         {vector.mode === 'multi-color' && (
-          <Slider
+          <DocumentSlider
             label="Palette Colors (K-Means)"
             value={vector.colorCount}
             min={2}
             max={12}
             step={1}
-            onChange={(v) => setVector({ colorCount: Math.round(v) })}
-            onReset={() => setVector({ colorCount: 4 })}
+            update={(v) => setVector({ colorCount: Math.round(v) })}
+            reset={setVector({ colorCount: 4 })}
           />
         )}
 
         {vector.mode === 'edge-detect' && (
           <>
-            <Slider
+            <DocumentSlider
               label="Canny Low Threshold"
               value={vector.cannyLow}
               min={10}
               max={120}
-              onChange={(v) => setVector({ cannyLow: v })}
-              onReset={() => setVector({ cannyLow: 30 })}
+              update={(v) => setVector({ cannyLow: v })}
+              reset={setVector({ cannyLow: 30 })}
             />
-            <Slider
+            <DocumentSlider
               label="Canny High Threshold"
               value={vector.cannyHigh}
               min={40}
               max={220}
-              onChange={(v) => setVector({ cannyHigh: v })}
-              onReset={() => setVector({ cannyHigh: 80 })}
+              update={(v) => setVector({ cannyHigh: v })}
+              reset={setVector({ cannyHigh: 80 })}
             />
           </>
         )}
 
         {(vector.mode === 'outline' || vector.mode === 'centerline') && (
           <>
-            <Slider
+            <DocumentSlider
               label="Binarization Threshold"
               value={vector.threshold}
               min={0}
               max={255}
-              onChange={(v) => setVector({ threshold: v })}
-              onReset={() => setVector({ threshold: 128 })}
+              update={(v) => setVector({ threshold: v })}
+              reset={setVector({ threshold: 128 })}
             />
             <label className={styles.autoTraceToggle} style={{ marginTop: 6 }}>
               <span className={styles.autoTraceLabel}>Invert Detection</span>
@@ -205,7 +209,7 @@ export const VectorizationPanel: React.FC = () => {
                 <input
                   type="checkbox"
                   checked={vector.invert}
-                  onChange={(e) => setVector({ invert: e.target.checked })}
+                  onChange={(e) => edit(setVector({ invert: e.target.checked }))}
                 />
                 <span className={styles.slider} />
               </span>
@@ -218,37 +222,37 @@ export const VectorizationPanel: React.FC = () => {
       <div className={styles.section}>
         <div className={styles.sectionTitle}>Path Optimization</div>
 
-        <Slider
+        <DocumentSlider
           label="Pre-Filter Denoise"
           value={vector.denoise ?? 0.0}
           min={0}
           max={6}
           step={0.5}
           unit="px"
-          onChange={(v) => setVector({ denoise: v })}
-          onReset={() => setVector({ denoise: 0.0 })}
+          update={(v) => setVector({ denoise: v })}
+          reset={setVector({ denoise: 0.0 })}
         />
 
-        <Slider
+        <DocumentSlider
           label="Speckle Area Filter"
           value={vector.minPathArea}
           min={0}
           max={100}
           step={1}
           unit="px²"
-          onChange={(v) => setVector({ minPathArea: v })}
-          onReset={() => setVector({ minPathArea: 4 })}
+          update={(v) => setVector({ minPathArea: v })}
+          reset={setVector({ minPathArea: 4 })}
         />
 
-        <Slider
+        <DocumentSlider
           label="Curve Smoothness (RDP)"
           value={vector.rdpTolerance}
           min={0.4}
           max={6.0}
           step={0.1}
           unit="px"
-          onChange={(v) => setVector({ rdpTolerance: v })}
-          onReset={() => setVector({ rdpTolerance: 1.0 })}
+          update={(v) => setVector({ rdpTolerance: v })}
+          reset={setVector({ rdpTolerance: 1.0 })}
         />
 
         <label className={styles.autoTraceToggle} style={{ marginTop: 6 }}>
@@ -257,7 +261,7 @@ export const VectorizationPanel: React.FC = () => {
             <input
               type="checkbox"
               checked={vector.curveFitting}
-              onChange={(e) => setVector({ curveFitting: e.target.checked })}
+              onChange={(e) => edit(setVector({ curveFitting: e.target.checked }))}
             />
             <span className={styles.slider} />
           </span>
@@ -298,8 +302,10 @@ export const VectorizationPanel: React.FC = () => {
             onReset={() => setCutlineSmoothness(3)}
           />
 
+          {!sizeSet && <p className={styles.featureDesc}>Set the size to use this.</p>}
           <button
             className={styles.actionBtnRed}
+            disabled={!sizeSet}
             onClick={() => generateCutline(cutlineOffsetMm, cutlineSmoothness)}
           >
             <Scissors size={13} />
