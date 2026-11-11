@@ -155,11 +155,11 @@ describe('unsharp mask', () => {
   /**
    * Reference unsharp mask of one row of a vertical edge (every row is the
    * same, so the vertical pass leaves it unchanged): a Gaussian of sigma
-   * `radius * 0.6 + 0.3` reaching ceil(3 * sigma) pixels each side,
+   * `0.8 * radius` reaching ceil(3 * sigma) pixels each side,
    * renormalised at the borders.
    */
   function referenceRow(row: number[], amount: number, radius: number): number[] {
-    const sigma = radius * 0.6 + 0.3;
+    const sigma = 0.8 * radius;
     const extent = Math.max(1, Math.ceil(3 * sigma));
     return row.map((orig, x) => {
       let sum = 0;
@@ -178,7 +178,7 @@ describe('unsharp mask', () => {
   it('matches the formula across an edge, with the kernel reaching ceil(3 sigma)', () => {
     const W = 64;
     const edge = (x: number) => (x < 32 ? 100 : 200);
-    for (const radius of [1, 2.5, 8, 20]) {
+    for (const radius of [1, 2.5, 8, 15]) {
       const img = grayImage(W, 6, edge);
       const out = redChannel(runPipeline(wasm, img, W, 6, { sharpen: { amount: 1, radius } }));
       const expected = referenceRow(Array.from({ length: W }, (_, x) => edge(x)), 1, radius);

@@ -1,14 +1,16 @@
 //! Unsharp mask: each colour channel plus `amount` times its difference from
 //! a Gaussian blur of itself.
 //!
-//! The blur's sigma is `radius * 0.6 + 0.3` pixels and its kernel extends
-//! `ceil(3 * sigma)` pixels each side, with no upper limit, so a radius given
-//! in millimetres keeps its physical effect at any resolution. The blur runs
-//! one channel at a time, so it needs 8 bytes of scratch per pixel.
+//! The blur's sigma is `0.8 * radius` pixels and its kernel extends
+//! `ceil(3 * sigma)` pixels each side, with no upper limit. Sigma is
+//! proportional to the radius, with no constant term, so a radius given in
+//! millimetres keeps its physical effect at any resolution; at the default of
+//! 1.5 px it is 1.2 px, as before. The blur runs one channel at a time, so it
+//! needs 8 bytes of scratch per pixel.
 
 /// Sigma of the Gaussian blur for a radius in pixels.
 pub fn sigma_for_radius(radius: f32) -> f32 {
-    radius.max(0.0) * 0.6 + 0.3
+    radius.max(0.0) * 0.8
 }
 
 /// How far the kernel extends each side of the centre, in pixels.
@@ -24,11 +26,13 @@ fn gaussian_weights(sigma: f32) -> Vec<f32> {
 }
 
 pub fn apply_unsharp_mask(pixels: &mut [u8], width: usize, height: usize, amount: f32, radius: f32) {
-    if width == 0 || height == 0 || amount <= 0.0 {
+    let sigma = sigma_for_radius(radius);
+    // A blur of no width is the image itself: nothing to sharpen.
+    if width == 0 || height == 0 || amount <= 0.0 || sigma <= 0.0 {
         return;
     }
 
-    let weights = gaussian_weights(sigma_for_radius(radius));
+    let weights = gaussian_weights(sigma);
     let extent = (weights.len() / 2) as isize;
     let total = width * height;
     let mut across = vec![0.0f32; total];
@@ -80,9 +84,10 @@ mod tests {
 
     #[test]
     fn the_kernel_follows_sigma_with_no_clamp() {
-        assert_eq!(kernel_extent(sigma_for_radius(1.5)), 4); // sigma 1.2
-        assert_eq!(kernel_extent(sigma_for_radius(20.0)), 37); // sigma 12.3
-        assert_eq!(kernel_extent(sigma_for_radius(0.0)), 1);
+        assert_eq!(kernel_extent(sigma_for_radius(1.5)), 4); // sigma 1.2, as before the rework
+        assert_eq!(kernel_extent(sigma_for_radius(20.0)), 48); // sigma 16
+        // Doubling the radius doubles sigma: no constant term to break the scaling.
+        assert_eq!(sigma_for_radius(6.0), 2.0 * sigma_for_radius(3.0));
     }
 
     #[test]

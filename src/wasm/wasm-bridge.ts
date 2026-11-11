@@ -50,10 +50,24 @@ export interface WasmPipelineParams {
   ditherInverted: boolean;
 }
 
-interface WasmExports {
+export interface WasmExports {
   memory: WebAssembly.Memory;
   allocate: (size: number) => number;
+  /** Like `allocate`, but returns 0 instead of trapping when memory runs out. */
+  try_allocate: (size: number) => number;
   deallocate: (ptr: number, size: number) => void;
+  /** Crop, flatten onto white and resample in linear light; returns a new buffer or 0. */
+  prepare_source: (
+    src: number,
+    srcW: number,
+    srcH: number,
+    cropX: number,
+    cropY: number,
+    cropW: number,
+    cropH: number,
+    dstW: number,
+    dstH: number
+  ) => number;
   process_pipeline: (
     ptr: number,
     width: number,
@@ -142,6 +156,20 @@ export class RustWasmEngine {
   private isLoaded = false;
   private loadPromise: Promise<boolean> | null = null;
 
+  /** An engine over an already instantiated module (Node tests instantiate it themselves). */
+  public static fromExports(exports: WasmExports): RustWasmEngine {
+    const engine = new RustWasmEngine();
+    engine.exports = exports;
+    engine.isLoaded = true;
+    return engine;
+  }
+
+  /** The module's exports. Throws until `init` has succeeded. */
+  public get wasm(): WasmExports {
+    if (!this.exports) throw new Error('Rust WebAssembly engine is not initialized');
+    return this.exports;
+  }
+
   public async init(): Promise<boolean> {
     if (this.isLoaded && this.exports) return true;
     if (this.loadPromise) return this.loadPromise;
@@ -193,6 +221,54 @@ export class RustWasmEngine {
     return this.loadPromise;
   }
 
+  /**
+   * Runs steps 4 to 6 (`process_pipeline`) in place on the RGBA8 image of
+   * `params.width` x `params.height` at `ptr` in WASM memory.
+   */
+  public processInPlace(ptr: number, params: WasmPipelineParams): void {
+    const { width, height } = params;
+    const algoCode = ALGORITHM_CODE_MAP[params.ditherAlgorithm] ?? 0;
+    const grayCodeMap: Record<string, number> = { none: 0, rec709: 1, average: 2, desaturate: 3, max: 4, inverted: 5 };
+    const grayCode = grayCodeMap[params.grayscaleMode] ?? 0;
+
+    this.wasm.process_pipeline(
+      ptr,
+      width,
+      height,
+      params.exposure ?? 0,
+      params.brightness ?? 0,
+      params.contrast ?? 0,
+      params.midtones ?? 0,
+      params.highlights ?? 0,
+      params.shadows ?? 0,
+      params.whites ?? 0,
+      params.blacks ?? 0,
+      params.clarity ?? 0,
+      params.gamma ?? 1.0,
+      params.blackPoint ?? 0,
+      params.whitePoint ?? 255,
+      params.invert ? 1 : 0,
+      grayCode,
+      params.saturation ?? 0,
+      params.vibrance ?? 0,
+      params.temperature ?? 0,
+      params.tint ?? 0,
+      params.enableClahe ? 1 : 0,
+      params.claheClip ?? 2.5,
+      params.claheGrid ?? 8,
+      params.enableAdaptive ? 1 : 0,
+      params.adaptiveBlock ?? 15,
+      params.adaptiveC ?? 2,
+      params.sharpenAmount ?? 0,
+      params.sharpenRadius ?? 1.5,
+      algoCode,
+      params.ditherThreshold ?? 128,
+      params.ditherSerpentine ? 1 : 0,
+      params.ditherScale ?? 1,
+      params.ditherInverted ? 1 : 0
+    );
+  }
+
   public process(
     inputBuffer: ArrayBuffer,
     params: WasmPipelineParams
@@ -216,47 +292,7 @@ export class RustWasmEngine {
       const wasmMemoryView = new Uint8Array(this.exports.memory.buffer, ptr, byteLength);
       wasmMemoryView.set(new Uint8Array(inputBuffer));
 
-      // 3. Execute Native Rust Image Processing Pipeline
-      const algoCode = ALGORITHM_CODE_MAP[params.ditherAlgorithm] ?? 0;
-      const grayCodeMap: Record<string, number> = { none: 0, rec709: 1, average: 2, desaturate: 3, max: 4, inverted: 5 };
-      const grayCode = grayCodeMap[params.grayscaleMode] ?? 0;
-
-      this.exports.process_pipeline(
-        ptr,
-        width,
-        height,
-        params.exposure ?? 0,
-        params.brightness ?? 0,
-        params.contrast ?? 0,
-        params.midtones ?? 0,
-        params.highlights ?? 0,
-        params.shadows ?? 0,
-        params.whites ?? 0,
-        params.blacks ?? 0,
-        params.clarity ?? 0,
-        params.gamma ?? 1.0,
-        params.blackPoint ?? 0,
-        params.whitePoint ?? 255,
-        params.invert ? 1 : 0,
-        grayCode,
-        params.saturation ?? 0,
-        params.vibrance ?? 0,
-        params.temperature ?? 0,
-        params.tint ?? 0,
-        params.enableClahe ? 1 : 0,
-        params.claheClip ?? 2.5,
-        params.claheGrid ?? 8,
-        params.enableAdaptive ? 1 : 0,
-        params.adaptiveBlock ?? 15,
-        params.adaptiveC ?? 2,
-        params.sharpenAmount ?? 0,
-        params.sharpenRadius ?? 1.5,
-        algoCode,
-        params.ditherThreshold ?? 128,
-        params.ditherSerpentine ? 1 : 0,
-        params.ditherScale ?? 1,
-        params.ditherInverted ? 1 : 0
-      );
+      this.processInPlace(ptr, params);
 
       // 4. Create clean output buffer from processed linear memory
       const outputCopy = new ArrayBuffer(byteLength);

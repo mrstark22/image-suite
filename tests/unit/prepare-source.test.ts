@@ -5,6 +5,7 @@
  * module's separable weights or lookup tables.
  */
 import { describe, it, expect, beforeAll } from 'vitest';
+import { srgbToLinear, linearToSrgb, flattenOnWhite } from '../helpers/reference';
 import { loadWasm, prepareSource, grayImage, redChannel, runPipeline, type Rect, type Wasm } from '../helpers/wasm';
 
 let wasm: Wasm;
@@ -12,15 +13,9 @@ beforeAll(async () => {
   wasm = await loadWasm();
 });
 
-const toLinear = (v: number) => {
-  const c = v / 255;
-  return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
-};
-const toSrgb = (l: number) => {
-  const c = l <= 0.0031308 ? l * 12.92 : 1.055 * Math.pow(l, 1 / 2.4) - 0.055;
-  return Math.max(0, Math.min(255, Math.round(c * 255)));
-};
-const flattenRef = (c: number, a: number) => Math.round((c * a) / 255 + 255 * (1 - a / 255));
+const toLinear = srgbToLinear;
+const toSrgb = linearToSrgb;
+const flattenRef = flattenOnWhite;
 
 /** Deterministic pseudo-random RGBA with varied alpha. */
 function noiseImage(w: number, h: number, seed = 1, opaque = false): Uint8Array {
