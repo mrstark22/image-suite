@@ -167,3 +167,21 @@ fn tracer_gives_exact_corners_for_a_square() {
         "unexpected trace: {json}"
     );
 }
+
+#[test]
+fn tone_only_fast_path_matches_the_table_for_every_value() {
+    use crate::tonal::{apply_tonal_and_color, ColorParams};
+    let tonal = TonalParams { contrast: 35.0, shadows: -20.0, gamma: 1.3, black_point: 9, ..default_tonal() };
+    let lut = compute_tonal_lut(&tonal);
+    // Every value in every channel, with distinct values per channel.
+    let mut px: Vec<u8> = (0..256u32).flat_map(|v| [v as u8, (255 - v) as u8, (v * 7 % 256) as u8, 200]).collect();
+    let before = px.clone();
+    let none = ColorParams { saturation: 0.0, vibrance: 0.0, temperature: 0.0, tint: 0.0 };
+    apply_tonal_and_color(&mut px, 256, 1, &tonal, &none);
+    for (out, inp) in px.chunks(4).zip(before.chunks(4)) {
+        assert_eq!(out[0], lut[inp[0] as usize]);
+        assert_eq!(out[1], lut[inp[1] as usize]);
+        assert_eq!(out[2], lut[inp[2] as usize]);
+        assert_eq!(out[3], inp[3], "alpha untouched");
+    }
+}

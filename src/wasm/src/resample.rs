@@ -159,34 +159,52 @@ pub fn prepare(src: &[u8], src_w: usize, crop: Crop, dst_w: usize, dst_h: usize,
     let horizontal = AxisWeights::new(crop.width, dst_w);
     let vertical = AxisWeights::new(crop.height, dst_h);
 
-    // One source row, flattened and in linear light; then resampled across.
+    // One source row, flattened and in linear light, then resampled across.
+    // Consecutive output rows share source rows at their edges, so the last
+    // two rows resampled across are kept rather than computed again.
     let mut linear_row = vec![0.0f32; crop.width * 3];
-    let mut across = vec![0.0f32; dst_w * 3];
+    let mut rows: [(usize, Vec<f32>); 2] = [(usize::MAX, vec![0.0f32; dst_w * 3]), (usize::MAX, vec![0.0f32; dst_w * 3])];
+    let mut next_slot = 0;
     let mut acc = vec![0.0f32; dst_w * 3];
 
     for oy in 0..dst_h {
         acc.iter_mut().for_each(|v| *v = 0.0);
         for &(sy, wy) in vertical.of(oy) {
-            let row = (crop.y + sy) * src_w + crop.x;
-            for x in 0..crop.width {
-                let s = (row + x) * 4;
-                let a = src[s + 3];
-                linear_row[x * 3] = decode[flatten(src[s], a) as usize];
-                linear_row[x * 3 + 1] = decode[flatten(src[s + 1], a) as usize];
-                linear_row[x * 3 + 2] = decode[flatten(src[s + 2], a) as usize];
-            }
-            for ox in 0..dst_w {
-                let (mut r, mut g, mut b) = (0.0f32, 0.0f32, 0.0f32);
-                for &(sx, wx) in horizontal.of(ox) {
-                    r += linear_row[sx * 3] * wx;
-                    g += linear_row[sx * 3 + 1] * wx;
-                    b += linear_row[sx * 3 + 2] * wx;
+            let slot = match rows.iter().position(|r| r.0 == sy) {
+                Some(slot) => slot,
+                None => {
+                    let slot = next_slot;
+                    next_slot = 1 - next_slot;
+                    let row = (crop.y + sy) * src_w + crop.x;
+                    for x in 0..crop.width {
+                        let s = (row + x) * 4;
+                        let a = src[s + 3];
+                        let (r, g, b) = if a == 255 {
+                            (src[s], src[s + 1], src[s + 2])
+                        } else {
+                            (flatten(src[s], a), flatten(src[s + 1], a), flatten(src[s + 2], a))
+                        };
+                        linear_row[x * 3] = decode[r as usize];
+                        linear_row[x * 3 + 1] = decode[g as usize];
+                        linear_row[x * 3 + 2] = decode[b as usize];
+                    }
+                    let across = &mut rows[slot].1;
+                    for ox in 0..dst_w {
+                        let (mut r, mut g, mut b) = (0.0f32, 0.0f32, 0.0f32);
+                        for &(sx, wx) in horizontal.of(ox) {
+                            r += linear_row[sx * 3] * wx;
+                            g += linear_row[sx * 3 + 1] * wx;
+                            b += linear_row[sx * 3 + 2] * wx;
+                        }
+                        across[ox * 3] = r;
+                        across[ox * 3 + 1] = g;
+                        across[ox * 3 + 2] = b;
+                    }
+                    rows[slot].0 = sy;
+                    slot
                 }
-                across[ox * 3] = r;
-                across[ox * 3 + 1] = g;
-                across[ox * 3 + 2] = b;
-            }
-            for (a, v) in acc.iter_mut().zip(across.iter()) {
+            };
+            for (a, v) in acc.iter_mut().zip(rows[slot].1.iter()) {
                 *a += v * wy;
             }
         }

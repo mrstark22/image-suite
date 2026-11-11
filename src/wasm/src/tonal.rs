@@ -139,6 +139,18 @@ pub fn apply_tonal_and_color(
         || tint_k != 0.0
         || tonal.grayscale_mode != 0;
 
+    // Tone only: each channel is its table entry. The general loop below gives
+    // exactly this when no colour adjustment is set (tested), at several times
+    // the cost, and tone-only renders are what slider drags make.
+    if !has_color_adjust {
+        for px in pixels[..total_pixels * 4].chunks_exact_mut(4) {
+            px[0] = lut[px[0] as usize];
+            px[1] = lut[px[1] as usize];
+            px[2] = lut[px[2] as usize];
+        }
+        return;
+    }
+
     for i in 0..total_pixels {
         let idx = i * 4;
         let mut r = lut[pixels[idx] as usize] as f32;
