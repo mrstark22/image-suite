@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useReducer, useState } from 'react';
 import { Maximize, X, Check } from 'lucide-react';
 import { useDocumentStore } from '../../store/documentStore';
 import { useUIStore } from '../../store/uiStore';
@@ -6,14 +6,12 @@ import { setScale } from '../../lib/document';
 import {
   cropRectOf,
   fromMm,
-  mmPerPxForLength,
   mmPerPxFromDpi,
   MM_PER_INCH,
   type PhysicalUnit,
 } from '../../lib/document-size';
+import { canApplySize, sizeDraftReducer, type SizeField as Field } from '../../lib/size-draft';
 import styles from './SizeDialog.module.css';
-
-type Field = 'width' | 'height';
 
 function rounded(value: number, unit: PhysicalUnit): string {
   return String(Number(value.toFixed(unit === 'mm' ? 1 : 3)));
@@ -32,18 +30,13 @@ export const SizeDialog: React.FC = () => {
   const doc = useDocumentStore((s) => s.doc);
 
   const [unit, setUnit] = useState<PhysicalUnit>('mm');
-  // The scale the dialog will apply; starts at the document's.
-  const [pending, setPending] = useState<number | null>(null);
-  // Text of the field being typed in, so it can be empty or partial mid-edit.
-  const [editing, setEditing] = useState<{ field: Field; text: string } | null>(null);
+  // The scale the dialog will apply (starts at the document's) and the text being typed.
+  const [{ pending, editing }, dispatch] = useReducer(sizeDraftReducer, { pending: null, editing: null });
 
   const docId = doc?.id;
   const docScale = doc?.mmPerPx ?? null;
   useEffect(() => {
-    if (isOpen) {
-      setPending(docScale);
-      setEditing(null);
-    }
+    if (isOpen) dispatch({ type: 'open', scale: docScale });
   }, [isOpen, docId, docScale]);
 
   if (!isOpen || !doc) return null;
@@ -58,17 +51,13 @@ export const SizeDialog: React.FC = () => {
     return rounded(fromMm(px * pending, unit), unit);
   };
 
-  /** Keeps the typed text and, when it is a positive number, derives the scale from it. */
-  const handleType = (field: Field, text: string) => {
-    setEditing({ field, text });
-    const value = Number(text);
-    if (text.trim() === '' || !Number.isFinite(value) || value <= 0) return;
-    setPending(mmPerPxForLength(field === 'width' ? crop.width : crop.height, value, unit));
-  };
+  /** Keeps the typed text and derives the scale from it; text that is not a positive number clears it. */
+  const handleType = (field: Field, text: string) =>
+    dispatch({ type: 'type', field, text, lengthPx: field === 'width' ? crop.width : crop.height, unit });
 
   const fileDpi = doc.source.fileDpi;
   const suggestion = fileDpi !== null ? mmPerPxFromDpi(fileDpi) : null;
-  const canApply = pending !== null && pending !== doc.mmPerPx;
+  const canApply = canApplySize({ pending, editing }, doc.mmPerPx);
 
   const handleApply = () => {
     if (pending === null) return;
@@ -118,10 +107,7 @@ export const SizeDialog: React.FC = () => {
               </span>
               <button
                 className={styles.suggestionBtn}
-                onClick={() => {
-                  setPending(suggestion);
-                  setEditing(null);
-                }}
+                onClick={() => dispatch({ type: 'suggest', scale: suggestion })}
               >
                 Use this
               </button>
@@ -135,7 +121,7 @@ export const SizeDialog: React.FC = () => {
               value={unit}
               onChange={(e) => {
                 setUnit(e.target.value as PhysicalUnit);
-                setEditing(null);
+                dispatch({ type: 'stopEditing' });
               }}
             >
               <option value="mm">Millimetres (mm)</option>
@@ -155,7 +141,7 @@ export const SizeDialog: React.FC = () => {
                     placeholder="not set"
                     value={lengthText(field)}
                     onChange={(e) => handleType(field, e.target.value)}
-                    onBlur={() => setEditing(null)}
+                    onBlur={() => dispatch({ type: 'stopEditing' })}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter' && canApply) handleApply();
                     }}

@@ -38,10 +38,12 @@ interface RenderState {
   setProcessedPreview: (buffer: ArrayBuffer, durationMs: number) => void;
   setDepthHeightMap: (buffer: ArrayBuffer | null) => void;
   /**
-   * Replaces the pixels of the current preview source (background removal).
-   * They are not part of the document: a new crop or image discards them.
+   * Replaces the pixels of the preview source (background removal) with
+   * `buffer`, computed from `from`. Does nothing and returns false unless the
+   * current source is still that image and crop at that size. The pixels are
+   * not part of the document: a new crop or image discards them.
    */
-  replaceSourcePixels: (buffer: ArrayBuffer) => void;
+  replaceSourcePixels: (buffer: ArrayBuffer, from: PreviewSource) => boolean;
   /** Restores the preview source from the document. */
   restoreSource: () => void;
   setVectorResult: (result: VectorResult | null) => void;
@@ -124,16 +126,23 @@ export const useRenderStore = create<RenderState>((set, get) => ({
 
   setDepthHeightMap: (depthHeightMap) => set({ depthHeightMap }),
 
-  replaceSourcePixels: (buffer) =>
-    set((s) =>
-      s.source && buffer.byteLength === s.source.buffer.byteLength
-        ? {
-            source: { ...s.source, buffer },
-            processed: buffer.slice(0),
-            previewVersion: s.previewVersion + 1,
-          }
-        : {}
-    ),
+  replaceSourcePixels: (buffer, from) => {
+    const current = get().source;
+    const same =
+      current !== null &&
+      current.sourceId === from.sourceId &&
+      sameValue(current.crop, from.crop) &&
+      current.width === from.width &&
+      current.height === from.height &&
+      buffer.byteLength === current.width * current.height * 4;
+    if (!same) return false;
+    set((s) => ({
+      source: { ...current, buffer },
+      processed: buffer.slice(0),
+      previewVersion: s.previewVersion + 1,
+    }));
+    return true;
+  },
 
   restoreSource: () => {
     const doc = useDocumentStore.getState().doc;
@@ -224,7 +233,7 @@ useDocumentStore.subscribe((state, prev) => {
   if (doc === before) return;
 
   if (!doc) {
-    useRenderStore.setState((s) => ({ ...EMPTY_RESULTS, previewVersion: s.previewVersion + 1 }));
+    useRenderStore.setState((s) => ({ ...EMPTY_RESULTS, errorMessage: null, previewVersion: s.previewVersion + 1 }));
     return;
   }
 
@@ -250,7 +259,8 @@ useDocumentStore.subscribe((state, prev) => {
     }));
   }
 
-  if (doc.vector !== before.vector && !useRenderStore.getState().autoTrace) {
+  // By value: Reset All and recipes build a new vector object even when nothing in it changes.
+  if (!sameValue(doc.vector, before.vector) && !useRenderStore.getState().autoTrace) {
     useRenderStore.setState({ isVectorStale: true });
   }
 });

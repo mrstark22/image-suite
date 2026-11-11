@@ -4,8 +4,8 @@ import { confirmReplaceInBrowser } from '../../lib/open-image';
 import { useDocumentStore, hasUnsavedEdits } from '../../store/documentStore';
 import { previewDpi, useRenderStore } from '../../store/renderStore';
 import { useUIStore } from '../../store/uiStore';
-import { dpiOf, mmPerPxFromDpi } from '../../lib/document-size';
-import { generateTestGridRaster, generateTestGridVector } from '../../lib/test-grid-generator';
+import { generateTestGridVector } from '../../lib/test-grid-generator';
+import { DEFAULT_TEST_GRID_DPI, openTestGridRaster } from '../../lib/test-grid-document';
 import styles from './MaterialTestGridDialog.module.css';
 
 interface Props {
@@ -20,6 +20,9 @@ export const MaterialTestGridDialog: React.FC<Props> = ({ isOpen, onClose }) => 
   const [boxSizeMm, setBoxSizeMm] = useState<number>(10);
   const [gapMm, setGapMm] = useState<number>(2);
   const [targetMode, setTargetMode] = useState<'raster' | 'vector'>('raster');
+  // The raster grid's own resolution, independent of the open image.
+  const [gridDpi, setGridDpi] = useState<number>(DEFAULT_TEST_GRID_DPI);
+  const [error, setError] = useState<string | null>(null);
 
   const doc = useDocumentStore((s) => s.doc);
   const addVectorLayer = useRenderStore((s) => s.addVectorLayer);
@@ -47,32 +50,17 @@ export const MaterialTestGridDialog: React.FC<Props> = ({ isOpen, onClose }) => 
       toggleVectorOverlay();
     } else {
       if (hasUnsavedEdits() && !confirmReplaceInBrowser()) return;
-      // The grid is generated at the open image's resolution, or 300 DPI, and
-      // opens as a new document whose size is already set.
-      const dpi = (doc && dpiOf(doc)) ?? 300;
-      const { buffer, width, height } = generateTestGridRaster({
-        rows,
-        cols,
-        boxSizeMm,
-        gapMm,
-        dpi,
-        type,
-      });
-      useDocumentStore.getState().open(
-        {
-          file: null,
-          name: `Test Grid (${type === 'power-matrix' ? 'Power-Speed' : 'Steps'}).png`,
-          widthPx: width,
-          heightPx: height,
-          hasAlpha: false,
-          fileDpi: null,
-          preview: buffer,
-          previewWidth: width,
-          previewHeight: height,
-        },
-        mmPerPxFromDpi(dpi)
-      );
+      try {
+        await openTestGridRaster(
+          { rows, cols, boxSizeMm, gapMm, dpi: gridDpi, type },
+          `Test Grid (${type === 'power-matrix' ? 'Power-Speed' : 'Steps'}).png`
+        );
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err));
+        return;
+      }
     }
+    setError(null);
 
     onClose();
   };
@@ -155,6 +143,21 @@ export const MaterialTestGridDialog: React.FC<Props> = ({ isOpen, onClose }) => 
             </div>
           </div>
 
+          {targetMode === 'raster' && (
+            <div className={styles.formGroup}>
+              <label className={styles.label}>Grid Resolution (DPI)</label>
+              <input
+                type="number"
+                className={styles.input}
+                value={gridDpi}
+                min={50}
+                max={1200}
+                step={1}
+                onChange={(e) => setGridDpi(Math.min(1200, Math.max(50, parseFloat(e.target.value) || DEFAULT_TEST_GRID_DPI)))}
+              />
+            </div>
+          )}
+
           <div className={styles.formGroup}>
             <label className={styles.label}>Output Format</label>
             <select
@@ -168,6 +171,7 @@ export const MaterialTestGridDialog: React.FC<Props> = ({ isOpen, onClose }) => 
           </div>
         </div>
 
+        {error && <div className={styles.error}>{error}</div>}
         <div className={styles.footer}>
           <button className={styles.btnSecondary} onClick={onClose}>
             Cancel

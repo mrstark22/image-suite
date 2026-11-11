@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
-import type { DocumentUpdate, GestureToken } from '../../types/document';
+import type { DocumentUpdate } from '../../types/document';
 import { useDocumentStore } from '../../store/documentStore';
+import { DraftField, SliderGesture, isValueKey } from '../../lib/slider-input';
 import styles from './Slider.module.css';
 
 interface SliderProps {
@@ -18,6 +19,8 @@ interface SliderProps {
   onDragStart?: () => void;
   /** A pointer drag on the track ends. */
   onDragEnd?: () => void;
+  /** A key press on the track is about to change the value. */
+  onKeyboardAdjust?: () => void;
   disabled?: boolean;
   /** Shown under the slider, for example why it is disabled. */
   note?: string;
@@ -43,15 +46,20 @@ export const Slider: React.FC<SliderProps> = ({
   onReset,
   onDragStart,
   onDragEnd,
+  onKeyboardAdjust,
   disabled = false,
   note,
 }) => {
+  // Shown while typing; the DraftField decides what is committed.
   const [draft, setDraft] = useState<string | null>(null);
+  const field = useRef(new DraftField()).current;
 
+  /** Commits the typed value once. Blur after Enter or Escape finds nothing to commit. */
   const commitDraft = () => {
-    if (draft === null) return;
-    const v = parseFloat(draft);
+    const text = field.take();
     setDraft(null);
+    if (text === null) return;
+    const v = parseFloat(text);
     if (!Number.isNaN(v)) onChange(Math.max(min, Math.min(max, v)));
   };
 
@@ -60,6 +68,7 @@ export const Slider: React.FC<SliderProps> = ({
       commitDraft();
       e.currentTarget.blur();
     } else if (e.key === 'Escape') {
+      field.abandon();
       setDraft(null);
       e.currentTarget.blur();
     }
@@ -88,7 +97,10 @@ export const Slider: React.FC<SliderProps> = ({
             step={step}
             disabled={disabled}
             aria-label={`${label} value`}
-            onChange={(e) => setDraft(e.target.value)}
+            onChange={(e) => {
+              field.type(e.target.value);
+              setDraft(e.target.value);
+            }}
             onBlur={commitDraft}
             onKeyDown={handleKeyDown}
           />
@@ -108,6 +120,9 @@ export const Slider: React.FC<SliderProps> = ({
           onPointerDown={onDragStart}
           onPointerUp={onDragEnd}
           onPointerCancel={onDragEnd}
+          onKeyDown={(e) => {
+            if (isValueKey(e.key)) onKeyboardAdjust?.();
+          }}
           onChange={(e) => onChange(parseFloat(e.target.value))}
           style={{
             background: `linear-gradient(to right, var(--accent-primary) 0%, var(--accent-primary) ${percentage}%, var(--bg-surface-active) ${percentage}%, var(--bg-surface-active) 100%)`,
@@ -119,7 +134,8 @@ export const Slider: React.FC<SliderProps> = ({
   );
 };
 
-interface DocumentSliderProps extends Omit<SliderProps, 'onChange' | 'onReset' | 'onDragStart' | 'onDragEnd'> {
+interface DocumentSliderProps
+  extends Omit<SliderProps, 'onChange' | 'onReset' | 'onDragStart' | 'onDragEnd' | 'onKeyboardAdjust'> {
   /** The change to the document for a value. */
   update: (value: number) => DocumentUpdate;
   /** The change double-clicking the label makes. */
@@ -132,47 +148,32 @@ interface DocumentSliderProps extends Omit<SliderProps, 'onChange' | 'onReset' |
  * reset are each one edit.
  */
 export const DocumentSlider: React.FC<DocumentSliderProps> = ({ update, reset, ...props }) => {
-  const tokenRef = useRef<GestureToken | null>(null);
-
-  const endDrag = () => {
-    const token = tokenRef.current;
-    tokenRef.current = null;
-    if (token !== null) useDocumentStore.getState().endGesture(token);
-  };
+  const gesture = useRef(new SliderGesture(() => useDocumentStore.getState())).current;
 
   // A gesture must not outlive the control that started it.
-  useEffect(() => endDrag, []);
+  useEffect(() => () => gesture.endDrag(), [gesture]);
 
   const startDrag = () => {
-    endDrag();
-    tokenRef.current = useDocumentStore.getState().beginGesture();
+    gesture.startDrag();
     // The pointer can be released outside the track, where onPointerUp does
-    // not fire; the store ends the gesture itself, and this forgets the token.
+    // not fire; the store ends the gesture itself, and this ends the drag.
     const forget = () => {
       window.removeEventListener('pointerup', forget);
       window.removeEventListener('pointercancel', forget);
-      endDrag();
+      gesture.endDrag();
     };
     window.addEventListener('pointerup', forget);
     window.addEventListener('pointercancel', forget);
   };
 
-  const change = (value: number) => {
-    const store = useDocumentStore.getState();
-    const token = tokenRef.current;
-    // During a drag, changes go to its gesture, and are ignored once that
-    // gesture is over (for example cancelled by Ctrl+Z).
-    if (token !== null) store.updateGesture(token, update(value));
-    else store.edit(update(value));
-  };
-
   return (
     <Slider
       {...props}
-      onChange={change}
+      onChange={(value) => gesture.change(update(value))}
       onReset={reset ? () => useDocumentStore.getState().edit(reset) : undefined}
       onDragStart={startDrag}
-      onDragEnd={endDrag}
+      onDragEnd={() => gesture.endDrag()}
+      onKeyboardAdjust={() => gesture.keyboardAdjust()}
     />
   );
 };

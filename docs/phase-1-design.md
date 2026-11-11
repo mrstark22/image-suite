@@ -111,6 +111,8 @@ interface DocumentState {
 
 - **The crop overlay records its crop with `edit`, not a gesture.** The box is dragged as local state on the cropped preview and applied with Enter or Apply, as one entry. Updating `steps.crop` live during the drag would re-crop the preview under the box being dragged.
 - **A slider's number field commits with `edit` on Enter or blur, not a gesture.** Focusing the field cannot start a gesture: the click that focuses it ends with a `pointerup`, which would end the gesture at once. Typing is held as a draft until it is committed; Escape abandons it. Dragging the track is a gesture; arrow keys on the track are one `edit` per step.
+- **A slider drag ends when a value key is pressed on the track**, as well as at pointerup. If the store ends a gesture itself (window blur, load) and no pointerup reaches the page, the next arrow key is then an `edit` rather than an update to a gesture that is over. Pointer moves after Ctrl+Z has cancelled a drag still go to the cancelled gesture and are ignored.
+- **Lengths in mm do not yet keep their physical effect for sharpening.** The radius is converted to preview pixels, but the unsharp mask still clamps its kernel to 1–5 px until its rework in #16.
 
 ## 2. The pipeline
 

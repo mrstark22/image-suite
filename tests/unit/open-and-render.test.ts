@@ -7,7 +7,8 @@ import { useDocumentStore } from '../../src/store/documentStore';
 import { useRenderStore } from '../../src/store/renderStore';
 import { useUIStore } from '../../src/store/uiStore';
 import { ignoredFilesMessage, openImageFiles } from '../../src/lib/open-image';
-import { setCrop, setDither, setScale, setVector } from '../../src/lib/document';
+import { applyRecipe, resetAll, setCrop, setDither, setScale, setTonal, setVector } from '../../src/lib/document';
+import { RECIPE_VERSION } from '../../src/types/recipe';
 import type { DecodedImage } from '../../src/lib/image-loader';
 import type { VectorResult } from '../../src/types/vector';
 import { currentDoc, decodedImage, previewMismatches, resetStores } from '../helpers/documents';
@@ -144,10 +145,46 @@ describe('results in renderStore', () => {
 
   it('background removal replaces the source pixels until the crop changes', () => {
     const replaced = new Uint8Array(20 * 10 * 4).fill(255).buffer;
-    render().replaceSourcePixels(replaced);
+    expect(render().replaceSourcePixels(replaced, render().source!)).toBe(true);
     expect(render().source?.buffer).toBe(replaced);
     store().edit(setCrop({ x: 1, y: 1, width: 5, height: 5 }));
     expect(previewMismatches(1, 1, 5, 5)).toBe(0);
+  });
+
+  it('a removal result for another image of the same size is discarded (review finding 1)', () => {
+    const from = render().source!;
+    store().open(decodedImage(20, 10, 20, 10, null, 'other.png'));
+    const result = new Uint8Array(20 * 10 * 4).fill(255).buffer;
+    expect(render().replaceSourcePixels(result, from)).toBe(false);
+    expect(previewMismatches(0, 0, 20, 10)).toBe(0);
+  });
+
+  it('a removal result for a different crop of the same size is discarded, and applies again once that crop is back', () => {
+    store().edit(setCrop({ x: 0, y: 0, width: 10, height: 10 }));
+    const from = render().source!;
+    store().edit(setCrop({ x: 10, y: 0, width: 10, height: 10 }));
+    const result = new Uint8Array(10 * 10 * 4).fill(255).buffer;
+    expect(render().replaceSourcePixels(result, from)).toBe(false);
+    expect(previewMismatches(10, 0, 10, 10)).toBe(0);
+    // Undo returns to the crop the removal was computed for, so it is valid there.
+    store().undo();
+    expect(render().replaceSourcePixels(result, from)).toBe(true);
+  });
+
+  it('Reset All or a recipe that leaves the tracing settings equal does not mark the trace stale (review finding 8)', () => {
+    render().setAutoTrace(false);
+    store().edit(setTonal({ contrast: 20 }));
+    store().edit(resetAll);
+    store().edit(applyRecipe({ version: RECIPE_VERSION, name: 'r', createdAt: 0, updatedAt: 0, steps: [] }));
+    expect(render().isVectorStale).toBe(false);
+    store().edit(setVector({ threshold: 60 }));
+    expect(render().isVectorStale).toBe(true);
+  });
+
+  it('closing the document clears the error banner (review finding 9)', () => {
+    render().setErrorMessage('Tracing failed');
+    store().close();
+    expect(render().errorMessage).toBeNull();
   });
 });
 

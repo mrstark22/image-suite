@@ -124,3 +124,9 @@
   align-items: center;
   gap: 6px;
 }
+
+.error {
+  margin: 0 20px 12px;
+  font-size: 12px;
+  color: var(--accent-danger);
+}

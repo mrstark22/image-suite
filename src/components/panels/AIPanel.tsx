@@ -27,6 +27,8 @@ export const AIPanel: React.FC = () => {
 
   const handleRemoveBackground = async () => {
     if (!source) return;
+    // The image and crop this removal is for; checked again when the worker replies.
+    const from = source;
 
     try {
       setIsProcessing(true);
@@ -34,15 +36,18 @@ export const AIPanel: React.FC = () => {
 
       const worker = getComlinkWorker();
       const result = await worker.processBgRemoval({
-        buffer: source.buffer.slice(0),
-        width: source.width,
-        height: source.height,
+        buffer: from.buffer.slice(0),
+        width: from.width,
+        height: from.height,
         tolerance,
         featherRadius,
         mode,
       });
 
-      replaceSourcePixels(result.buffer);
+      if (!replaceSourcePixels(result.buffer, from)) {
+        setStatusMessage('The image or crop changed while the background was being removed, so the result was discarded.');
+        return;
+      }
       setRemovedFrom(useRenderStore.getState().source);
       setStatusMessage(`Background removed (${result.removedPixelCount.toLocaleString()} pixels) in ${result.durationMs.toFixed(1)}ms`);
     } catch (err: unknown) {
