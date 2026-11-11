@@ -264,7 +264,7 @@ The scheduler is plain TypeScript with an injected `run`, so it is tested in Nod
 - **Background removal holds its pixels against that render** in `renderStore`, and the schedulers send them with each request in place of the `source` stage. A new crop or image drops them. Stopgap until phase 5 makes it a step.
 - **The trace still reads the `source` stage at the preview target,** as before; the design's trace inputs (`prepared` at the native target) are #23 and phase 2.
 - **The scheduler has `refresh` and `rerun`** besides `onDocumentChange`: `refresh` when something `select` or `enabled` reads outside the document changes (tab, auto-trace, background removal, a gesture ending), and `rerun` when the preview and the relief, which share the canvas, change places. `whenIdle` is for tests.
-- **Not built here** (design section 5): giving WASM memory back after a large run, resetting the instance after a trap, and offering to open an image too large for the device at a reduced resolution. A source over 150 MP and memory that cannot be had are reported as errors. Recorded in a new issue.
+- **Not built here** (design section 5): giving WASM memory back after a large run, resetting the instance after a trap, and offering to open an image too large for the device at a reduced resolution. A source over 150 MP and memory that cannot be had are reported as errors. Recorded in #69.
 
 ## 3. What happens to the existing stores
 
