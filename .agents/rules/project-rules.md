@@ -38,7 +38,7 @@ Read `.agents/AGENTS.md` first. This file holds the detailed coding standards.
 |---|---|---|
 | React components | PascalCase `.tsx` | `PreviewCanvas.tsx` |
 | Hooks | camelCase with `use` prefix | `useWorker.ts` |
-| Stores | camelCase with `Store` suffix | `imageStore.ts` |
+| Stores | camelCase with `Store` suffix | `documentStore.ts` |
 | Rust modules | snake_case `.rs` | `dither.rs` |
 | Types | PascalCase interfaces, camelCase fields | `EditStep` |
 | Test files | `*.test.ts` | `dither-properties.test.ts` |

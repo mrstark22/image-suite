@@ -58,7 +58,7 @@ These come from the problems that motivated the project. Each becomes an automat
 - 16-bit PNG and BMP encoders (`src/lib/png-encoder.ts`, `src/lib/bmp-encoder.ts`).
 - WASM bridge allocation and free (`src/wasm/wasm-bridge.ts`).
 - Adaptive threshold and unsharp mask.
-- Adjustments undo/redo core (`src/store/editStore.ts`).
+- Adjustments undo/redo core (was `src/store/editStore.ts`; now the history in `src/store/documentStore.ts`, #15).
 - Relief numeric core (`src/wasm/src/depth.rs`): heights stay floating point through to 16-bit, Gaussian smoothing, invert, and the shading model shared by `depth-shader.ts` and the viewer.
 - 3D viewer (`src/components/canvas/DepthViewer3D.tsx`), with its resource handling fixed.
 - UI structure and behaviour of the panels, sliders and dialogs. Their styling and layout are replaced by the UI redesign.
