@@ -1,9 +1,5 @@
-import type {
-  TonalAdjustments,
-  ColorAdjustments,
-  DetailEnhancements,
-  GeometryTransform,
-} from './image';
+import type { TonalAdjustments, ColorAdjustments, CropRect } from './image';
+import type { DetailSettings } from './document';
 import type { DitherConfig } from './dither';
 import type { VectorConfig } from './vector';
 import type { DepthConfig } from './depth';
@@ -27,7 +23,8 @@ export interface BaseEditStep {
 
 export interface GeometryStep extends BaseEditStep {
   type: 'geometry';
-  params: GeometryTransform;
+  /** The crop in pixels of the source image the recipe was saved from. */
+  params: { crop: CropRect | null };
 }
 
 export interface TonalStep extends BaseEditStep {
@@ -42,7 +39,7 @@ export interface ColorStep extends BaseEditStep {
 
 export interface DetailStep extends BaseEditStep {
   type: 'detail';
-  params: DetailEnhancements;
+  params: DetailSettings;
 }
 
 export interface DitherStep extends BaseEditStep {
@@ -78,6 +75,12 @@ export type EditStep =
   | VectorStep
   | DepthStep
   | BgRemoveStep;
+
+/**
+ * Recipe format version. Version 2 stores the detail lengths in millimetres and
+ * the crop in source pixels. Nothing could import version 1, so none exist.
+ */
+export const RECIPE_VERSION = '2.0.0';
 
 export interface EditRecipe {
   version: string;

@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { RotateCcw, Box, Compass, Layers, Grid } from 'lucide-react';
-import { useEditStore } from '../../store/editStore';
+import { useDocumentStore } from '../../store/documentStore';
+import { DEFAULT_DEPTH } from '../../lib/document';
 import styles from './DepthViewer3D.module.css';
 
 interface DepthViewer3DProps {
@@ -30,7 +31,7 @@ export const DepthViewer3D: React.FC<DepthViewer3DProps> = ({
   const animFrameRef = useRef<number | null>(null);
   const needsRenderRef = useRef<boolean>(true);
 
-  const depthConfig = useEditStore((s) => s.depth);
+  const depthConfig = useDocumentStore((s) => s.doc?.depth ?? DEFAULT_DEPTH);
 
   // Camera Orbit State
   const [camera, setCamera] = useState({

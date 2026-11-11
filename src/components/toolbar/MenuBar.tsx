@@ -18,10 +18,12 @@ import {
   Keyboard,
   HelpCircle,
 } from 'lucide-react';
-import { useImageStore } from '../../store/imageStore';
-import { useEditStore } from '../../store/editStore';
+import { useDocumentStore } from '../../store/documentStore';
+import { useRenderStore } from '../../store/renderStore';
+import { useViewStore } from '../../store/viewStore';
 import { openImageFiles, confirmReplaceInBrowser } from '../../lib/open-image';
-import { shownFileSize } from '../../lib/image-size';
+import { cropRectOf, dpiOf } from '../../lib/document-size';
+import { resetAll } from '../../lib/document';
 import { useUIStore } from '../../store/uiStore';
 import styles from './MenuBar.module.css';
 
@@ -29,21 +31,18 @@ export const MenuBar: React.FC = () => {
   const [openMenu, setOpenMenu] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const metadata = useImageStore((s) => s.metadata);
-  const wholePreview = useImageStore((s) => s.sourcePreviewDimensions);
-  const crop = useEditStore((s) => s.geometry.cropRect);
-  const isProcessing = useImageStore((s) => s.isProcessing);
-  const durationMs = useImageStore((s) => s.processingDurationMs);
-  const setZoom = useImageStore((s) => s.setZoom);
-  const resetViewport = useImageStore((s) => s.resetViewport);
-  const clearImage = useImageStore((s) => s.clearImage);
+  const doc = useDocumentStore((s) => s.doc);
+  const isProcessing = useRenderStore((s) => s.isProcessing);
+  const durationMs = useRenderStore((s) => s.processingDurationMs);
+  const setZoom = useViewStore((s) => s.setZoom);
+  const resetViewport = useViewStore((s) => s.resetViewport);
 
-  const undo = useEditStore((s) => s.undo);
-  const redo = useEditStore((s) => s.redo);
-  const canUndo = useEditStore((s) => s.canUndo);
-  const canRedo = useEditStore((s) => s.canRedo);
-  const resetAll = useEditStore((s) => s.resetAll);
-  const startNewImage = useEditStore((s) => s.startNewImage);
+  const undo = useDocumentStore((s) => s.undo);
+  const redo = useDocumentStore((s) => s.redo);
+  const canUndo = useDocumentStore((s) => s.past.length > 0);
+  const canRedo = useDocumentStore((s) => s.future.length > 0);
+  const edit = useDocumentStore((s) => s.edit);
+  const closeDocument = useDocumentStore((s) => s.close);
 
   const isSplitView = useUIStore((s) => s.isSplitView);
   const isInvertedBurn = useUIStore((s) => s.isInvertedBurn);
@@ -55,12 +54,12 @@ export const MenuBar: React.FC = () => {
   const toggleRulers = useUIStore((s) => s.toggleRulers);
   const setActiveTab = useUIStore((s) => s.setActiveTab);
   const setPresetDialogOpen = useUIStore((s) => s.setPresetDialogOpen);
-  const setCanvasSizeDialogOpen = useUIStore((s) => s.setCanvasSizeDialogOpen);
+  const setSizeDialogOpen = useUIStore((s) => s.setSizeDialogOpen);
   const setTestGridDialogOpen = useUIStore((s) => s.setTestGridDialogOpen);
   const setShortcutsDialogOpen = useUIStore((s) => s.setShortcutsDialogOpen);
 
-  const substrateMask = useImageStore((s) => s.substrateMask);
-  const setSubstrateMask = useImageStore((s) => s.setSubstrateMask);
+  const substrateMask = useViewStore((s) => s.substrateMask);
+  const setSubstrateMask = useViewStore((s) => s.setSubstrateMask);
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -81,16 +80,17 @@ export const MenuBar: React.FC = () => {
         await openImageFiles(files, confirmReplaceInBrowser);
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : 'Failed to load image file';
-        useImageStore.getState().setErrorMessage(message);
+        useRenderStore.getState().setErrorMessage(message);
       }
     }
   };
 
-  const shownSize = metadata && wholePreview ? shownFileSize(metadata, wholePreview, crop) : null;
+  // The image as cropped, in source pixels, and its resolution from the document.
+  const shownSize = doc ? cropRectOf(doc) : null;
+  const dpi = doc ? dpiOf(doc) : null;
 
   const handleClearWorkspace = () => {
-    clearImage();
-    startNewImage();
+    closeDocument();
     setOpenMenu(null);
   };
 
@@ -138,17 +138,18 @@ export const MenuBar: React.FC = () => {
                 </button>
                 <button
                   className={styles.dropdownItem}
+                  disabled={!doc}
                   onClick={() => {
-                    setCanvasSizeDialogOpen(true);
+                    setSizeDialogOpen(true);
                     setOpenMenu(null);
                   }}
                 >
-                  <span className={styles.itemLabel}><Maximize size={14} /> Physical Size & Resolution...</span>
+                  <span className={styles.itemLabel}><Maximize size={14} /> Physical Size...</span>
                 </button>
                 <div className={styles.menuDivider} />
                 <button
                   className={styles.dropdownItem}
-                  disabled={!metadata}
+                  disabled={!doc}
                   onClick={() => {
                     setActiveTab('export');
                     setOpenMenu(null);
@@ -178,7 +179,7 @@ export const MenuBar: React.FC = () => {
                 <div className={styles.menuDivider} />
                 <button
                   className={styles.dropdownItem}
-                  disabled={!metadata}
+                  disabled={!doc}
                   style={{ color: 'var(--accent-danger)' }}
                   onClick={handleClearWorkspace}
                 >
@@ -203,7 +204,7 @@ export const MenuBar: React.FC = () => {
               <div className={styles.dropdownMenu}>
                 <button
                   className={styles.dropdownItem}
-                  disabled={!canUndo()}
+                  disabled={!canUndo}
                   onClick={() => {
                     undo();
                     setOpenMenu(null);
@@ -214,7 +215,7 @@ export const MenuBar: React.FC = () => {
                 </button>
                 <button
                   className={styles.dropdownItem}
-                  disabled={!canRedo()}
+                  disabled={!canRedo}
                   onClick={() => {
                     redo();
                     setOpenMenu(null);
@@ -226,8 +227,9 @@ export const MenuBar: React.FC = () => {
                 <div className={styles.menuDivider} />
                 <button
                   className={styles.dropdownItem}
+                  disabled={!doc}
                   onClick={() => {
-                    resetAll();
+                    edit(resetAll);
                     setOpenMenu(null);
                   }}
                 >
@@ -334,6 +336,8 @@ export const MenuBar: React.FC = () => {
                 </button>
                 <button
                   className={styles.dropdownItem}
+                  disabled={dpi === null}
+                  title={dpi === null ? 'Set the size to use this: its corners are in mm' : undefined}
                   onClick={() => {
                     setSubstrateMask(substrateMask === 'rounded-rect' ? 'none' : 'rounded-rect');
                     setOpenMenu(null);
@@ -396,20 +400,19 @@ export const MenuBar: React.FC = () => {
 
       {/* Right: Telemetry, Presets & Export */}
       <div className={styles.rightSide}>
-        {metadata && (
+        {doc && shownSize && (
           <div
             className={styles.telemetry}
-            onClick={() => setCanvasSizeDialogOpen(true)}
-            title="Click to set the physical size and resolution (DPI)"
+            onClick={() => setSizeDialogOpen(true)}
+            title="Click to set the physical size"
             style={{ cursor: 'pointer' }}
           >
             <span className={`${styles.pulseDot} ${isProcessing ? styles.processingDot : ''}`} />
             <span style={{ textDecoration: 'underline dotted', textUnderlineOffset: 3 }}>
-              {shownSize ? `${shownSize.width}×${shownSize.height}` : `${metadata.width}×${metadata.height}`}
-              px
+              {shownSize.width}×{shownSize.height}px
             </span>
             <span style={{ color: 'var(--text-muted)' }}>•</span>
-            <span>{metadata.dpi} DPI</span>
+            <span>{dpi === null ? 'Size not set' : `${Number(dpi.toFixed(1))} DPI`}</span>
             <span style={{ color: 'var(--text-muted)' }}>•</span>
             <span style={{ color: 'var(--accent-primary)', fontFamily: 'var(--font-mono)' }}>
               {isProcessing ? '...' : `${durationMs.toFixed(1)}ms`}
@@ -426,7 +429,7 @@ export const MenuBar: React.FC = () => {
           Presets
         </button>
 
-        {metadata && (
+        {doc && (
           <button
             className={styles.exportBtn}
             onClick={() => setActiveTab('export')}

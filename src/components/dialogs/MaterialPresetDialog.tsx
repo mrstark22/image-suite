@@ -1,8 +1,9 @@
 import React from 'react';
 import { X, BookOpen } from 'lucide-react';
 import { useUIStore } from '../../store/uiStore';
-import { useEditStore, DEFAULT_TONAL } from '../../store/editStore';
-import type { MaterialPreset } from '../../types/recipe';
+import { useDocumentStore } from '../../store/documentStore';
+import { DEFAULT_TONAL, applyRecipe } from '../../lib/document';
+import { RECIPE_VERSION, type MaterialPreset } from '../../types/recipe';
 import styles from './MaterialPresetDialog.module.css';
 
 const PRESETS: MaterialPreset[] = [
@@ -14,13 +15,13 @@ const PRESETS: MaterialPreset[] = [
     recommendedDpi: 300,
     recommendedDither: 'floyd-steinberg',
     recipe: {
-      version: '1.0.0',
+      version: RECIPE_VERSION,
       name: 'White Oak Recipe',
       createdAt: Date.now(),
       updatedAt: Date.now(),
       steps: [
         { id: '1', type: 'tonal', enabled: true, timestamp: Date.now(), params: { ...DEFAULT_TONAL, brightness: 5, contrast: 15, gamma: 1.1, blackPoint: 10, whitePoint: 250, clarity: 20 } },
-        { id: '2', type: 'detail', enabled: true, timestamp: Date.now(), params: { clahe: true, claheClipLimit: 3.0, claheGridSize: 8, unsharpStrength: 25, unsharpRadius: 1.5, adaptiveThreshold: false, adaptiveBlockSize: 15, adaptiveConstant: 2 } },
+        { id: '2', type: 'detail', enabled: true, timestamp: Date.now(), params: { clahe: true, claheClipLimit: 3.0, claheGridSize: 8, unsharpStrength: 25, unsharpRadiusMm: 0.13, adaptiveThreshold: false, adaptiveBlockMm: 1.3, adaptiveConstant: 2 } },
         { id: '3', type: 'dither', enabled: true, timestamp: Date.now(), params: { algorithm: 'floyd-steinberg', threshold: 132, serpentine: true, matrixScale: 1, invertedBurn: false } },
       ],
     },
@@ -33,7 +34,7 @@ const PRESETS: MaterialPreset[] = [
     recommendedDpi: 300,
     recommendedDither: 'floyd-steinberg',
     recipe: {
-      version: '1.0.0',
+      version: RECIPE_VERSION,
       name: 'Dark Walnut Recipe',
       createdAt: Date.now(),
       updatedAt: Date.now(),
@@ -51,7 +52,7 @@ const PRESETS: MaterialPreset[] = [
     recommendedDpi: 254,
     recommendedDither: 'jarvis',
     recipe: {
-      version: '1.0.0',
+      version: RECIPE_VERSION,
       name: 'Baltic Birch Recipe',
       createdAt: Date.now(),
       updatedAt: Date.now(),
@@ -69,7 +70,7 @@ const PRESETS: MaterialPreset[] = [
     recommendedDpi: 300,
     recommendedDither: 'atkinson',
     recipe: {
-      version: '1.0.0',
+      version: RECIPE_VERSION,
       name: 'Slate Recipe',
       createdAt: Date.now(),
       updatedAt: Date.now(),
@@ -87,7 +88,7 @@ const PRESETS: MaterialPreset[] = [
     recommendedDpi: 508,
     recommendedDither: 'floyd-steinberg',
     recipe: {
-      version: '1.0.0',
+      version: RECIPE_VERSION,
       name: 'Anodized Aluminum Recipe',
       createdAt: Date.now(),
       updatedAt: Date.now(),
@@ -105,7 +106,7 @@ const PRESETS: MaterialPreset[] = [
     recommendedDpi: 254,
     recommendedDither: 'bayer-4',
     recipe: {
-      version: '1.0.0',
+      version: RECIPE_VERSION,
       name: 'Leather Recipe',
       createdAt: Date.now(),
       updatedAt: Date.now(),
@@ -120,12 +121,12 @@ const PRESETS: MaterialPreset[] = [
 export const MaterialPresetDialog: React.FC = () => {
   const isOpen = useUIStore((s) => s.isPresetDialogOpen);
   const setOpen = useUIStore((s) => s.setPresetDialogOpen);
-  const applyRecipe = useEditStore((s) => s.applyRecipe);
+  const edit = useDocumentStore((s) => s.edit);
 
   if (!isOpen) return null;
 
   const handleSelectPreset = (preset: MaterialPreset) => {
-    applyRecipe(preset.recipe);
+    edit(applyRecipe(preset.recipe));
     setOpen(false);
   };
 

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { DEFAULT_TONAL, DEFAULT_DITHER } from '../../src/store/editStore';
+import { DEFAULT_TONAL, DEFAULT_DITHER } from '../../src/lib/document';
 import { buildTonalLUT, applyFastTonalLUT } from '../../src/lib/fast-tonal';
-import { DEFAULT_COLOR } from '../../src/store/editStore';
+import { DEFAULT_COLOR } from '../../src/lib/document';
 
 describe('Image Suite Adjustments & Recipes', () => {
   it('has proper default tonal parameters', () => {

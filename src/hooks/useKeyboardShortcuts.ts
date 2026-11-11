@@ -1,17 +1,25 @@
 import { useEffect } from 'react';
-import { useEditStore } from '../store/editStore';
-import { useImageStore } from '../store/imageStore';
+import { useDocumentStore } from '../store/documentStore';
+import { useViewStore } from '../store/viewStore';
 import { useUIStore } from '../store/uiStore';
 
 export function useKeyboardShortcuts() {
-  const undo = useEditStore((s) => s.undo);
-  const redo = useEditStore((s) => s.redo);
-  const canUndo = useEditStore((s) => s.canUndo);
-  const canRedo = useEditStore((s) => s.canRedo);
+  const undo = useDocumentStore((s) => s.undo);
+  const redo = useDocumentStore((s) => s.redo);
+  // Undo and redo also cancel a gesture in progress, so they apply whenever a
+  // gesture or an entry exists.
+  const canUndo = () => {
+    const s = useDocumentStore.getState();
+    return s.gesture !== null || s.past.length > 0;
+  };
+  const canRedo = () => {
+    const s = useDocumentStore.getState();
+    return s.gesture !== null || s.future.length > 0;
+  };
 
-  const setCanvasTool = useImageStore((s) => s.setCanvasTool);
-  const setZoom = useImageStore((s) => s.setZoom);
-  const resetViewport = useImageStore((s) => s.resetViewport);
+  const setCanvasTool = useViewStore((s) => s.setCanvasTool);
+  const setZoom = useViewStore((s) => s.setZoom);
+  const resetViewport = useViewStore((s) => s.resetViewport);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -101,8 +109,6 @@ export function useKeyboardShortcuts() {
   }, [
     undo,
     redo,
-    canUndo,
-    canRedo,
     setCanvasTool,
     setZoom,
     resetViewport,

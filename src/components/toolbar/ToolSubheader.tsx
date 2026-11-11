@@ -1,30 +1,30 @@
 import React from 'react';
 import { Hand, Play, Trash2, RotateCcw, Scissors, Crop } from 'lucide-react';
-import { useImageStore } from '../../store/imageStore';
-import { useEditStore } from '../../store/editStore';
+import { useViewStore } from '../../store/viewStore';
+import { useDocumentStore } from '../../store/documentStore';
+import { useRenderStore } from '../../store/renderStore';
+import { DEFAULT_VECTOR, resetTonal, setVector } from '../../lib/document';
 import { useUIStore } from '../../store/uiStore';
 import type { VectorMode } from '../../types/vector';
 import styles from './ToolSubheader.module.css';
 
 export const ToolSubheader: React.FC = () => {
-  const canvasTool = useImageStore((s) => s.canvasTool);
-  const setCanvasTool = useImageStore((s) => s.setCanvasTool);
+  const canvasTool = useViewStore((s) => s.canvasTool);
+  const setCanvasTool = useViewStore((s) => s.setCanvasTool);
 
-  const vector = useEditStore((s) => s.vector);
-  const vectorResult = useEditStore((s) => s.vectorResult);
-  const autoTrace = useEditStore((s) => s.autoTrace);
-  const setVector = useEditStore((s) => s.setVector);
-  const setAutoTrace = useEditStore((s) => s.setAutoTrace);
-  const clearVectors = useEditStore((s) => s.clearVectors);
-  const generateCutline = useEditStore((s) => s.generateCutline);
-  const resetTonal = useEditStore((s) => s.resetTonal);
+  const vector = useDocumentStore((s) => s.doc?.vector ?? DEFAULT_VECTOR);
+  const sizeSet = useDocumentStore((s) => s.doc?.mmPerPx != null);
+  const edit = useDocumentStore((s) => s.edit);
+  const vectorResult = useRenderStore((s) => s.vectorResult);
+  const autoTrace = useRenderStore((s) => s.autoTrace);
+  const setAutoTrace = useRenderStore((s) => s.setAutoTrace);
+  const requestTrace = useRenderStore((s) => s.requestTrace);
+  const clearVectors = useRenderStore((s) => s.clearVectors);
+  const generateCutline = useRenderStore((s) => s.generateCutline);
 
   const activeTab = useUIStore((s) => s.activeTab);
 
-  const handleTraceNow = () => {
-    setAutoTrace(true);
-    setVector({ ...vector });
-  };
+  const handleTraceNow = () => requestTrace();
 
   return (
     <div className={styles.subheader}>
@@ -57,7 +57,7 @@ export const ToolSubheader: React.FC = () => {
           <>
             <button
               className={styles.actionBtn}
-              onClick={resetTonal}
+              onClick={() => edit(resetTonal)}
               title="Reset tonal & color adjustments"
             >
               <RotateCcw size={12} /> Reset Adjustments
@@ -71,7 +71,7 @@ export const ToolSubheader: React.FC = () => {
             <select
               className={styles.modeSelect}
               value={vector.mode}
-              onChange={(e) => setVector({ mode: e.target.value as VectorMode })}
+              onChange={(e) => edit(setVector({ mode: e.target.value as VectorMode }))}
             >
               <option value="outline">Outline Trace</option>
               <option value="multi-color">Multi-Color K-Means</option>
@@ -90,7 +90,8 @@ export const ToolSubheader: React.FC = () => {
               className={styles.actionBtn}
               style={{ background: 'rgba(239, 68, 68, 0.15)', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.3)' }}
               onClick={() => generateCutline(2.0, 3)}
-              title="Generate outer perimeter vector cutline (+2mm)"
+              disabled={!sizeSet}
+              title={sizeSet ? 'Generate outer perimeter vector cutline (+2mm)' : 'Set the size to use this'}
             >
               <Scissors size={12} /> Cutline (+2mm)
             </button>

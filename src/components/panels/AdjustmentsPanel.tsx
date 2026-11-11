@@ -11,33 +11,39 @@ import {
   Flame,
   Wand2,
 } from 'lucide-react';
-import { useEditStore } from '../../store/editStore';
-import { Slider } from '../shared/Slider';
+import { useDocumentStore } from '../../store/documentStore';
+import { DocumentSlider } from '../shared/Slider';
 import { Histogram } from '../shared/Histogram';
-import type { GrayscaleMode, TonalAdjustments, ColorAdjustments, DetailEnhancements } from '../../types/image';
+import type { GrayscaleMode } from '../../types/image';
+import type { DocumentUpdate } from '../../types/document';
+import {
+  DEFAULT_DETAIL,
+  DEFAULT_TONAL,
+  DEFAULT_COLOR,
+    resetTonal,
+  setColor,
+  setDetail,
+  setTonal,
+} from '../../lib/document';
 import styles from './Panels.module.css';
 
+/** Shown on controls whose lengths are in millimetres while the size is not set. */
+export const SET_SIZE_NOTE = 'Set the size to use this';
+
+/** Applies several updates as one edit, so they are one undo entry. */
+function all(...updates: DocumentUpdate[]): DocumentUpdate {
+  return (d) => updates.reduce((acc, u) => u(acc), d);
+}
+
+/** Tonal, colour and detail adjustments of the open document. */
 export const AdjustmentsPanel: React.FC = () => {
-  const tonal = useEditStore((s) => s.tonal);
-  const color = useEditStore((s) => s.color);
-  const detail = useEditStore((s) => s.detail);
-  const setTonalStore = useEditStore((s) => s.setTonal);
-  const setColorStore = useEditStore((s) => s.setColor);
-  const setDetailStore = useEditStore((s) => s.setDetail);
-  const resetTonal = useEditStore((s) => s.resetTonal);
-
-  // Dispatch edits to editStore
-  const setTonal = (partial: Partial<TonalAdjustments>) => {
-    setTonalStore(partial);
-  };
-
-  const setColor = (partial: Partial<ColorAdjustments>) => {
-    setColorStore(partial);
-  };
-
-  const setDetail = (partial: Partial<DetailEnhancements>) => {
-    setDetailStore(partial);
-  };
+  const doc = useDocumentStore((s) => s.doc);
+  const edit = useDocumentStore((s) => s.edit);
+  const tonal = doc?.steps.tonal ?? DEFAULT_TONAL;
+  const color = doc?.steps.color ?? DEFAULT_COLOR;
+  const detail = doc?.steps.detail ?? DEFAULT_DETAIL;
+  // Sharpening and the adaptive threshold have lengths in mm, so they need a size.
+  const sizeSet = doc?.mmPerPx != null;
 
   // Accordion state - Basic Tone and Levels open by default
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
@@ -88,50 +94,24 @@ export const AdjustmentsPanel: React.FC = () => {
   const applyPreset = (name: string) => {
     switch (name) {
       case 'auto-levels':
-        setTonal({
-          blackPoint: 15,
-          whitePoint: 245,
-          midtones: 5,
-          contrast: 15,
-        });
+        edit(setTonal({ blackPoint: 15, whitePoint: 245, midtones: 5, contrast: 15 }));
         break;
       case 'laser-prep':
-        setTonal({
-          contrast: 30,
-          clarity: 35,
-          midtones: 10,
-          highlights: -15,
-          shadows: 20,
-          grayscaleMode: 'rec709',
-        });
-        setDetail({
-          unsharpStrength: 60,
-          unsharpRadius: 1.5,
-        });
+        edit(
+          all(
+            setTonal({ contrast: 30, clarity: 35, midtones: 10, highlights: -15, shadows: 20, grayscaleMode: 'rec709' }),
+            setDetail({ unsharpStrength: 60, unsharpRadiusMm: DEFAULT_DETAIL.unsharpRadiusMm })
+          )
+        );
         break;
       case 'shadow-lift':
-        setTonal({
-          shadows: 50,
-          midtones: 25,
-          exposure: 0.3,
-          contrast: 10,
-        });
+        edit(setTonal({ shadows: 50, midtones: 25, exposure: 0.3, contrast: 10 }));
         break;
       case 'high-contrast':
-        setTonal({
-          contrast: 50,
-          blacks: -20,
-          whites: 20,
-          clarity: 25,
-        });
+        edit(setTonal({ contrast: 50, blacks: -20, whites: 20, clarity: 25 }));
         break;
       case 'slate-invert':
-        setTonal({
-          invert: true,
-          contrast: 35,
-          clarity: 30,
-          grayscaleMode: 'rec709',
-        });
+        edit(setTonal({ invert: true, contrast: 35, clarity: 30, grayscaleMode: 'rec709' }));
         break;
       default:
         break;
@@ -151,7 +131,7 @@ export const AdjustmentsPanel: React.FC = () => {
       {/* Header */}
       <div className={styles.panelHeader}>
         <span className={styles.panelTitle}>Tonal & Enhancements</span>
-        <button className={styles.resetButton} onClick={resetTonal} title="Reset all adjustments">
+        <button className={styles.resetButton} onClick={() => edit(resetTonal)} title="Reset all adjustments">
           Reset All
         </button>
       </div>
@@ -228,7 +208,7 @@ export const AdjustmentsPanel: React.FC = () => {
                 className={styles.resetButton}
                 onClick={(e) => {
                   e.stopPropagation();
-                  setTonal({
+                  edit(setTonal({
                     exposure: 0,
                     brightness: 0,
                     contrast: 0,
@@ -237,7 +217,7 @@ export const AdjustmentsPanel: React.FC = () => {
                     shadows: 0,
                     whites: 0,
                     blacks: 0,
-                  });
+                  }));
                 }}
                 title="Reset Tone"
               >
@@ -250,71 +230,71 @@ export const AdjustmentsPanel: React.FC = () => {
 
         {openSections.tone && (
           <div className={styles.accordionContent}>
-            <Slider
+            <DocumentSlider
               label="Exposure"
               value={tonal.exposure ?? 0}
               min={-3.0}
               max={3.0}
               step={0.1}
               unit=" EV"
-              onChange={(v) => setTonal({ exposure: v })}
-              onReset={() => setTonal({ exposure: 0 })}
+              update={(v) => setTonal({ exposure: v })}
+              reset={setTonal({ exposure: 0 })}
             />
-            <Slider
+            <DocumentSlider
               label="Brightness"
               value={tonal.brightness}
               min={-100}
               max={100}
-              onChange={(v) => setTonal({ brightness: v })}
-              onReset={() => setTonal({ brightness: 0 })}
+              update={(v) => setTonal({ brightness: v })}
+              reset={setTonal({ brightness: 0 })}
             />
-            <Slider
+            <DocumentSlider
               label="Contrast"
               value={tonal.contrast}
               min={-100}
               max={100}
-              onChange={(v) => setTonal({ contrast: v })}
-              onReset={() => setTonal({ contrast: 0 })}
+              update={(v) => setTonal({ contrast: v })}
+              reset={setTonal({ contrast: 0 })}
             />
-            <Slider
+            <DocumentSlider
               label="Midtones"
               value={tonal.midtones ?? 0}
               min={-100}
               max={100}
-              onChange={(v) => setTonal({ midtones: v })}
-              onReset={() => setTonal({ midtones: 0 })}
+              update={(v) => setTonal({ midtones: v })}
+              reset={setTonal({ midtones: 0 })}
             />
-            <Slider
+            <DocumentSlider
               label="Highlights"
               value={tonal.highlights ?? 0}
               min={-100}
               max={100}
-              onChange={(v) => setTonal({ highlights: v })}
-              onReset={() => setTonal({ highlights: 0 })}
+              update={(v) => setTonal({ highlights: v })}
+              reset={setTonal({ highlights: 0 })}
             />
-            <Slider
+            <DocumentSlider
               label="Shadows"
               value={tonal.shadows ?? 0}
               min={-100}
               max={100}
-              onChange={(v) => setTonal({ shadows: v })}
-              onReset={() => setTonal({ shadows: 0 })}
+              update={(v) => setTonal({ shadows: v })}
+              reset={setTonal({ shadows: 0 })}
             />
-            <Slider
+            <DocumentSlider
               label="Whites"
               value={tonal.whites ?? 0}
               min={-100}
               max={100}
-              onChange={(v) => setTonal({ whites: v })}
-              onReset={() => setTonal({ whites: 0 })}
+              update={(v) => setTonal({ whites: v })}
+              reset={setTonal({ whites: 0 })}
             />
-            <Slider
+            <DocumentSlider
               label="Blacks"
               value={tonal.blacks ?? 0}
               min={-100}
               max={100}
-              onChange={(v) => setTonal({ blacks: v })}
-              onReset={() => setTonal({ blacks: 0 })}
+              update={(v) => setTonal({ blacks: v })}
+              reset={setTonal({ blacks: 0 })}
             />
           </div>
         )}
@@ -345,7 +325,7 @@ export const AdjustmentsPanel: React.FC = () => {
                 className={styles.resetButton}
                 onClick={(e) => {
                   e.stopPropagation();
-                  setTonal({ blackPoint: 0, whitePoint: 255, gamma: 1.0 });
+                  edit(setTonal({ blackPoint: 0, whitePoint: 255, gamma: 1.0 }));
                 }}
                 title="Reset Levels"
               >
@@ -358,30 +338,30 @@ export const AdjustmentsPanel: React.FC = () => {
 
         {openSections.levels && (
           <div className={styles.accordionContent}>
-            <Slider
+            <DocumentSlider
               label="Black Point"
               value={tonal.blackPoint}
               min={0}
               max={255}
-              onChange={(v) => setTonal({ blackPoint: v })}
-              onReset={() => setTonal({ blackPoint: 0 })}
+              update={(v) => setTonal({ blackPoint: v })}
+              reset={setTonal({ blackPoint: 0 })}
             />
-            <Slider
+            <DocumentSlider
               label="Gamma Curve"
               value={tonal.gamma}
               min={0.2}
               max={3.0}
               step={0.05}
-              onChange={(v) => setTonal({ gamma: v })}
-              onReset={() => setTonal({ gamma: 1.0 })}
+              update={(v) => setTonal({ gamma: v })}
+              reset={setTonal({ gamma: 1.0 })}
             />
-            <Slider
+            <DocumentSlider
               label="White Point"
               value={tonal.whitePoint}
               min={0}
               max={255}
-              onChange={(v) => setTonal({ whitePoint: v })}
-              onReset={() => setTonal({ whitePoint: 255 })}
+              update={(v) => setTonal({ whitePoint: v })}
+              reset={setTonal({ whitePoint: 255 })}
             />
           </div>
         )}
@@ -412,8 +392,12 @@ export const AdjustmentsPanel: React.FC = () => {
                 className={styles.resetButton}
                 onClick={(e) => {
                   e.stopPropagation();
-                  setTonal({ clarity: 0 });
-                  setDetail({ unsharpStrength: 0, unsharpRadius: 1.5 });
+                  edit(
+                    all(
+                      setTonal({ clarity: 0 }),
+                      setDetail({ unsharpStrength: 0, unsharpRadiusMm: DEFAULT_DETAIL.unsharpRadiusMm })
+                    )
+                  );
                 }}
                 title="Reset Clarity"
               >
@@ -426,34 +410,37 @@ export const AdjustmentsPanel: React.FC = () => {
 
         {openSections.detail && (
           <div className={styles.accordionContent}>
-            <Slider
+            <DocumentSlider
               label="Clarity (Midtone Contrast)"
               value={tonal.clarity ?? 0}
               min={-100}
               max={100}
-              onChange={(v) => setTonal({ clarity: v })}
-              onReset={() => setTonal({ clarity: 0 })}
+              update={(v) => setTonal({ clarity: v })}
+              reset={setTonal({ clarity: 0 })}
             />
-            <Slider
+            <DocumentSlider
               label="Edge Sharpening (Unsharp Mask)"
               value={detail.unsharpStrength}
               min={0}
               max={200}
               step={5}
               unit="%"
-              onChange={(v) => setDetail({ unsharpStrength: v })}
-              onReset={() => setDetail({ unsharpStrength: 0 })}
+              update={(v) => setDetail({ unsharpStrength: v })}
+              reset={setDetail({ unsharpStrength: 0 })}
+              disabled={!sizeSet}
+              note={sizeSet ? undefined : SET_SIZE_NOTE}
             />
             {detail.unsharpStrength > 0 && (
-              <Slider
+              <DocumentSlider
                 label="Sharpen Radius"
-                value={detail.unsharpRadius}
-                min={0.5}
-                max={5.0}
-                step={0.1}
-                unit="px"
-                onChange={(v) => setDetail({ unsharpRadius: v })}
-                onReset={() => setDetail({ unsharpRadius: 1.5 })}
+                value={detail.unsharpRadiusMm}
+                min={0.04}
+                max={0.5}
+                step={0.01}
+                unit="mm"
+                update={(v) => setDetail({ unsharpRadiusMm: v })}
+                reset={setDetail({ unsharpRadiusMm: DEFAULT_DETAIL.unsharpRadiusMm })}
+                disabled={!sizeSet}
               />
             )}
           </div>
@@ -485,8 +472,12 @@ export const AdjustmentsPanel: React.FC = () => {
                 className={styles.resetButton}
                 onClick={(e) => {
                   e.stopPropagation();
-                  setColor({ saturation: 0, vibrance: 0, temperature: 0, tint: 0 });
-                  setTonal({ grayscaleMode: 'none' });
+                  edit(
+                    all(
+                      setColor({ saturation: 0, vibrance: 0, temperature: 0, tint: 0 }),
+                      setTonal({ grayscaleMode: 'none' })
+                    )
+                  );
                 }}
                 title="Reset Color"
               >
@@ -509,7 +500,7 @@ export const AdjustmentsPanel: React.FC = () => {
                   <button
                     key={opt.id}
                     className={`${styles.segmentedItem} ${(tonal.grayscaleMode || 'none') === opt.id ? styles.segmentedItemActive : ''}`}
-                    onClick={() => setTonal({ grayscaleMode: opt.id })}
+                    onClick={() => edit(setTonal({ grayscaleMode: opt.id }))}
                   >
                     {opt.label}
                   </button>
@@ -517,37 +508,37 @@ export const AdjustmentsPanel: React.FC = () => {
               </div>
             </div>
 
-            <Slider
+            <DocumentSlider
               label="Saturation"
               value={color.saturation}
               min={-100}
               max={100}
-              onChange={(v) => setColor({ saturation: v })}
-              onReset={() => setColor({ saturation: 0 })}
+              update={(v) => setColor({ saturation: v })}
+              reset={setColor({ saturation: 0 })}
             />
-            <Slider
+            <DocumentSlider
               label="Vibrance"
               value={color.vibrance ?? 0}
               min={-100}
               max={100}
-              onChange={(v) => setColor({ vibrance: v })}
-              onReset={() => setColor({ vibrance: 0 })}
+              update={(v) => setColor({ vibrance: v })}
+              reset={setColor({ vibrance: 0 })}
             />
-            <Slider
+            <DocumentSlider
               label="Temperature (Cool / Warm)"
               value={color.temperature}
               min={-100}
               max={100}
-              onChange={(v) => setColor({ temperature: v })}
-              onReset={() => setColor({ temperature: 0 })}
+              update={(v) => setColor({ temperature: v })}
+              reset={setColor({ temperature: 0 })}
             />
-            <Slider
+            <DocumentSlider
               label="Tint (Green / Magenta)"
               value={color.tint}
               min={-100}
               max={100}
-              onChange={(v) => setColor({ tint: v })}
-              onReset={() => setColor({ tint: 0 })}
+              update={(v) => setColor({ tint: v })}
+              reset={setColor({ tint: 0 })}
             />
           </div>
         )}
@@ -578,8 +569,7 @@ export const AdjustmentsPanel: React.FC = () => {
                 className={styles.resetButton}
                 onClick={(e) => {
                   e.stopPropagation();
-                  setDetail({ clahe: false, adaptiveThreshold: false });
-                  setTonal({ invert: false });
+                  edit(all(setDetail({ clahe: false, adaptiveThreshold: false }), setTonal({ invert: false })));
                 }}
                 title="Reset Filters"
               >
@@ -599,7 +589,7 @@ export const AdjustmentsPanel: React.FC = () => {
                 type="checkbox"
                 className={styles.checkbox}
                 checked={tonal.invert ?? false}
-                onChange={(e) => setTonal({ invert: e.target.checked })}
+                onChange={(e) => edit(setTonal({ invert: e.target.checked }))}
               />
             </div>
 
@@ -610,26 +600,26 @@ export const AdjustmentsPanel: React.FC = () => {
                 type="checkbox"
                 className={styles.checkbox}
                 checked={detail.clahe}
-                onChange={(e) => setDetail({ clahe: e.target.checked })}
+                onChange={(e) => edit(setDetail({ clahe: e.target.checked }))}
               />
             </div>
             {detail.clahe && (
               <>
-                <Slider
+                <DocumentSlider
                   label="Clip Limit"
                   value={detail.claheClipLimit}
                   min={1.0}
                   max={8.0}
                   step={0.1}
-                  onChange={(v) => setDetail({ claheClipLimit: v })}
+                  update={(v) => setDetail({ claheClipLimit: v })}
                 />
-                <Slider
+                <DocumentSlider
                   label="Grid Size"
                   value={detail.claheGridSize}
                   min={4}
                   max={24}
                   step={2}
-                  onChange={(v) => setDetail({ claheGridSize: v })}
+                  update={(v) => setDetail({ claheGridSize: v })}
                 />
               </>
             )}
@@ -641,25 +631,31 @@ export const AdjustmentsPanel: React.FC = () => {
                 type="checkbox"
                 className={styles.checkbox}
                 checked={detail.adaptiveThreshold}
-                onChange={(e) => setDetail({ adaptiveThreshold: e.target.checked })}
+                disabled={!sizeSet}
+                onChange={(e) => edit(setDetail({ adaptiveThreshold: e.target.checked }))}
               />
             </div>
+            {!sizeSet && <div className={styles.controlNote}>{SET_SIZE_NOTE}</div>}
             {detail.adaptiveThreshold && (
               <>
-                <Slider
+                <DocumentSlider
                   label="Block Size"
-                  value={detail.adaptiveBlockSize}
-                  min={5}
-                  max={61}
-                  step={2}
-                  onChange={(v) => setDetail({ adaptiveBlockSize: v })}
+                  value={detail.adaptiveBlockMm}
+                  min={0.4}
+                  max={5.2}
+                  step={0.1}
+                  unit="mm"
+                  update={(v) => setDetail({ adaptiveBlockMm: v })}
+                  reset={setDetail({ adaptiveBlockMm: DEFAULT_DETAIL.adaptiveBlockMm })}
+                  disabled={!sizeSet}
                 />
-                <Slider
+                <DocumentSlider
                   label="Constant Offset"
                   value={detail.adaptiveConstant}
                   min={-20}
                   max={20}
-                  onChange={(v) => setDetail({ adaptiveConstant: v })}
+                  update={(v) => setDetail({ adaptiveConstant: v })}
+                  disabled={!sizeSet}
                 />
               </>
             )}

@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
 import { Grid, X, Check } from 'lucide-react';
-import { openLoadedImage, hasUnsavedEdits, confirmReplaceInBrowser } from '../../lib/open-image';
-import { useEditStore } from '../../store/editStore';
-import { useImageStore } from '../../store/imageStore';
+import { confirmReplaceInBrowser } from '../../lib/open-image';
+import { useDocumentStore, hasUnsavedEdits } from '../../store/documentStore';
+import { previewDpi, useRenderStore } from '../../store/renderStore';
 import { useUIStore } from '../../store/uiStore';
+import { dpiOf, mmPerPxFromDpi } from '../../lib/document-size';
 import { generateTestGridRaster, generateTestGridVector } from '../../lib/test-grid-generator';
 import styles from './MaterialTestGridDialog.module.css';
 
@@ -20,28 +21,35 @@ export const MaterialTestGridDialog: React.FC<Props> = ({ isOpen, onClose }) => 
   const [gapMm, setGapMm] = useState<number>(2);
   const [targetMode, setTargetMode] = useState<'raster' | 'vector'>('raster');
 
-  const metadata = useImageStore((s) => s.metadata);
-  const addVectorLayer = useEditStore((s) => s.addVectorLayer);
+  const doc = useDocumentStore((s) => s.doc);
+  const addVectorLayer = useRenderStore((s) => s.addVectorLayer);
   const toggleVectorOverlay = useUIStore((s) => s.toggleVectorOverlay);
 
   if (!isOpen) return null;
 
-  const handleGenerate = async () => {
-    const dpi = metadata?.dpi || 300;
+  // The vector grid is drawn over the preview, so it needs the preview's
+  // resolution, which needs the size.
+  const vectorDpi = doc ? previewDpi() : null;
+  const canGenerate = targetMode === 'raster' || vectorDpi !== null;
 
+  const handleGenerate = async () => {
     if (targetMode === 'vector') {
+      if (vectorDpi === null) return;
       const vectorLayer = generateTestGridVector({
         rows,
         cols,
         boxSizeMm,
         gapMm,
-        dpi,
+        dpi: vectorDpi,
         type,
       });
       addVectorLayer(vectorLayer);
       toggleVectorOverlay();
     } else {
       if (hasUnsavedEdits() && !confirmReplaceInBrowser()) return;
+      // The grid is generated at the open image's resolution, or 300 DPI, and
+      // opens as a new document whose size is already set.
+      const dpi = (doc && dpiOf(doc)) ?? 300;
       const { buffer, width, height } = generateTestGridRaster({
         rows,
         cols,
@@ -50,28 +58,20 @@ export const MaterialTestGridDialog: React.FC<Props> = ({ isOpen, onClose }) => 
         dpi,
         type,
       });
-
-      const blob = new Blob([buffer], { type: 'image/png' });
-      const file = new File([blob], `material-test-grid-${type}.png`, { type: 'image/png' });
-      const bitmap = await createImageBitmap(new ImageData(new Uint8ClampedArray(buffer), width, height));
-
-      openLoadedImage({
-        file,
-        originalBuffer: buffer,
-        bitmap,
-        metadata: {
-          name: `Test Grid (${type === 'power-matrix' ? 'Power/Speed' : 'Steps'})`,
-          width,
-          height,
-          dpi,
-          aspectRatio: width / height,
-          originalSizeBytes: buffer.byteLength,
-          format: 'png',
+      useDocumentStore.getState().open(
+        {
+          file: null,
+          name: `Test Grid (${type === 'power-matrix' ? 'Power-Speed' : 'Steps'}).png`,
+          widthPx: width,
+          heightPx: height,
           hasAlpha: false,
+          fileDpi: null,
+          preview: buffer,
+          previewWidth: width,
+          previewHeight: height,
         },
-        previewBuffer: buffer,
-        previewDims: { width, height, scale: 1.0 },
-      });
+        mmPerPxFromDpi(dpi)
+      );
     }
 
     onClose();
@@ -96,7 +96,7 @@ export const MaterialTestGridDialog: React.FC<Props> = ({ isOpen, onClose }) => 
             <select
               className={styles.select}
               value={type}
-              onChange={(e) => setType(e.target.value as any)}
+              onChange={(e) => setType(e.target.value as typeof type)}
             >
               <option value="power-matrix">Power vs. Speed Matrix (Laser / CNC Substrate Calibration)</option>
               <option value="grayscale-step">Grayscale Step Wedge (0% to 100% Black Density)</option>
@@ -172,7 +172,8 @@ export const MaterialTestGridDialog: React.FC<Props> = ({ isOpen, onClose }) => 
           <button className={styles.btnSecondary} onClick={onClose}>
             Cancel
           </button>
-          <button className={styles.btnPrimary} onClick={handleGenerate}>
+          {!canGenerate && <span className={styles.label}>Set the size to overlay a vector grid.</span>}
+          <button className={styles.btnPrimary} onClick={handleGenerate} disabled={!canGenerate}>
             <Check size={14} /> Generate Calibration Grid
           </button>
         </div>

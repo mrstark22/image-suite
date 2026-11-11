@@ -1,22 +1,3 @@
-export type ColorMode = 'rgb' | 'grayscale' | '1bit' | 'inverted-burn';
-
-export interface ImageMetadata {
-  name: string;
-  width: number;
-  height: number;
-  dpi: number;
-  aspectRatio: number;
-  originalSizeBytes: number;
-  format: string;
-  hasAlpha: boolean;
-}
-
-export interface PreviewDimensions {
-  width: number;
-  height: number;
-  scale: number;
-}
-
 export type GrayscaleMode = 'none' | 'rec709' | 'average' | 'desaturate' | 'max' | 'inverted';
 
 export interface TonalAdjustments {
@@ -45,25 +26,26 @@ export interface ColorAdjustments {
   tint: number;         // -100 to +100 (0 default)
 }
 
-export interface DetailEnhancements {
+/**
+ * Detail filter parameters as the worker runs them, with lengths in pixels of
+ * the image being processed. The document stores lengths in millimetres
+ * (`DetailSettings`); `detailRunParams` converts them.
+ */
+export interface DetailRunParams {
   clahe: boolean;
-  claheClipLimit: number; // 1.0 to 10.0 (2.5 default)
-  claheGridSize: number;  // 2 to 32 (8 default)
-  unsharpStrength: number;// 0 to 200 (0 default)
-  unsharpRadius: number;  // 0.5 to 10.0 (1.5 default)
+  claheClipLimit: number;
+  claheGridSize: number;
+  unsharpStrength: number; // 0 to 200 %
+  unsharpRadiusPx: number;
   adaptiveThreshold: boolean;
-  adaptiveBlockSize: number; // 3 to 99 (15 default)
-  adaptiveConstant: number;  // -50 to 50 (2 default)
+  adaptiveBlockPx: number; // odd, at least 3
+  adaptiveConstant: number;
 }
 
-/** A rectangle in whole pixels of the uncropped preview. */
+/** A rectangle in whole pixels. The document's crop is in pixels of the source image. */
 export interface CropRect {
   x: number;
   y: number;
   width: number;
   height: number;
-}
-
-export interface GeometryTransform {
-  cropRect: CropRect | null;
 }

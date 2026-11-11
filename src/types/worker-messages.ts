@@ -1,9 +1,4 @@
-import type {
-  TonalAdjustments,
-  ColorAdjustments,
-  DetailEnhancements,
-  GeometryTransform,
-} from './image';
+import type { TonalAdjustments, ColorAdjustments, DetailRunParams } from './image';
 import type { DitherConfig } from './dither';
 import type { VectorConfig } from './vector';
 import type { DepthConfig } from './depth';
@@ -15,8 +10,8 @@ export interface ProcessPreviewPayload {
   height: number;
   tonal: TonalAdjustments;
   color: ColorAdjustments;
-  detail: DetailEnhancements;
-  geometry: GeometryTransform;
+  /** Lengths already converted to pixels of this buffer. */
+  detail: DetailRunParams;
   dither: DitherConfig;
 }
 

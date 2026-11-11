@@ -1,7 +1,8 @@
 import React from 'react';
-import { useEditStore } from '../../store/editStore';
-import { Slider } from '../shared/Slider';
-import type { DitherAlgorithm } from '../../types/dither';
+import { useDocumentStore } from '../../store/documentStore';
+import { DocumentSlider } from '../shared/Slider';
+import { DEFAULT_DITHER, resetDither, setDither } from '../../lib/document';
+import type { AlphaBurnHandling, DitherAlgorithm } from '../../types/dither';
 import styles from './Panels.module.css';
 
 interface DitherOption {
@@ -21,16 +22,16 @@ const DITHER_OPTIONS: DitherOption[] = [
   { id: 'bayer-8', title: 'Bayer 8×8', desc: 'Fine ordered pattern, 65 tones' },
 ];
 
+/** Dither settings of the open document. */
 export const DitheringPanel: React.FC = () => {
-  const dither = useEditStore((s) => s.dither);
-  const setDither = useEditStore((s) => s.setDither);
-  const resetDither = useEditStore((s) => s.resetDither);
+  const dither = useDocumentStore((s) => s.doc?.steps.dither ?? DEFAULT_DITHER);
+  const edit = useDocumentStore((s) => s.edit);
 
   return (
     <div className={styles.panel}>
       <div className={styles.panelHeader}>
         <span className={styles.panelTitle}>Dithering</span>
-        <button className={styles.resetButton} onClick={resetDither}>
+        <button className={styles.resetButton} onClick={() => edit(resetDither)}>
           Reset
         </button>
       </div>
@@ -45,7 +46,7 @@ export const DitheringPanel: React.FC = () => {
               <button
                 key={opt.id}
                 className={`${styles.cardButton} ${isActive ? styles.cardButtonActive : ''}`}
-                onClick={() => setDither({ algorithm: opt.id })}
+                onClick={() => edit(setDither({ algorithm: opt.id }))}
               >
                 <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%' }}>
                   <span className={styles.cardTitle}>{opt.title}</span>
@@ -75,13 +76,13 @@ export const DitheringPanel: React.FC = () => {
       {dither.algorithm !== 'none' && (
         <div className={styles.section}>
           <div className={styles.sectionTitle}>Parameters</div>
-          <Slider
+          <DocumentSlider
             label="Threshold / Density Cutoff"
             value={dither.threshold}
             min={0}
             max={255}
-            onChange={(v) => setDither({ threshold: v })}
-            onReset={() => setDither({ threshold: 128 })}
+            update={(v) => setDither({ threshold: v })}
+            reset={setDither({ threshold: DEFAULT_DITHER.threshold })}
           />
 
           {(dither.algorithm === 'floyd-steinberg' ||
@@ -93,7 +94,7 @@ export const DitheringPanel: React.FC = () => {
                 type="checkbox"
                 className={styles.checkbox}
                 checked={dither.serpentine}
-                onChange={(e) => setDither({ serpentine: e.target.checked })}
+                onChange={(e) => edit(setDither({ serpentine: e.target.checked }))}
               />
             </div>
           )}
@@ -101,13 +102,13 @@ export const DitheringPanel: React.FC = () => {
           {(dither.algorithm === 'bayer-2' ||
             dither.algorithm === 'bayer-4' ||
             dither.algorithm === 'bayer-8') && (
-            <Slider
+            <DocumentSlider
               label="Matrix Scale / Dot Size"
               value={dither.matrixScale}
               min={1}
               max={4}
               step={1}
-              onChange={(v) => setDither({ matrixScale: v })}
+              update={(v) => setDither({ matrixScale: v })}
             />
           )}
 
@@ -119,7 +120,7 @@ export const DitheringPanel: React.FC = () => {
             <select
               className={styles.select}
               value={dither.alphaHandling || 'white-ignore'}
-              onChange={(e) => setDither({ alphaHandling: e.target.value as any })}
+              onChange={(e) => edit(setDither({ alphaHandling: e.target.value as AlphaBurnHandling }))}
             >
               <option value="white-ignore">White (Ignore / No Burn - Standard for Laser)</option>
               <option value="black-burn">Black (Burn Background Box)</option>

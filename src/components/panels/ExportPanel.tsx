@@ -1,28 +1,34 @@
 import React, { useState } from 'react';
 import { Download, CheckCircle, FileCode, Box } from 'lucide-react';
-import { useImageStore } from '../../store/imageStore';
-import { useEditStore } from '../../store/editStore';
+import { useDocumentStore } from '../../store/documentStore';
+import { useRenderStore } from '../../store/renderStore';
+import { useUIStore } from '../../store/uiStore';
 import { encodeBmpRgb24 } from '../../lib/bmp-encoder';
 import { generateProductionSVG } from '../../lib/svg-export';
 import { generateDXF } from '../../lib/dxf-export';
+import { recipeFromDocument } from '../../lib/document';
+import { exportResolution, fromMm, physicalSize } from '../../lib/document-size';
 import styles from './Panels.module.css';
 
+/**
+ * Export of the prepared image, the trace and the heightmap. Size and DPI come
+ * from the document; there is no DPI setting here. Raster export is
+ * preview-sized until full-resolution export (#17), and writes the DPI that
+ * gives the preview the document's physical size.
+ */
 export const ExportPanel: React.FC = () => {
-  const metadata = useImageStore((s) => s.metadata);
-  const processedBuffer = useImageStore((s) => s.previewProcessedBuffer);
-  const depthHeightMapBuffer = useImageStore((s) => s.depthHeightMapBuffer);
-  const dims = useImageStore((s) => s.previewDimensions);
-  const getExportRecipe = useEditStore((s) => s.getExportRecipe);
-  const vectorResult = useEditStore((s) => s.vectorResult);
-  const vectorConfig = useEditStore((s) => s.vector);
-
+  const doc = useDocumentStore((s) => s.doc);
+  const source = useRenderStore((s) => s.source);
+  const processedBuffer = useRenderStore((s) => s.processed);
+  const depthHeightMapBuffer = useRenderStore((s) => s.depthHeightMap);
+  const vectorResult = useRenderStore((s) => s.vectorResult);
+  const setSizeDialogOpen = useUIStore((s) => s.setSizeDialogOpen);
 
   const [format, setFormat] = useState<'png' | 'bmp' | 'jpeg' | 'webp' | 'recipe'>('png');
-  const [dpi, setDpi] = useState<number>(300);
   const [isExporting, setIsExporting] = useState(false);
   const [isDone, setIsDone] = useState(false);
 
-  if (!metadata || !dims || !processedBuffer) {
+  if (!doc || !source || !processedBuffer) {
     return (
       <div className={styles.panel}>
         <div className={styles.panelHeader}>
@@ -35,11 +41,14 @@ export const ExportPanel: React.FC = () => {
     );
   }
 
-  // Calculate physical dimensions in mm and inches
-  const widthMm = ((metadata.width / dpi) * 25.4).toFixed(1);
-  const heightMm = ((metadata.height / dpi) * 25.4).toFixed(1);
-  const widthIn = (metadata.width / dpi).toFixed(2);
-  const heightIn = (metadata.height / dpi).toFixed(2);
+  const dims = source;
+  const baseName = doc.source.name.replace(/\.[^/.]+$/, '');
+  const size = physicalSize(doc);
+  // What the file will carry: the preview's pixels at the DPI that keeps the document's size.
+  const resolution = size ? exportResolution(doc, dims.width) : null;
+  const vectorConfig = doc.vector;
+  // Raster and heightmap files need a physical size; a recipe does not.
+  const canExport = format === 'recipe' || resolution !== null;
 
   const exportBufferAsFile = (
     buffer: ArrayBuffer,
@@ -49,6 +58,7 @@ export const ExportPanel: React.FC = () => {
     outFormat: string
   ) => {
     if (outFormat === 'bmp') {
+      const { dpi } = exportResolution(doc, width);
       const bmpBuf = encodeBmpRgb24(new Uint8ClampedArray(buffer), width, height, dpi);
       const blob = new Blob([bmpBuf], { type: 'image/bmp' });
       const url = URL.createObjectURL(blob);
@@ -80,18 +90,19 @@ export const ExportPanel: React.FC = () => {
   };
 
   const handleExecuteExport = () => {
+    if (!canExport) return;
     setIsExporting(true);
     setIsDone(false);
 
     setTimeout(() => {
       if (format === 'recipe') {
-        const recipe = getExportRecipe();
+        const recipe = recipeFromDocument(doc, `${baseName} recipe`);
         const json = JSON.stringify(recipe, null, 2);
         const blob = new Blob([json], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `${metadata.name.replace(/\.[^/.]+$/, '')}-recipe.imgsuite`;
+        a.download = `${baseName}-recipe.imgsuite`;
         a.click();
         URL.revokeObjectURL(url);
       } else {
@@ -100,7 +111,7 @@ export const ExportPanel: React.FC = () => {
           processedBuffer,
           dims.width,
           dims.height,
-          `prepared-${metadata.name.replace(/\.[^/.]+$/, '')}`,
+          `prepared-${baseName}`,
           format
         );
       }
@@ -123,7 +134,7 @@ export const ExportPanel: React.FC = () => {
         <select
           className={styles.select}
           value={format}
-          onChange={(e) => setFormat(e.target.value as any)}
+          onChange={(e) => setFormat(e.target.value as typeof format)}
         >
           <option value="png">PNG (Lossless 8-bit)</option>
           <option value="bmp">BMP (Windows Bitmap CNC/Laser)</option>
@@ -133,59 +144,44 @@ export const ExportPanel: React.FC = () => {
         </select>
       </div>
 
-      {/* Physical Manufacturing Sizing */}
+      {/* Physical size, from the document */}
       <div className={styles.section}>
-        <div className={styles.sectionTitle}>Physical Sizing & Resolution</div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 12 }}>
-          <div>
-            <label style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>DPI (DPI / PPI)</label>
-            <input
-              type="number"
-              value={dpi}
-              onChange={(e) => setDpi(Math.max(72, parseInt(e.target.value) || 300))}
-              style={{ width: '100%', marginTop: 2 }}
-            />
+        <div className={styles.sectionTitle}>Physical Size & Resolution</div>
+        {size && resolution ? (
+          <div className={styles.readoutBox}>
+            <div className={styles.readoutRow}>
+              <span>Width</span>
+              <strong>
+                {size.widthMm.toFixed(1)} mm ({fromMm(size.widthMm, 'in').toFixed(2)}")
+              </strong>
+            </div>
+            <div className={styles.readoutRow}>
+              <span>Height</span>
+              <strong>
+                {size.heightMm.toFixed(1)} mm ({fromMm(size.heightMm, 'in').toFixed(2)}")
+              </strong>
+            </div>
+            <div className={styles.readoutRow}>
+              <span>File</span>
+              <strong>
+                {dims.width} × {dims.height} px at {resolution.dpi.toFixed(1)} DPI
+              </strong>
+            </div>
+            <div className={styles.controlNote}>
+              Exports at preview resolution until full-resolution export (#17).
+            </div>
           </div>
-          <div>
-            <label style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>Preset DPI</label>
-            <select
-              style={{ width: '100%', marginTop: 2 }}
-              value={dpi}
-              onChange={(e) => setDpi(parseInt(e.target.value))}
-            >
-              <option value="254">254 DPI (0.1mm Laser Spot)</option>
-              <option value="300">300 DPI (Standard Print)</option>
-              <option value="508">508 DPI (0.05mm High Res)</option>
-              <option value="1000">1000 DPI (Fiber Laser Micro)</option>
-            </select>
+        ) : (
+          <div className={styles.readoutBox}>
+            <div className={styles.readoutRow}>
+              <span>Size not set</span>
+              <button className={styles.resetButton} onClick={() => setSizeDialogOpen(true)}>
+                Set size…
+              </button>
+            </div>
+            <div className={styles.controlNote}>Set the size to export images, heightmaps and vectors.</div>
           </div>
-        </div>
-
-        <div
-          style={{
-            background: 'var(--bg-input)',
-            padding: '10px',
-            borderRadius: 'var(--radius-sm)',
-            border: '1px solid var(--border-subtle)',
-            fontSize: 11,
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 4,
-          }}
-        >
-          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-            <span style={{ color: 'var(--text-tertiary)' }}>Output Width:</span>
-            <strong style={{ color: 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}>
-              {widthMm} mm ({widthIn}")
-            </strong>
-          </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-            <span style={{ color: 'var(--text-tertiary)' }}>Output Height:</span>
-            <strong style={{ color: 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}>
-              {heightMm} mm ({heightIn}")
-            </strong>
-          </div>
-        </div>
+        )}
       </div>
 
       {/* Export Action */}
@@ -193,7 +189,7 @@ export const ExportPanel: React.FC = () => {
         <button
           className={styles.primaryActionBtn}
           onClick={handleExecuteExport}
-          disabled={isExporting}
+          disabled={isExporting || !canExport}
         >
           {isDone ? (
             <>
@@ -216,13 +212,19 @@ export const ExportPanel: React.FC = () => {
             <button
               className={styles.primaryActionBtn}
               style={{ flex: 1, backgroundColor: 'var(--bg-surface-hover)', color: 'var(--text-primary)', border: '1px solid var(--border-medium)' }}
+              disabled={!resolution}
               onClick={() => {
-                const svgStr = generateProductionSVG(vectorResult, { strokeWidth: vectorConfig.strokeWidth, physicalUnits: 'mm' });
+                if (!resolution) return;
+                const svgStr = generateProductionSVG(vectorResult, {
+                  strokeWidth: vectorConfig.strokeWidth,
+                  physicalUnits: 'mm',
+                  dpi: resolution.dpi,
+                });
                 const blob = new Blob([svgStr], { type: 'image/svg+xml' });
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement('a');
                 a.href = url;
-                a.download = `${metadata.name.replace(/\.[^/.]+$/, '')}-vectors.svg`;
+                a.download = `${baseName}-vectors.svg`;
                 a.click();
                 URL.revokeObjectURL(url);
               }}
@@ -238,7 +240,7 @@ export const ExportPanel: React.FC = () => {
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement('a');
                 a.href = url;
-                a.download = `${metadata.name.replace(/\.[^/.]+$/, '')}-vectors.dxf`;
+                a.download = `${baseName}-vectors.dxf`;
                 a.click();
                 URL.revokeObjectURL(url);
               }}
@@ -259,12 +261,13 @@ export const ExportPanel: React.FC = () => {
           <button
             className={styles.primaryActionBtn}
             style={{ marginTop: 8, width: '100%', backgroundColor: 'var(--bg-surface-hover)', color: 'var(--text-primary)', border: '1px solid var(--border-medium)' }}
+            disabled={!resolution}
             onClick={() => {
               exportBufferAsFile(
                 depthHeightMapBuffer,
                 dims.width,
                 dims.height,
-                `${metadata.name.replace(/\.[^/.]+$/, '')}-16bit-heightmap`,
+                `${baseName}-16bit-heightmap`,
                 'png'
               );
             }}

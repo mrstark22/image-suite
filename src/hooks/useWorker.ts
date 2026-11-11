@@ -1,8 +1,9 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import * as Comlink from 'comlink';
-import { useImageStore } from '../store/imageStore';
-import { useEditStore } from '../store/editStore';
+import { useDocumentStore } from '../store/documentStore';
+import { useRenderStore } from '../store/renderStore';
 import { useUIStore } from '../store/uiStore';
+import { detailRunParams, pxPerMmAt } from '../lib/document-size';
 import { getComlinkWorker } from '../lib/comlink-setup';
 import { applyFastTonalLUT } from '../lib/fast-tonal';
 import { renderReliefPreview } from '../lib/depth-shader';
@@ -16,8 +17,8 @@ import { fitsDimensions } from '../lib/crop';
  * the scheduler in #16 and #19 replaces this hook.
  */
 function matchesCurrentPreview(width: number, height: number): boolean {
-  const dims = useImageStore.getState().previewDimensions;
-  return dims !== null && dims.width === width && dims.height === height;
+  const source = useRenderStore.getState().source;
+  return source !== null && source.width === width && source.height === height;
 }
 
 /**
@@ -26,33 +27,43 @@ function matchesCurrentPreview(width: number, height: number): boolean {
 function reportWorkerError(context: string, err: unknown): void {
   console.error(`${context}:`, err);
   const detail = err instanceof Error ? err.message : String(err);
-  useImageStore.getState().setErrorMessage(`${context}. ${detail}`);
+  useRenderStore.getState().setErrorMessage(`${context}. ${detail}`);
 }
 
 /**
- * Production-grade asynchronous worker coordinator.
- * Implements:
- * 1. Immediate 0ms dispatch when worker is idle.
- * 2. Lossless latest-state collapsing while worker is busy.
- * 3. Immediate frame-chained execution upon completion without arbitrary timer lags.
- * 4. Job ID sequencing to prevent race conditions and stale buffer overwrites.
+ * Runs the preview, trace and relief jobs on the worker, fed from the
+ * document. Each coordinator sends the latest request when the worker is free
+ * and drops results that no longer match the preview.
+ *
+ * Stopgap until #16 and #19 replace it with the pipeline and the schedulers.
  */
 export function useWorkerPipeline() {
-  const previewBuffer = useImageStore((s) => s.previewBuffer);
-  const previewProcessedBuffer = useImageStore((s) => s.previewProcessedBuffer);
-  const previewDims = useImageStore((s) => s.previewDimensions);
-  const setProcessedPreview = useImageStore((s) => s.setProcessedPreview);
-  const setDepthHeightMapBuffer = useImageStore((s) => s.setDepthHeightMapBuffer);
-  const setIsProcessing = useImageStore((s) => s.setIsProcessing);
-  const setVectorResult = useEditStore((s) => s.setVectorResult);
+  const source = useRenderStore((s) => s.source);
+  const previewBuffer = source?.buffer ?? null;
+  const previewProcessedBuffer = useRenderStore((s) => s.processed);
+  const previewWidth = source?.width ?? 0;
+  const previewHeight = source?.height ?? 0;
+  const previewDims = source ? { width: previewWidth, height: previewHeight } : null;
+  const setProcessedPreview = useRenderStore((s) => s.setProcessedPreview);
+  const setDepthHeightMapBuffer = useRenderStore((s) => s.setDepthHeightMap);
+  const setIsProcessing = useRenderStore((s) => s.setIsProcessing);
+  const setVectorResult = useRenderStore((s) => s.setVectorResult);
 
-  const tonal = useEditStore((s) => s.tonal);
-  const color = useEditStore((s) => s.color);
-  const detail = useEditStore((s) => s.detail);
-  const dither = useEditStore((s) => s.dither);
-  const geometry = useEditStore((s) => s.geometry);
-  const vector = useEditStore((s) => s.vector);
-  const autoTrace = useEditStore((s) => s.autoTrace);
+  const doc = useDocumentStore((s) => s.doc);
+  const tonal = doc?.steps.tonal;
+  const color = doc?.steps.color;
+  const dither = doc?.steps.dither;
+  const vector = doc?.vector;
+  const depth = doc?.depth;
+  // Lengths in the document are in mm; the worker takes pixels of the preview.
+  const pxPerMm = doc && source ? pxPerMmAt(doc, source.width) : null;
+  const detailSettings = doc?.steps.detail;
+  const detail = useMemo(
+    () => (detailSettings ? detailRunParams(detailSettings, pxPerMm) : null),
+    [detailSettings, pxPerMm]
+  );
+  const autoTrace = useRenderStore((s) => s.autoTrace);
+  const traceRequest = useRenderStore((s) => s.traceRequest);
   const activeTab = useUIStore((s) => s.activeTab);
 
   // Worker scheduling state
@@ -122,7 +133,7 @@ export function useWorkerPipeline() {
 
   // 1. Tonal & Dithering Pipeline
   useEffect(() => {
-    if (!previewBuffer || !previewDims) return;
+    if (!previewBuffer || !previewDims || !tonal || !color || !detail || !dither) return;
     if (activeTab === 'depth') return;
 
     const isSimpleTonal =
@@ -163,19 +174,18 @@ export function useWorkerPipeline() {
       tonal,
       color,
       detail,
-      geometry,
       dither,
     };
 
     triggerWorkerPipeline();
   }, [
     previewBuffer,
-    previewDims,
+    previewWidth,
+    previewHeight,
     tonal,
     color,
     detail,
     dither,
-    geometry,
     activeTab,
     setIsProcessing,
     setProcessedPreview,
@@ -232,7 +242,7 @@ export function useWorkerPipeline() {
   // 2. Vector Computation Pipeline (Zero-Latency Async Coordinator, respects autoTrace)
   useEffect(() => {
     const activeBuf = previewProcessedBuffer || previewBuffer;
-    if (!activeBuf || !previewDims || activeTab !== 'vector' || !autoTrace) return;
+    if (!activeBuf || !previewDims || !vector || activeTab !== 'vector' || !autoTrace) return;
 
     latestVectorPayloadRef.current = {
       buffer: activeBuf,
@@ -242,10 +252,9 @@ export function useWorkerPipeline() {
     };
 
     triggerVectorPipeline();
-  }, [previewBuffer, previewProcessedBuffer, previewDims, vector, activeTab, autoTrace, setVectorResult]);
+  }, [previewBuffer, previewProcessedBuffer, previewWidth, previewHeight, vector, activeTab, autoTrace, traceRequest, setVectorResult]);
 
   // 3. Live 3D Depth Map Pipeline (Zero-Latency Async Coordinator)
-  const depth = useEditStore((s) => s.depth);
   const isDepthBusyRef = useRef(false);
   const latestDepthPayloadRef = useRef<{ buffer: ArrayBuffer; width: number; height: number; config: any } | null>(null);
   const activeDepthJobIdRef = useRef(0);
@@ -305,7 +314,7 @@ export function useWorkerPipeline() {
   };
 
   useEffect(() => {
-    if (!previewBuffer || !previewDims || activeTab !== 'depth') return;
+    if (!previewBuffer || !previewDims || !depth || activeTab !== 'depth') return;
 
     latestDepthPayloadRef.current = {
       buffer: previewBuffer,
@@ -315,5 +324,5 @@ export function useWorkerPipeline() {
     };
 
     triggerDepthPipeline();
-  }, [previewBuffer, previewDims, depth, activeTab, setIsProcessing, setProcessedPreview]);
+  }, [previewBuffer, previewWidth, previewHeight, depth, activeTab, setIsProcessing, setProcessedPreview]);
 }

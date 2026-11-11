@@ -1,93 +1,142 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Maximize, X, Check } from 'lucide-react';
-import { useImageStore } from '../../store/imageStore';
-import { useEditStore } from '../../store/editStore';
+import { useDocumentStore } from '../../store/documentStore';
 import { useUIStore } from '../../store/uiStore';
-import { shownFileSize, pxToLength, dpiForLength, type PhysicalUnit } from '../../lib/image-size';
-import styles from './CanvasSizeDialog.module.css';
+import { setScale } from '../../lib/document';
+import {
+  cropRectOf,
+  fromMm,
+  mmPerPxForLength,
+  mmPerPxFromDpi,
+  MM_PER_INCH,
+  type PhysicalUnit,
+} from '../../lib/document-size';
+import styles from './SizeDialog.module.css';
+
+type Field = 'width' | 'height';
+
+function rounded(value: number, unit: PhysicalUnit): string {
+  return String(Number(value.toFixed(unit === 'mm' ? 1 : 3)));
+}
 
 /**
- * Sets the image's resolution, either directly as DPI or as the physical width
- * or height it should print at. The pixels are not changed: a physical size
- * and a DPI are two views of the same setting.
+ * Sets the physical size of the image as currently cropped, by its width or
+ * its height in mm or inches. That sets the document's scale (mm per source
+ * pixel); the DPI is shown as derived from it. The file's own DPI is offered
+ * as a suggestion only. Opens by itself when an image is loaded, since the
+ * size starts as not set.
  */
-export const CanvasSizeDialog: React.FC = () => {
-  const isOpen = useUIStore((s) => s.isCanvasSizeDialogOpen);
-  const setIsOpen = useUIStore((s) => s.setCanvasSizeDialogOpen);
-
-  const wholePreview = useImageStore((s) => s.sourcePreviewDimensions);
-  const metadata = useImageStore((s) => s.metadata);
-  const crop = useEditStore((s) => s.geometry.cropRect);
-  const setStoreDpi = useImageStore((s) => s.setDpi);
+export const SizeDialog: React.FC = () => {
+  const isOpen = useUIStore((s) => s.isSizeDialogOpen);
+  const setIsOpen = useUIStore((s) => s.setSizeDialogOpen);
+  const doc = useDocumentStore((s) => s.doc);
 
   const [unit, setUnit] = useState<PhysicalUnit>('mm');
-  const [dpi, setDpi] = useState<number>(300);
+  // The scale the dialog will apply; starts at the document's.
+  const [pending, setPending] = useState<number | null>(null);
   // Text of the field being typed in, so it can be empty or partial mid-edit.
-  const [editing, setEditing] = useState<{ field: 'width' | 'height' | 'dpi'; text: string } | null>(null);
+  const [editing, setEditing] = useState<{ field: Field; text: string } | null>(null);
 
+  const docId = doc?.id;
+  const docScale = doc?.mmPerPx ?? null;
   useEffect(() => {
     if (isOpen) {
-      setDpi(metadata?.dpi || 300);
+      setPending(docScale);
       setEditing(null);
     }
-  }, [metadata, isOpen]);
+  }, [isOpen, docId, docScale]);
 
-  if (!isOpen || !wholePreview || !metadata) return null;
+  if (!isOpen || !doc) return null;
 
-  // The DPI refers to the file's pixels, so sizes are computed from the file's
-  // pixel count for the current crop, not from the downscaled preview.
-  const dims = shownFileSize(metadata, wholePreview, crop);
+  const crop = cropRectOf(doc);
+  const close = () => setIsOpen(false);
 
-  const widthValue = Number(pxToLength(dims.width, dpi, unit).toFixed(unit === 'mm' ? 1 : 3));
-  const heightValue = Number(pxToLength(dims.height, dpi, unit).toFixed(unit === 'mm' ? 1 : 3));
-  const isValid = Number.isFinite(dpi) && dpi > 0;
+  const lengthText = (field: Field): string => {
+    if (editing?.field === field) return editing.text;
+    if (pending === null) return '';
+    const px = field === 'width' ? crop.width : crop.height;
+    return rounded(fromMm(px * pending, unit), unit);
+  };
 
-  const shown = (field: 'width' | 'height' | 'dpi', value: number) =>
-    editing?.field === field ? editing.text : String(value);
-
-  /** Keeps the typed text and, when it is a positive number, updates the DPI from it. */
-  const handleType = (field: 'width' | 'height' | 'dpi', text: string) => {
+  /** Keeps the typed text and, when it is a positive number, derives the scale from it. */
+  const handleType = (field: Field, text: string) => {
     setEditing({ field, text });
     const value = Number(text);
     if (text.trim() === '' || !Number.isFinite(value) || value <= 0) return;
-    if (field === 'width') setDpi(dpiForLength(dims.width, value, unit));
-    else if (field === 'height') setDpi(dpiForLength(dims.height, value, unit));
-    else setDpi(value);
+    setPending(mmPerPxForLength(field === 'width' ? crop.width : crop.height, value, unit));
   };
 
-  const handleSave = () => {
-    if (!isValid) return;
-    setStoreDpi(dpi);
-    setIsOpen(false);
+  const fileDpi = doc.source.fileDpi;
+  const suggestion = fileDpi !== null ? mmPerPxFromDpi(fileDpi) : null;
+  const canApply = pending !== null && pending !== doc.mmPerPx;
+
+  const handleApply = () => {
+    if (pending === null) return;
+    useDocumentStore.getState().edit(setScale(pending));
+    close();
   };
 
   return (
-    <div className={styles.backdrop} onClick={() => setIsOpen(false)}>
-      <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
+    <div className={styles.backdrop} onClick={close}>
+      <div
+        className={styles.modal}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="size-dialog-title"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className={styles.header}>
-          <div className={styles.title}>
+          <div className={styles.title} id="size-dialog-title">
             <Maximize size={16} color="var(--accent-primary)" />
-            Physical Size & Resolution
+            Physical size
           </div>
-          <button className={styles.closeBtn} onClick={() => setIsOpen(false)}>
+          <button className={styles.closeBtn} onClick={close} aria-label="Close">
             <X size={16} />
           </button>
         </div>
 
         <div className={styles.content}>
+          {doc.mmPerPx === null && (
+            <p className={styles.notice}>
+              Size not set. Enter the width or height this image should have on the material. Sharpening, the
+              adaptive threshold and export need it.
+            </p>
+          )}
+
           <div className={styles.inputField}>
-            <span className={styles.label}>Image</span>
+            <span className={styles.label}>Image{doc.steps.crop ? ' (cropped)' : ''}</span>
             <span className={styles.readout}>
-              {dims.width} × {dims.height} px
+              {crop.width} × {crop.height} px
             </span>
           </div>
+
+          {fileDpi !== null && suggestion !== null && (
+            <div className={styles.suggestion}>
+              <span>
+                File says {Number(fileDpi.toFixed(2))} DPI: {rounded(fromMm(crop.width * suggestion, unit), unit)} ×{' '}
+                {rounded(fromMm(crop.height * suggestion, unit), unit)} {unit}
+              </span>
+              <button
+                className={styles.suggestionBtn}
+                onClick={() => {
+                  setPending(suggestion);
+                  setEditing(null);
+                }}
+              >
+                Use this
+              </button>
+            </div>
+          )}
 
           <div className={styles.unitRow}>
             <span className={styles.label}>Unit</span>
             <select
               className={styles.unitSelect}
               value={unit}
-              onChange={(e) => setUnit(e.target.value as PhysicalUnit)}
+              onChange={(e) => {
+                setUnit(e.target.value as PhysicalUnit);
+                setEditing(null);
+              }}
             >
               <option value="mm">Millimetres (mm)</option>
               <option value="in">Inches (in)</option>
@@ -95,55 +144,41 @@ export const CanvasSizeDialog: React.FC = () => {
           </div>
 
           <div className={styles.inputGrid}>
-            <div className={styles.inputField}>
-              <span className={styles.label}>Width</span>
-              <div className={styles.inputWrapper}>
-                <input
-                  type="number"
-                  className={styles.input}
-                  value={shown('width', widthValue)}
-                  onChange={(e) => handleType('width', e.target.value)}
-                  onBlur={() => setEditing(null)}
-                />
-                <span className={styles.unitLabel}>{unit}</span>
-              </div>
-            </div>
-
-            <div className={styles.inputField}>
-              <span className={styles.label}>Height</span>
-              <div className={styles.inputWrapper}>
-                <input
-                  type="number"
-                  className={styles.input}
-                  value={shown('height', heightValue)}
-                  onChange={(e) => handleType('height', e.target.value)}
-                  onBlur={() => setEditing(null)}
-                />
-                <span className={styles.unitLabel}>{unit}</span>
-              </div>
-            </div>
+            {(['width', 'height'] as const).map((field) => (
+              <label className={styles.inputField} key={field}>
+                <span className={styles.label}>{field === 'width' ? 'Width' : 'Height'}</span>
+                <div className={styles.inputWrapper}>
+                  <input
+                    type="number"
+                    min={0}
+                    className={styles.input}
+                    placeholder="not set"
+                    value={lengthText(field)}
+                    onChange={(e) => handleType(field, e.target.value)}
+                    onBlur={() => setEditing(null)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && canApply) handleApply();
+                    }}
+                  />
+                  <span className={styles.unitLabel}>{unit}</span>
+                </div>
+              </label>
+            ))}
           </div>
 
           <div className={styles.inputField}>
-            <span className={styles.label}>Resolution (DPI)</span>
-            <div className={styles.inputWrapper}>
-              <input
-                type="number"
-                className={styles.input}
-                value={shown('dpi', Number(dpi.toFixed(2)))}
-                onChange={(e) => handleType('dpi', e.target.value)}
-                onBlur={() => setEditing(null)}
-              />
-              <span className={styles.unitLabel}>DPI</span>
-            </div>
+            <span className={styles.label}>Resolution</span>
+            <span className={styles.readout}>
+              {pending === null ? 'not set' : `${Number((MM_PER_INCH / pending).toFixed(2))} DPI`}
+            </span>
           </div>
         </div>
 
         <div className={styles.footer}>
-          <button className={styles.cancelBtn} onClick={() => setIsOpen(false)}>
+          <button className={styles.cancelBtn} onClick={close}>
             Cancel
           </button>
-          <button className={styles.applyBtn} onClick={handleSave} disabled={!isValid}>
+          <button className={styles.applyBtn} onClick={handleApply} disabled={!canApply}>
             <Check size={14} /> Apply
           </button>
         </div>

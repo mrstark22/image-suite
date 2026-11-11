@@ -1,53 +1,49 @@
 import React, { useState } from 'react';
 import { Sparkles, Cpu, CheckCircle2, RefreshCw, Undo } from 'lucide-react';
-import { useImageStore } from '../../store/imageStore';
+import { useRenderStore } from '../../store/renderStore';
 import { getComlinkWorker } from '../../lib/comlink-setup';
 import { Slider } from '../shared/Slider';
 import styles from './Panels.module.css';
 
+/**
+ * Background removal on the preview. The result replaces the preview's source
+ * pixels; it is not part of the document, so a new crop or image discards it
+ * and undo does not reach it (phase 5 makes it a pipeline step).
+ */
 export const AIPanel: React.FC = () => {
-  const previewBuffer = useImageStore((s) => s.previewBuffer);
-  const dims = useImageStore((s) => s.previewDimensions);
-  const setProcessedPreview = useImageStore((s) => s.setProcessedPreview);
+  const source = useRenderStore((s) => s.source);
+  const replaceSourcePixels = useRenderStore((s) => s.replaceSourcePixels);
+  const restoreSource = useRenderStore((s) => s.restoreSource);
+  const previewBuffer = source?.buffer ?? null;
 
   const [mode, setMode] = useState<'auto-border' | 'white-bg' | 'black-bg'>('auto-border');
   const [tolerance, setTolerance] = useState<number>(30);
   const [featherRadius, setFeatherRadius] = useState<number>(2);
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
-  const [backupBuffer, setBackupBuffer] = useState<ArrayBuffer | null>(null);
+  // The source the removal was applied to; Restore is offered while it is shown.
+  const [removedFrom, setRemovedFrom] = useState<typeof source>(null);
+  const canRestore = removedFrom !== null && source !== null && source.sourceId === removedFrom.sourceId && source.crop === removedFrom.crop;
 
   const handleRemoveBackground = async () => {
-    if (!previewBuffer || !dims) return;
+    if (!source) return;
 
     try {
       setIsProcessing(true);
       setStatusMessage(null);
 
-      // Save backup buffer for undo
-      if (!backupBuffer) {
-        setBackupBuffer(previewBuffer.slice(0));
-      }
-
       const worker = getComlinkWorker();
-      const bufCopy = previewBuffer.slice(0);
-
       const result = await worker.processBgRemoval({
-        buffer: bufCopy,
-        width: dims.width,
-        height: dims.height,
+        buffer: source.buffer.slice(0),
+        width: source.width,
+        height: source.height,
         tolerance,
         featherRadius,
         mode,
       });
 
-      // Update active preview buffer in store
-      useImageStore.setState({
-        previewBuffer: result.buffer.slice(0),
-        previewProcessedBuffer: result.buffer,
-      });
-      setProcessedPreview(result.buffer, result.durationMs);
-
+      replaceSourcePixels(result.buffer);
+      setRemovedFrom(useRenderStore.getState().source);
       setStatusMessage(`Background removed (${result.removedPixelCount.toLocaleString()} pixels) in ${result.durationMs.toFixed(1)}ms`);
     } catch (err: unknown) {
       console.error('Failed to remove background:', err);
@@ -58,11 +54,8 @@ export const AIPanel: React.FC = () => {
   };
 
   const handleRestoreOriginal = () => {
-    if (!backupBuffer) return;
-    useImageStore.setState({
-      previewBuffer: backupBuffer.slice(0),
-      previewProcessedBuffer: backupBuffer.slice(0),
-    });
+    restoreSource();
+    setRemovedFrom(null);
     setStatusMessage('Original image restored.');
   };
 
@@ -70,7 +63,7 @@ export const AIPanel: React.FC = () => {
     <div className={styles.panel}>
       <div className={styles.panelHeader}>
         <span className={styles.panelTitle}>AI & Segmentation</span>
-        {backupBuffer && (
+        {canRestore && (
           <button className={styles.resetButton} onClick={handleRestoreOriginal}>
             <Undo size={12} style={{ display: 'inline', marginRight: 4 }} />
             Restore
