@@ -1,89 +1,108 @@
-//! High-pass Edge Sharpening and Unsharp Masking filter
+//! Unsharp mask: each colour channel plus `amount` times its difference from
+//! a Gaussian blur of itself.
+//!
+//! The blur's sigma is `radius * 0.6 + 0.3` pixels and its kernel extends
+//! `ceil(3 * sigma)` pixels each side, with no upper limit, so a radius given
+//! in millimetres keeps its physical effect at any resolution. The blur runs
+//! one channel at a time, so it needs 8 bytes of scratch per pixel.
 
-pub fn apply_unsharp_mask(
-    pixels: &mut [u8],
-    width: usize,
-    height: usize,
-    amount: f32,
-    radius: f32,
-) {
+/// Sigma of the Gaussian blur for a radius in pixels.
+pub fn sigma_for_radius(radius: f32) -> f32 {
+    radius.max(0.0) * 0.6 + 0.3
+}
+
+/// How far the kernel extends each side of the centre, in pixels.
+pub fn kernel_extent(sigma: f32) -> usize {
+    (3.0 * sigma).ceil().max(1.0) as usize
+}
+
+/// The normalised-later weights of a 1D Gaussian of `sigma`, from `-extent` to `extent`.
+fn gaussian_weights(sigma: f32) -> Vec<f32> {
+    let extent = kernel_extent(sigma) as isize;
+    let two_sigma_sq = 2.0 * sigma * sigma;
+    (-extent..=extent).map(|d| (-((d * d) as f32) / two_sigma_sq).exp()).collect()
+}
+
+pub fn apply_unsharp_mask(pixels: &mut [u8], width: usize, height: usize, amount: f32, radius: f32) {
     if width == 0 || height == 0 || amount <= 0.0 {
         return;
     }
 
-    let r = radius.round().clamp(1.0, 5.0) as isize;
+    let weights = gaussian_weights(sigma_for_radius(radius));
+    let extent = (weights.len() / 2) as isize;
     let total = width * height;
-    let mut blurred = vec![0.0f32; total * 3];
+    let mut across = vec![0.0f32; total];
+    let mut blurred = vec![0.0f32; total];
 
-    // Horizontal Gaussian pass
-    let mut temp = vec![0.0f32; total * 3];
-    let sigma = radius * 0.6 + 0.3;
-    let two_sigma_sq = 2.0 * sigma * sigma;
-
-    for y in 0..height {
-        for x in 0..width {
-            let mut sum_r = 0.0f32;
-            let mut sum_g = 0.0f32;
-            let mut sum_b = 0.0f32;
-            let mut weight_sum = 0.0f32;
-
-            for dx in -r..=r {
-                let nx = x as isize + dx;
-                if nx >= 0 && nx < width as isize {
-                    let w = (-(dx * dx) as f32 / two_sigma_sq).exp();
-                    let p_idx = (y * width + nx as usize) * 4;
-                    sum_r += pixels[p_idx] as f32 * w;
-                    sum_g += pixels[p_idx + 1] as f32 * w;
-                    sum_b += pixels[p_idx + 2] as f32 * w;
+    for channel in 0..3 {
+        // Horizontal pass.
+        for y in 0..height {
+            for x in 0..width {
+                let mut sum = 0.0f32;
+                let mut weight_sum = 0.0f32;
+                let lo = (x as isize - extent).max(0);
+                let hi = (x as isize + extent).min(width as isize - 1);
+                for nx in lo..=hi {
+                    let w = weights[(nx - x as isize + extent) as usize];
+                    sum += pixels[(y * width + nx as usize) * 4 + channel] as f32 * w;
                     weight_sum += w;
                 }
+                across[y * width + x] = sum / weight_sum;
             }
-
-            let t_idx = (y * width + x) * 3;
-            temp[t_idx] = sum_r / weight_sum;
-            temp[t_idx + 1] = sum_g / weight_sum;
-            temp[t_idx + 2] = sum_b / weight_sum;
         }
-    }
-
-    // Vertical Gaussian pass
-    for y in 0..height {
-        for x in 0..width {
-            let mut sum_r = 0.0f32;
-            let mut sum_g = 0.0f32;
-            let mut sum_b = 0.0f32;
-            let mut weight_sum = 0.0f32;
-
-            for dy in -r..=r {
-                let ny = y as isize + dy;
-                if ny >= 0 && ny < height as isize {
-                    let w = (-(dy * dy) as f32 / two_sigma_sq).exp();
-                    let t_idx = (ny as usize * width + x) * 3;
-                    sum_r += temp[t_idx] * w;
-                    sum_g += temp[t_idx + 1] * w;
-                    sum_b += temp[t_idx + 2] * w;
+        // Vertical pass.
+        for y in 0..height {
+            let lo = (y as isize - extent).max(0);
+            let hi = (y as isize + extent).min(height as isize - 1);
+            for x in 0..width {
+                let mut sum = 0.0f32;
+                let mut weight_sum = 0.0f32;
+                for ny in lo..=hi {
+                    let w = weights[(ny - y as isize + extent) as usize];
+                    sum += across[ny as usize * width + x] * w;
                     weight_sum += w;
                 }
+                blurred[y * width + x] = sum / weight_sum;
             }
-
-            let b_idx = (y * width + x) * 3;
-            blurred[b_idx] = sum_r / weight_sum;
-            blurred[b_idx + 1] = sum_g / weight_sum;
-            blurred[b_idx + 2] = sum_b / weight_sum;
+        }
+        // Orig + amount * (orig - blurred).
+        for (px, &blur) in pixels.chunks_exact_mut(4).zip(blurred.iter()) {
+            let orig = px[channel] as f32;
+            let sharp = orig + (orig - blur) * amount;
+            px[channel] = sharp.round().clamp(0.0, 255.0) as u8;
         }
     }
+}
 
-    // Apply Unsharp Mask formula: Orig + Amount * (Orig - Blurred)
-    for i in 0..total {
-        let p_idx = i * 4;
-        let b_idx = i * 3;
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-        for c in 0..3 {
-            let orig = pixels[p_idx + c] as f32;
-            let blur = blurred[b_idx + c];
-            let diff = orig - blur;
-            let sharp = orig + diff * amount;
-            pixels[p_idx + c] = sharp.round().clamp(0.0, 255.0) as u8;
+    #[test]
+    fn the_kernel_follows_sigma_with_no_clamp() {
+        assert_eq!(kernel_extent(sigma_for_radius(1.5)), 4); // sigma 1.2
+        assert_eq!(kernel_extent(sigma_for_radius(20.0)), 37); // sigma 12.3
+        assert_eq!(kernel_extent(sigma_for_radius(0.0)), 1);
+    }
+
+    #[test]
+    fn a_large_radius_reaches_further_than_the_old_5_px_clamp() {
+        // A white step on a 60 px wide grey row: with a 20 px radius, a pixel
+        // 10 px from the edge is still darkened; a 5 px kernel could not see it.
+        let (w, h) = (60, 3);
+        let mut px = vec![255u8; w * h * 4];
+        for y in 0..h {
+            for x in 0..w {
+                let v = if x < 30 { 100 } else { 200 };
+                let i = (y * w + x) * 4;
+                px[i] = v;
+                px[i + 1] = v;
+                px[i + 2] = v;
+            }
         }
+        apply_unsharp_mask(&mut px, w, h, 1.0, 20.0);
+        let at = |x: usize| px[(w + x) * 4];
+        assert!(at(19) < 100, "10 px from the edge: {}", at(19));
+        assert!(at(40) > 200, "10 px from the edge: {}", at(40));
     }
 }
