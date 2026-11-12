@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Sparkles,
   FolderOpen,
@@ -21,7 +21,8 @@ import {
 import { useDocumentStore } from '../../store/documentStore';
 import { useRenderStore } from '../../store/renderStore';
 import { useViewStore } from '../../store/viewStore';
-import { openImageFiles, confirmReplaceInBrowser } from '../../lib/open-image';
+import { openImagePicker } from '../../lib/open-image';
+import { menuShortcut, ZOOM_STEP } from '../../lib/shortcuts';
 import { cropRectOf, dpiOf } from '../../lib/document-size';
 import { resetAll } from '../../lib/document';
 import { useUIStore } from '../../store/uiStore';
@@ -29,13 +30,13 @@ import styles from './MenuBar.module.css';
 
 export const MenuBar: React.FC = () => {
   const [openMenu, setOpenMenu] = useState<string | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const doc = useDocumentStore((s) => s.doc);
   const isProcessing = useRenderStore((s) => s.isProcessing);
   const isExporting = useRenderStore((s) => s.exportProgress !== null);
   const durationMs = useRenderStore((s) => s.processingDurationMs);
-  const setZoom = useViewStore((s) => s.setZoom);
+  const zoomBy = useViewStore((s) => s.zoomBy);
+  const fit = useViewStore((s) => s.fit);
   const resetViewport = useViewStore((s) => s.resetViewport);
 
   const undo = useDocumentStore((s) => s.undo);
@@ -73,19 +74,6 @@ export const MenuBar: React.FC = () => {
     return () => window.removeEventListener('click', handleOutsideClick);
   }, []);
 
-  const handleOpenFiles = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
-      const files = Array.from(e.target.files);
-      if (fileInputRef.current) fileInputRef.current.value = '';
-      try {
-        await openImageFiles(files, confirmReplaceInBrowser);
-      } catch (err: unknown) {
-        const message = err instanceof Error ? err.message : 'Failed to load image file';
-        useRenderStore.getState().setErrorMessage(message);
-      }
-    }
-  };
-
   // The image as cropped, in source pixels, and its resolution from the document.
   const shownSize = doc ? cropRectOf(doc) : null;
   const dpi = doc ? dpiOf(doc) : null;
@@ -97,14 +85,6 @@ export const MenuBar: React.FC = () => {
 
   return (
     <div className={styles.menuBar}>
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept="image/*"
-        style={{ display: 'none' }}
-        onChange={handleOpenFiles}
-      />
-
       {/* Left: Brand & Desktop Menus */}
       <div className={styles.leftSide}>
         <div className={styles.brand} onClick={() => setActiveTab('adjustments')}>
@@ -130,12 +110,12 @@ export const MenuBar: React.FC = () => {
                 <button
                   className={styles.dropdownItem}
                   onClick={() => {
-                    fileInputRef.current?.click();
+                    openImagePicker();
                     setOpenMenu(null);
                   }}
                 >
                   <span className={styles.itemLabel}><FolderOpen size={14} /> Open Image...</span>
-                  <span className={styles.itemShortcut}>Ctrl+O</span>
+                  <span className={styles.itemShortcut}>{menuShortcut('open')}</span>
                 </button>
                 <button
                   className={styles.dropdownItem}
@@ -157,7 +137,7 @@ export const MenuBar: React.FC = () => {
                   }}
                 >
                   <span className={styles.itemLabel}><Download size={14} /> Export Output...</span>
-                  <span className={styles.itemShortcut}>Ctrl+E</span>
+                  <span className={styles.itemShortcut}>{menuShortcut('export')}</span>
                 </button>
                 <button
                   className={styles.dropdownItem}
@@ -212,7 +192,7 @@ export const MenuBar: React.FC = () => {
                   }}
                 >
                   <span className={styles.itemLabel}><Undo2 size={14} /> Undo</span>
-                  <span className={styles.itemShortcut}>Ctrl+Z</span>
+                  <span className={styles.itemShortcut}>{menuShortcut('undo')}</span>
                 </button>
                 <button
                   className={styles.dropdownItem}
@@ -223,7 +203,7 @@ export const MenuBar: React.FC = () => {
                   }}
                 >
                   <span className={styles.itemLabel}><Redo2 size={14} /> Redo</span>
-                  <span className={styles.itemShortcut}>Ctrl+Y</span>
+                  <span className={styles.itemShortcut}>{menuShortcut('redo')}</span>
                 </button>
                 <div className={styles.menuDivider} />
                 <button
@@ -256,22 +236,32 @@ export const MenuBar: React.FC = () => {
                 <button
                   className={styles.dropdownItem}
                   onClick={() => {
-                    setZoom((z) => z * 1.25);
+                    zoomBy(ZOOM_STEP);
                     setOpenMenu(null);
                   }}
                 >
                   <span className={styles.itemLabel}><ZoomIn size={14} /> Zoom In</span>
-                  <span className={styles.itemShortcut}>Ctrl++</span>
+                  <span className={styles.itemShortcut}>{menuShortcut('zoomIn')}</span>
                 </button>
                 <button
                   className={styles.dropdownItem}
                   onClick={() => {
-                    setZoom((z) => z * 0.8);
+                    zoomBy(1 / ZOOM_STEP);
                     setOpenMenu(null);
                   }}
                 >
                   <span className={styles.itemLabel}><ZoomOut size={14} /> Zoom Out</span>
-                  <span className={styles.itemShortcut}>Ctrl+-</span>
+                  <span className={styles.itemShortcut}>{menuShortcut('zoomOut')}</span>
+                </button>
+                <button
+                  className={styles.dropdownItem}
+                  onClick={() => {
+                    fit();
+                    setOpenMenu(null);
+                  }}
+                >
+                  <span className={styles.itemLabel}><Maximize size={14} /> Fit to Screen</span>
+                  <span className={styles.itemShortcut}>{menuShortcut('fit')}</span>
                 </button>
                 <button
                   className={styles.dropdownItem}
@@ -281,7 +271,7 @@ export const MenuBar: React.FC = () => {
                   }}
                 >
                   <span className={styles.itemLabel}><Maximize2 size={14} /> Actual Size (100%)</span>
-                  <span className={styles.itemShortcut}>Ctrl+1</span>
+                  <span className={styles.itemShortcut}>{menuShortcut('actualSize')}</span>
                 </button>
                 <div className={styles.menuDivider} />
                 <button
@@ -382,7 +372,7 @@ export const MenuBar: React.FC = () => {
                   }}
                 >
                   <span className={styles.itemLabel}><Keyboard size={14} /> Keyboard Shortcuts</span>
-                  <span className={styles.itemShortcut}>?</span>
+                  <span className={styles.itemShortcut}>{menuShortcut('showShortcuts')}</span>
                 </button>
                 <button
                   className={styles.dropdownItem}

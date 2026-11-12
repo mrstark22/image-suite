@@ -5,6 +5,8 @@ import { useViewStore } from '../../store/viewStore';
 import { openImageFiles, confirmReplaceInBrowser } from '../../lib/open-image';
 import { DEFAULT_DEPTH } from '../../lib/document';
 import { fitsDimensions } from '../../lib/crop';
+import { fromCentre } from '../../lib/viewport';
+import { isTypingTarget } from '../../lib/shortcuts';
 import { useUIStore } from '../../store/uiStore';
 import { DropZone } from '../shared/DropZone';
 import { DepthViewer3D } from './DepthViewer3D';
@@ -14,7 +16,8 @@ import styles from './PreviewCanvas.module.css';
 
 export const PreviewCanvas: React.FC = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
+  // The container, as state so the effects below re-run when it mounts.
+  const [container, setContainer] = useState<HTMLDivElement | null>(null);
   const offscreenOrigRef = useRef<HTMLCanvasElement | null>(null);
 
   const source = useRenderStore((s) => s.source);
@@ -30,11 +33,12 @@ export const PreviewCanvas: React.FC = () => {
   const substrateCornerRadius = useViewStore((s) => s.substrateCornerRadius);
   const zoom = useViewStore((s) => s.zoom);
   const pan = useViewStore((s) => s.pan);
-  const setZoom = useViewStore((s) => s.setZoom);
+  const zoomBy = useViewStore((s) => s.zoomBy);
   const setPan = useViewStore((s) => s.setPan);
   const splitPosition = useViewStore((s) => s.splitPosition);
   const setSplitPosition = useViewStore((s) => s.setSplitPosition);
-  const fitToViewport = useViewStore((s) => s.fitToViewport);
+  const fit = useViewStore((s) => s.fit);
+  const setFrame = useViewStore((s) => s.setFrame);
   const dimsWidth = source?.width ?? 0;
   const dimsHeight = source?.height ?? 0;
   const dims = useMemo(
@@ -63,35 +67,72 @@ export const PreviewCanvas: React.FC = () => {
     panY: 0,
   });
 
+  // Tell the view store the container's and the image's sizes, so Fit can
+  // fit and a fitted view stays fitted when the window or the crop changes.
+  useEffect(() => {
+    if (!container || !dims) return;
+    const report = () => setFrame({ width: container.clientWidth, height: container.clientHeight }, dims);
+    report();
+    const observer = new ResizeObserver(report);
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, [container, dims, setFrame]);
+
   // Fit each newly opened image to the view.
   const fittedDocRef = useRef<string | null>(null);
   useEffect(() => {
-    if (dims && docId && containerRef.current && fittedDocRef.current !== docId) {
+    if (dims && docId && fittedDocRef.current !== docId) {
       fittedDocRef.current = docId;
-      const rect = containerRef.current.getBoundingClientRect();
-      fitToViewport(rect.width, rect.height, dims.width, dims.height);
+      fit();
     }
-  }, [dims, docId, fitToViewport]);
+  }, [dims, docId, fit]);
 
-  // Spacebar tracking for hand tool override
+  // Wheel zoom about the pointer. Attached directly because React's wheel
+  // listener is passive, and the page must not scroll or zoom instead.
   useEffect(() => {
+    if (!container) return;
+    const handleWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      if (e.deltaY === 0) return;
+      const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
+      zoomBy(factor, fromCentre({ x: e.clientX, y: e.clientY }, container.getBoundingClientRect()));
+    };
+    container.addEventListener('wheel', handleWheel, { passive: false });
+    return () => container.removeEventListener('wheel', handleWheel);
+  }, [container, zoomBy]);
+
+  // Holding Space with the pointer over the canvas pans with any tool. Space
+  // is taken from the page only then, so it does not also press the focused
+  // button; elsewhere it keeps its usual meaning, and it never leaves a text field.
+  const pointerOverCanvasRef = useRef(false);
+  useEffect(() => {
+    let held = false;
+    const setHeld = (value: boolean) => {
+      held = value;
+      setIsSpaceHeld(value);
+    };
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.code === 'Space' && !isSpaceHeld && document.activeElement?.tagName !== 'INPUT') {
-        setIsSpaceHeld(true);
-      }
+      if (e.code !== 'Space') return;
+      if (!held && (!pointerOverCanvasRef.current || isTypingTarget(document.activeElement))) return;
+      e.preventDefault();
+      if (!held) setHeld(true);
     };
     const handleKeyUp = (e: KeyboardEvent) => {
-      if (e.code === 'Space') {
-        setIsSpaceHeld(false);
-      }
+      if (e.code !== 'Space' || !held) return;
+      e.preventDefault();
+      setHeld(false);
     };
+    // A key released while the window is not focused never sends keyup.
+    const handleBlur = () => setHeld(false);
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keyup', handleKeyUp);
+    window.addEventListener('blur', handleBlur);
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
+      window.removeEventListener('blur', handleBlur);
     };
-  }, [isSpaceHeld]);
+  }, []);
 
   // Maintain persistent offscreen canvas for original image
   useEffect(() => {
@@ -152,11 +193,23 @@ export const PreviewCanvas: React.FC = () => {
     }
   }, [processedBuffer, previewVersion, dims, isSplitView, splitPosition]);
 
-  // Handle Wheel Zoom (preserving center)
-  const handleWheel = (e: React.WheelEvent) => {
+  const startPan = (e: React.MouseEvent) => {
+    setIsDraggingPan(true);
+    dragStartRef.current = {
+      clientX: e.clientX,
+      clientY: e.clientY,
+      panX: pan.x,
+      panY: pan.y,
+    };
+  };
+
+  // Space+drag pans whatever is under the pointer, so it is taken in the
+  // capture phase, before the crop box or the split handle can claim it.
+  const handleMouseDownCapture = (e: React.MouseEvent) => {
+    if (!isSpaceHeld) return;
+    e.stopPropagation();
     e.preventDefault();
-    const zoomFactor = e.deltaY < 0 ? 1.15 : 0.85;
-    setZoom((prev) => prev * zoomFactor);
+    startPan(e);
   };
 
   // Mouse Down Interaction
@@ -164,20 +217,11 @@ export const PreviewCanvas: React.FC = () => {
     if (isDraggingSplit) return;
 
     const isPanAction =
-      isSpaceHeld ||
       canvasTool === 'pan' ||
       e.button === 1 || // Middle mouse
       e.button === 2;   // Right click
 
-    if (isPanAction) {
-      setIsDraggingPan(true);
-      dragStartRef.current = {
-        clientX: e.clientX,
-        clientY: e.clientY,
-        panX: pan.x,
-        panY: pan.y,
-      };
-    }
+    if (isPanAction) startPan(e);
   };
 
   const handleMouseMove = useCallback((e: MouseEvent) => {
@@ -255,9 +299,11 @@ export const PreviewCanvas: React.FC = () => {
 
   return (
     <div
-      ref={containerRef}
+      ref={setContainer}
       className={`${styles.canvasContainer} ${styles.canvasContainerPan}`}
-      onWheel={handleWheel}
+      onMouseEnter={() => (pointerOverCanvasRef.current = true)}
+      onMouseLeave={() => (pointerOverCanvasRef.current = false)}
+      onMouseDownCapture={handleMouseDownCapture}
       onMouseDown={handleMouseDown}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}

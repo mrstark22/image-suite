@@ -1,43 +1,12 @@
 import React from 'react';
 import { Keyboard, X } from 'lucide-react';
+import { SHORTCUT_GROUPS } from '../../lib/shortcuts';
 import styles from './MaterialTestGridDialog.module.css';
 
 interface Props {
   isOpen: boolean;
   onClose: () => void;
 }
-
-const SHORTCUT_GROUPS = [
-  {
-    category: 'Tools & Canvas Modes',
-    items: [
-      { key: 'H', desc: 'Pan Canvas Viewport Tool' },
-      { key: 'C', desc: 'Crop Tool' },
-      { key: 'Space + Drag', desc: 'Temporary Viewport Pan' },
-      { key: 'Enter', desc: 'Apply Crop' },
-      { key: 'Esc', desc: 'Cancel Crop / Close Modal' },
-    ],
-  },
-  {
-    category: 'View & Simulation',
-    items: [
-      { key: 'Ctrl + 1', desc: 'Reset Zoom to 100% (Actual Size)' },
-      { key: 'Ctrl + + / -', desc: 'Zoom In / Zoom Out' },
-      { key: 'Ctrl + R', desc: 'Toggle Physical Canvas Rulers' },
-      { key: 'Ctrl + \\', desc: 'Toggle Split View (Before / After)' },
-      { key: 'Ctrl + B', desc: 'Toggle Substrate Dark Burn Simulation' },
-    ],
-  },
-  {
-    category: 'History & File Operations',
-    items: [
-      { key: 'Ctrl + Z', desc: 'Undo Last Action / Parameter Change' },
-      { key: 'Ctrl + Y', desc: 'Redo Action' },
-      { key: 'Ctrl + O', desc: 'Open Image' },
-      { key: 'Ctrl + S', desc: 'Open Production Export Dialog' },
-    ],
-  },
-];
 
 export const ShortcutsDialog: React.FC<Props> = ({ isOpen, onClose }) => {
   if (!isOpen) return null;
@@ -73,7 +42,7 @@ export const ShortcutsDialog: React.FC<Props> = ({ isOpen, onClose }) => {
               <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                 {grp.items.map((item) => (
                   <div
-                    key={item.key}
+                    key={item.keys}
                     style={{
                       display: 'flex',
                       justifyContent: 'space-between',
@@ -97,7 +66,7 @@ export const ShortcutsDialog: React.FC<Props> = ({ isOpen, onClose }) => {
                         boxShadow: '0 1px 2px rgba(0,0,0,0.4)',
                       }}
                     >
-                      {item.key}
+                      {item.keys}
                     </kbd>
                   </div>
                 ))}
