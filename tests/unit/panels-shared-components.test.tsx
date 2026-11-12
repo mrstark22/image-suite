@@ -30,6 +30,8 @@ import { SizeDialog } from '../../src/components/dialogs/SizeDialog';
 import { MaterialTestGridDialog } from '../../src/components/dialogs/MaterialTestGridDialog';
 import { DropZone } from '../../src/components/shared/DropZone';
 import { connectSchedulers, createSchedulers } from '../../src/lib/schedulers';
+import { CanvasRulers } from '../../src/components/canvas/CanvasRulers';
+import { SplitDivider, SPLIT_KEY_STEP } from '../../src/components/canvas/PreviewCanvas';
 import { setPipeline, type Pipeline } from '../../src/lib/pipeline-client';
 import { useDocumentStore } from '../../src/store/documentStore';
 import { useRenderStore } from '../../src/store/renderStore';
@@ -337,6 +339,65 @@ describe('every control in the migrated panels is reachable and named', () => {
   });
 });
 
+describe('canvas controls a keyboard can reach (#55 review)', () => {
+  // jsdom has no 2D canvas; the rulers draw nothing here, which is all these tests need.
+  beforeEach(() => {
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null);
+  });
+
+  it('the ruler unit switch is a named button that cycles mm, in and px, and is disabled until the size is set', () => {
+    useUIStore.setState({ showRulers: true });
+    openWithPreview();
+    const { container } = render(<CanvasRulers />);
+    const corner = one<HTMLButtonElement>(container, 'button');
+    expect(corner.type).toBe('button');
+    expect(corner.disabled).toBe(false);
+    expect(accessibleName(corner)).toBe('Ruler unit: mm. Change to in');
+    expect(inaccessibleControls(container)).toEqual([]);
+    // A native button: Enter and Space click it.
+    click(corner);
+    expect(corner.textContent).toBe('in');
+    click(corner);
+    expect(corner.textContent).toBe('px');
+    click(corner);
+    expect(corner.textContent).toBe('mm');
+  });
+
+  it('the ruler unit switch is disabled while the size is not set, since only px can be measured', () => {
+    useUIStore.setState({ showRulers: true });
+    useDocumentStore.getState().open(decodedImage(4, 4));
+    useRenderStore.setState({ source: previewSource() });
+    const { container } = render(<CanvasRulers />);
+    expect(one<HTMLButtonElement>(container, 'button').disabled).toBe(true);
+  });
+
+  it('the before/after divider is a focusable separator that the arrow keys, Home and End move', () => {
+    const onChange = vi.fn();
+    const { container, rerender } = render(<SplitDivider splitPosition={0.5} onChange={onChange} onDragStart={() => {}} />);
+    const divider = one(container, '[role=separator]');
+    expect(divider.tabIndex).toBe(0);
+    expect(accessibleName(divider)).toBe('Before and after divider');
+    expect(divider.getAttribute('aria-valuenow')).toBe('50');
+    divider.focus();
+    press('ArrowRight', {}, divider);
+    expect(onChange).toHaveBeenLastCalledWith(0.5 + SPLIT_KEY_STEP);
+    press('ArrowLeft', {}, divider);
+    expect(onChange).toHaveBeenLastCalledWith(0.5 - SPLIT_KEY_STEP);
+    press('Home', {}, divider);
+    expect(onChange).toHaveBeenLastCalledWith(0);
+    press('End', {}, divider);
+    expect(onChange).toHaveBeenLastCalledWith(1);
+    // Clamped at the edges.
+    rerender(<SplitDivider splitPosition={0.98} onChange={onChange} onDragStart={() => {}} />);
+    press('ArrowRight', {}, divider);
+    expect(onChange).toHaveBeenLastCalledWith(1);
+    // Other keys are left alone.
+    const calls = onChange.mock.calls.length;
+    press('a', {}, divider);
+    expect(onChange.mock.calls.length).toBe(calls);
+  });
+});
+
 /** A trace result with two layers, as the panel lists them. */
 function twoLayers(): VectorResult {
   const layer = (id: string, name: string, visible: boolean) => ({
@@ -525,6 +586,31 @@ describe('inline styles (#55)', () => {
   it(`src has ${INLINE_STYLE_COUNT} inline style attributes, all of them run-time values`, () => {
     const count = MIGRATED.reduce((n, file) => n + inlineStyles(file).length, 0);
     expect(count).toBe(INLINE_STYLE_COUNT);
+  });
+
+  it('mouse handlers on elements that are not native controls are only these, each with a keyboard path or an issue', () => {
+    // A clickable div is out of the tab order whatever its role, so each one
+    // is listed here with what a keyboard user does instead.
+    const ALLOWED: Record<string, string> = {
+      // Double-click resets; Delete on the track does the same.
+      'src/components/shared/Slider.tsx <label> onDoubleClick': 'Delete on the track',
+      // The backdrop closes the dialog; Escape does the same. The second stops clicks inside from reaching it.
+      'src/components/shared/Dialog.tsx <div> onClick': 'Escape',
+      // Panning the canvas: no keyboard path yet (#81).
+      'src/components/canvas/PreviewCanvas.tsx <div> onMouseDown': '#81; the split divider also has arrow keys',
+      // Orbiting the 3D view: no keyboard path yet (#81).
+      'src/components/canvas/DepthViewer3D.tsx <div> onMouseDown': '#81',
+      // Moving and sizing the crop box: no keyboard path yet (#79). Enter applies, Escape cancels.
+      'src/components/canvas/CanvasCropOverlay.tsx <div> onMouseDown': '#79',
+    };
+    const found = new Set<string>();
+    for (const file of MIGRATED) {
+      const text = readFileSync(join(ROOT, file), 'utf8');
+      for (const m of text.matchAll(/<(div|span|label|li|section|canvas|svg|g)\b(?:[^>]|=>)*?\bon(Click|MouseDown|PointerDown|DoubleClick)=/gs)) {
+        found.add(`${file} <${m[1]}> on${m[2]}`);
+      }
+    }
+    expect([...found].filter((k) => !(k in ALLOWED))).toEqual([]);
   });
 
   it('no element imitates a button with role="button": every clickable control is a native one', () => {

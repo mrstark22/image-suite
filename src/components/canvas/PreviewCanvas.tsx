@@ -408,22 +408,69 @@ export const PreviewCanvas: React.FC = () => {
 
         {/* Split View Line & Drag Handle */}
         {isSplitView && (
-          <div
-            className={styles.splitDivider}
-            style={{ left: `${splitPosition * 100}%` }}
-            onMouseDown={(e) => {
-              e.stopPropagation();
-              setIsDraggingSplit(true);
-            }}
-          >
-            <div className={styles.splitHandle}>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <polyline points="15 18 9 12 15 6" />
-                <polyline points="9 18 15 12 9 6" />
-              </svg>
-            </div>
-          </div>
+          <SplitDivider
+            splitPosition={splitPosition}
+            onChange={setSplitPosition}
+            onDragStart={() => setIsDraggingSplit(true)}
+          />
         )}
+      </div>
+    </div>
+  );
+};
+
+/** How far one arrow key moves the before/after divider, as a fraction of the width. */
+export const SPLIT_KEY_STEP = 0.05;
+
+interface SplitDividerProps {
+  /** Where the divider is, 0 (left edge) to 1 (right edge). */
+  splitPosition: number;
+  onChange: (position: number) => void;
+  /** A mouse drag on the divider starts; the canvas follows the pointer. */
+  onDragStart: () => void;
+}
+
+/**
+ * The before/after divider. Dragged with the mouse, or focused and moved with
+ * the arrow keys (Shift for a larger step; Home and End go to the edges), as a
+ * focusable separator, so the comparison can be moved from the keyboard (#55).
+ */
+export const SplitDivider: React.FC<SplitDividerProps> = ({ splitPosition, onChange, onDragStart }) => {
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    const step = e.shiftKey ? SPLIT_KEY_STEP * 4 : SPLIT_KEY_STEP;
+    let next: number | null = null;
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') next = splitPosition - step;
+    else if (e.key === 'ArrowRight' || e.key === 'ArrowUp') next = splitPosition + step;
+    else if (e.key === 'Home') next = 0;
+    else if (e.key === 'End') next = 1;
+    if (next === null) return;
+    e.preventDefault();
+    onChange(Math.max(0, Math.min(1, next)));
+  };
+
+  return (
+    <div
+      className={styles.splitDivider}
+      // The divider follows the split, known only at run time.
+      style={{ left: `${splitPosition * 100}%` }}
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="Before and after divider"
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-valuenow={Math.round(splitPosition * 100)}
+      tabIndex={0}
+      onKeyDown={handleKeyDown}
+      onMouseDown={(e) => {
+        e.stopPropagation();
+        onDragStart();
+      }}
+    >
+      <div className={styles.splitHandle} aria-hidden="true">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <polyline points="15 18 9 12 15 6" />
+          <polyline points="9 18 15 12 9 6" />
+        </svg>
       </div>
     </div>
   );
