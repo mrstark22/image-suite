@@ -92,6 +92,11 @@ export class RenderScheduler<Deps extends readonly unknown[], Req, Res> {
     return new Promise((resolve) => this.idleWaiters.push(resolve));
   }
 
+  /** True while a run is in flight, or one is due and will start once the one in flight ends. */
+  isBusy(): boolean {
+    return !this.isIdle();
+  }
+
   private isIdle(): boolean {
     return !this.running && (!this.dirty || !this.doc || !this.opts.enabled());
   }
