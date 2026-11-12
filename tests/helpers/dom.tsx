@@ -105,3 +105,56 @@ export function accessibleName(el: Element): string {
   if (el instanceof HTMLInputElement) return '';
   return (el.textContent ?? '').trim();
 }
+
+export interface PointerInit {
+  id: number;
+  x: number;
+  y: number;
+  pointerType?: 'mouse' | 'pen' | 'touch';
+  button?: number;
+}
+
+/**
+ * Dispatches a pointer event on `el` inside act(). jsdom has no PointerEvent,
+ * so this is a MouseEvent of the pointer type carrying a pointer id and type,
+ * which is what React's pointer handlers read.
+ */
+export function pointer(el: EventTarget, type: string, { id, x, y, pointerType = 'touch', button = 0 }: PointerInit): void {
+  const event = new MouseEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y, button });
+  Object.defineProperties(event, { pointerId: { value: id }, pointerType: { value: pointerType } });
+  act(() => {
+    el.dispatchEvent(event);
+  });
+}
+
+/**
+ * Replaces `window.matchMedia` with one that answers width and pointer
+ * queries for a window `width` pixels wide with a `coarse` or fine pointer,
+ * and returns a function that resizes it, telling every listener.
+ */
+export function fakeViewport(width: number, coarse = false): (nextWidth: number) => void {
+  let current = width;
+  const listeners = new Set<() => void>();
+  const matches = (query: string): boolean =>
+    query.split(' and ').every((part) => {
+      const m = /\((min|max)-width:\s*(\d+)px\)/.exec(part);
+      if (m) return m[1] === 'min' ? current >= Number(m[2]) : current <= Number(m[2]);
+      if (/\(pointer:\s*coarse\)/.test(part)) return coarse;
+      throw new Error(`fakeViewport cannot answer ${query}`);
+    });
+  window.matchMedia = (query: string) =>
+    ({
+      get matches() {
+        return matches(query);
+      },
+      media: query,
+      addEventListener: (_: string, fn: () => void) => listeners.add(fn),
+      removeEventListener: (_: string, fn: () => void) => listeners.delete(fn),
+    }) as unknown as MediaQueryList;
+  return (nextWidth) => {
+    current = nextWidth;
+    act(() => {
+      for (const fn of [...listeners]) fn();
+    });
+  };
+}

@@ -139,8 +139,10 @@ export const Slider: React.FC<SliderProps> = ({
             }
           }}
           onChange={(e) => onChange(parseFloat(e.target.value))}
+          // The fill is an image, so the stylesheet can clip it to the track
+          // inside a taller touch target (#54).
           style={{
-            background: `linear-gradient(to right, var(--accent) 0%, var(--accent) ${percentage}%, var(--track) ${percentage}%, var(--track) 100%)`,
+            backgroundImage: `linear-gradient(to right, var(--accent) 0%, var(--accent) ${percentage}%, var(--track) ${percentage}%, var(--track) 100%)`,
           }}
         />
       </div>

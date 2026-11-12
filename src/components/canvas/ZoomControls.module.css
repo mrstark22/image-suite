@@ -37,3 +37,20 @@
   text-align: center;
   padding: 0 4px;
 }
+
+/* Phone (#54): tucked into the corner, clear of the sheet's handle below. */
+@media (max-width: 599px) {
+  .zoomBar {
+    bottom: var(--space-2);
+    right: var(--space-2);
+    padding: 2px 4px;
+  }
+}
+
+/* Touch (#54) */
+@media (pointer: coarse) {
+  .button {
+    width: var(--touch-target);
+    height: var(--touch-target);
+  }
+}

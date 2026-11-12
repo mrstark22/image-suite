@@ -89,6 +89,10 @@
   --header-height: 44px;
   --rail-width: 184px;         /* the step rail of the workflow shell (#53) */
   --panel-width: 292px;
+  --panel-width-tablet: 264px; /* the narrower, collapsible panel at tablet widths (#54) */
+  --rail-width-tablet: 56px;   /* the tablet step rail: numbers only */
+  --touch-target: 44px;        /* least size of a control under a coarse pointer (#54) */
+  --view-zoom: 1;              /* the 2D canvas's zoom, set at run time on the image (#54) */
   --status-bar-height: 28px;
 
   /* Motion: short and functional; nothing loops except progress */

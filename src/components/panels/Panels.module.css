@@ -1,5 +1,6 @@
 .panel {
-  width: var(--panel-width);
+  width: 100%;
+  min-width: 0;
   height: 100%;
   background: var(--surface);
   border-left: 1px solid var(--border);
@@ -361,4 +362,13 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+/* Touch (#54): the panels' own buttons at least --touch-target tall. */
+@media (pointer: coarse) {
+  .cardButton,
+  .materialButton,
+  .presetChip {
+    min-height: var(--touch-target);
+  }
 }

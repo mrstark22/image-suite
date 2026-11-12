@@ -239,3 +239,99 @@
   padding: 3px 6px;
   max-width: 190px;
 }
+
+/*
+ * Tablet and phone (#54): the bar wraps to two rows, the menus and the job
+ * on the first, the machine and material on the second.
+ */
+@media (max-width: 1023px) {
+  .menuBar {
+    flex-wrap: wrap;
+    height: auto;
+    min-height: 38px;
+    row-gap: var(--space-1);
+    padding: var(--space-1) var(--space-3);
+  }
+
+  .rightSide {
+    flex-wrap: wrap;
+  }
+}
+
+/*
+ * Phone (#54): no brand, the job switch packed beside the menus, the two
+ * selects sharing the second row, and the size readout left to the Size
+ * step. A menu opens across the width of the screen instead of off its edge.
+ */
+@media (max-width: 599px) {
+  .menuBar {
+    padding: var(--space-1) var(--space-2);
+  }
+
+  .brand {
+    display: none;
+  }
+
+  .leftSide {
+    width: 100%;
+    justify-content: space-between;
+    gap: var(--space-1);
+  }
+
+  .menuItemWrapper {
+    position: static;
+  }
+
+  .dropdownMenu {
+    position: absolute;
+    top: 100%;
+    left: var(--space-2);
+    right: var(--space-2);
+    min-width: 0;
+    max-height: 70dvh;
+    overflow-y: auto;
+  }
+
+  .jobSwitch {
+    margin-left: 0;
+  }
+
+  .jobBtn {
+    padding: 4px 8px;
+  }
+
+  .rightSide {
+    width: 100%;
+    flex-wrap: nowrap;
+  }
+
+  .setupField {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .setupSelect {
+    flex: 1;
+    min-width: 0;
+    max-width: none;
+  }
+
+  .telemetry {
+    display: none;
+  }
+}
+
+/* Touch (#54): every control in the bar at least --touch-target in both directions. */
+@media (pointer: coarse) {
+  .menuBtn,
+  .jobBtn {
+    min-width: var(--touch-target);
+    min-height: var(--touch-target);
+  }
+
+  .setupSelect,
+  .telemetry,
+  .dropdownItem {
+    min-height: var(--touch-target);
+  }
+}

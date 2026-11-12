@@ -66,3 +66,15 @@
   height: auto;
   padding: 6px 16px;
 }
+
+/* Touch (#54): at least --touch-target in both directions under a coarse pointer. */
+@media (pointer: coarse) {
+  .button {
+    min-height: var(--touch-target);
+  }
+
+  .link,
+  .compact {
+    min-width: var(--touch-target);
+  }
+}

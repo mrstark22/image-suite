@@ -1,8 +1,10 @@
 .appContainer {
   display: flex;
   flex-direction: column;
-  width: 100vw;
+  width: 100%;
+  /* dvh, so the layout fits under a mobile browser's toolbars (#54); vh where dvh is unknown. */
   height: 100vh;
+  height: 100dvh;
   overflow: hidden;
   background-color: var(--bg);
 }
@@ -10,7 +12,7 @@
 .mainLayout {
   display: flex;
   flex: 1;
-  height: calc(100vh - var(--header-height));
+  min-height: 0;
   overflow: hidden;
   position: relative;
 }
@@ -18,9 +20,17 @@
 .canvasArea {
   position: relative;
   flex: 1;
-  height: 100%;
+  min-width: 0;
+  min-height: 0;
   overflow: hidden;
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+/* Phone (#54): the canvas on top and the bottom sheet below it, in one column. */
+@media (max-width: 599px) {
+  .mainLayout {
+    flex-direction: column;
+  }
 }

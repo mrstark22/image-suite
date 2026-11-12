@@ -108,3 +108,30 @@
   font-size: 10px;
   color: var(--text-3);
 }
+
+/*
+ * Touch (#54): the track is a target --touch-target tall, with the visible
+ * 4 px track drawn in its middle. The fill is a background image, clipped to
+ * the content box like the track colour.
+ */
+@media (pointer: coarse) {
+  .inputRange {
+    height: var(--touch-target);
+    padding: 20px 0;
+    border: none;
+    border-radius: 0;
+    background-color: var(--track);
+    background-clip: content-box;
+  }
+
+  .inputRange::-webkit-slider-thumb {
+    width: 24px;
+    height: 24px;
+  }
+
+  .valueInput {
+    width: 56px;
+    min-height: var(--touch-target);
+    font-size: 13px;
+  }
+}

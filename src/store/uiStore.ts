@@ -16,6 +16,10 @@ interface UIState {
   showRulers: boolean;
   showVectorOverlay: boolean;
   theme: 'dark' | 'light';
+  /** Tablet layout: the step panel is folded to a strip, giving the canvas the width (#54). */
+  isPanelCollapsed: boolean;
+  /** Phone layout: the bottom sheet holding the step's controls is open (#54). */
+  isSheetOpen: boolean;
 
   // Modal Dialogs
   isSizeDialogOpen: boolean;
@@ -36,6 +40,8 @@ interface UIState {
   toggleVectorOverlay: () => void;
   setTheme: (theme: 'dark' | 'light') => void;
   toggleTheme: () => void;
+  setPanelCollapsed: (collapsed: boolean) => void;
+  setSheetOpen: (open: boolean) => void;
 
   setSizeDialogOpen: (open: boolean) => void;
   setTestGridDialogOpen: (open: boolean) => void;
@@ -67,6 +73,8 @@ export const useUIStore = create<UIState>((set, get) => ({
   showRulers: true,
   showVectorOverlay: true,
   theme: 'dark',
+  isPanelCollapsed: false,
+  isSheetOpen: false,
 
   isSizeDialogOpen: false,
   isTestGridDialogOpen: false,
@@ -97,6 +105,8 @@ export const useUIStore = create<UIState>((set, get) => ({
     set({ theme });
   },
   toggleTheme: () => get().setTheme(get().theme === 'dark' ? 'light' : 'dark'),
+  setPanelCollapsed: (isPanelCollapsed) => set({ isPanelCollapsed }),
+  setSheetOpen: (isSheetOpen) => set({ isSheetOpen }),
 
   setSizeDialogOpen: (isSizeDialogOpen) => set({ isSizeDialogOpen }),
   setTestGridDialogOpen: (isTestGridDialogOpen) => set({ isTestGridDialogOpen }),

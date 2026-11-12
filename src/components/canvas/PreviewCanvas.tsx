@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useState, useCallback, useMemo } from 'react';
+import React, { useRef, useEffect, useState, useMemo } from 'react';
 import { useDocumentStore } from '../../store/documentStore';
 import { pxPerMmOfSource, useRenderStore } from '../../store/renderStore';
 import { useViewStore } from '../../store/viewStore';
@@ -6,6 +6,7 @@ import { openImageFiles, confirmReplaceInBrowser } from '../../lib/open-image';
 import { DEFAULT_DEPTH } from '../../lib/document';
 import { fitsDimensions } from '../../lib/crop';
 import { fromCentre } from '../../lib/viewport';
+import { ActivePointers, pinchView, type PointerPair } from '../../lib/gestures';
 import { isTypingTarget } from '../../lib/shortcuts';
 import { useUIStore } from '../../store/uiStore';
 import { canvasImage, showsOrbitView } from '../../lib/workflows';
@@ -40,6 +41,8 @@ export const PreviewCanvas: React.FC = () => {
   const pan = useViewStore((s) => s.pan);
   const zoomBy = useViewStore((s) => s.zoomBy);
   const setPan = useViewStore((s) => s.setPan);
+  const setView = useViewStore((s) => s.setView);
+  const setPinching = useViewStore((s) => s.setPinching);
   const splitPosition = useViewStore((s) => s.splitPosition);
   const setSplitPosition = useViewStore((s) => s.setSplitPosition);
   const fit = useViewStore((s) => s.fit);
@@ -60,17 +63,23 @@ export const PreviewCanvas: React.FC = () => {
   const depthConfig = useDocumentStore((s) => s.doc?.depth ?? DEFAULT_DEPTH);
 
   // Interaction State
-  const [isDraggingPan, setIsDraggingPan] = useState(false);
   const [isDraggingSplit, setIsDraggingSplit] = useState(false);
   const [isDragOverCanvas, setIsDragOverCanvas] = useState(false);
   const [isSpaceHeld, setIsSpaceHeld] = useState(false);
+  // Where the crop tool puts its Apply and Cancel bar: over the canvas at screen
+  // size, not on the image, where it would scale with the zoom (#54).
+  const [cropBarHost, setCropBarHost] = useState<HTMLDivElement | null>(null);
 
-  const dragStartRef = useRef<{ clientX: number; clientY: number; panX: number; panY: number }>({
-    clientX: 0,
-    clientY: 0,
-    panX: 0,
-    panY: 0,
-  });
+  // The pointers down on the canvas, and the gesture they make (#54): one
+  // pointer pans (with the pan tool, the middle or right button, or Space),
+  // two pointers pinch to zoom and pan together. Mouse, pen and touch take
+  // the same path.
+  const pointersRef = useRef(new ActivePointers());
+  const gestureRef = useRef<
+    | { kind: 'pan'; pointerId: number; clientX: number; clientY: number; panX: number; panY: number }
+    | { kind: 'pinch'; start: PointerPair; zoom: number; panX: number; panY: number }
+    | null
+  >(null);
 
   // Tell the view store the container's and the image's sizes, so Fit can
   // fit and a fitted view stays fitted when the window or the crop changes.
@@ -198,56 +207,131 @@ export const PreviewCanvas: React.FC = () => {
     }
   }, [processedBuffer, previewVersion, dims, isSplitView, splitPosition]);
 
-  const startPan = (e: React.MouseEvent) => {
-    setIsDraggingPan(true);
-    dragStartRef.current = {
-      clientX: e.clientX,
-      clientY: e.clientY,
-      panX: pan.x,
-      panY: pan.y,
-    };
+  /** A point of a pointer event, from the container's centre. */
+  const pointOf = (e: { clientX: number; clientY: number }) =>
+    container
+      ? fromCentre({ x: e.clientX, y: e.clientY }, container.getBoundingClientRect())
+      : { x: e.clientX, y: e.clientY };
+
+  const startPan = (pointerId: number, clientX: number, clientY: number) => {
+    const { pan } = useViewStore.getState();
+    gestureRef.current = { kind: 'pan', pointerId, clientX, clientY, panX: pan.x, panY: pan.y };
   };
 
-  // Space+drag pans whatever is under the pointer, so it is taken in the
-  // capture phase, before the crop box or the split handle can claim it.
-  const handleMouseDownCapture = (e: React.MouseEvent) => {
-    if (!isSpaceHeld) return;
-    e.stopPropagation();
-    e.preventDefault();
-    startPan(e);
+  const startPinch = (pair: PointerPair) => {
+    const { zoom, pan } = useViewStore.getState();
+    gestureRef.current = { kind: 'pinch', start: pair, zoom, panX: pan.x, panY: pan.y };
+    // A crop drag the first finger started stops: the fingers now move the view.
+    setPinching(true);
   };
 
-  // Mouse Down Interaction
-  const handleMouseDown = (e: React.MouseEvent) => {
-    if (isDraggingSplit) return;
+  /** Whether one pointer going down on the canvas starts a pan. */
+  const pansCanvas = (e: React.PointerEvent) =>
+    canvasTool === 'pan' ||
+    (e.pointerType === 'mouse' && (e.button === 1 || e.button === 2)); // Middle or right button
 
-    const isPanAction =
-      canvasTool === 'pan' ||
-      e.button === 1 || // Middle mouse
-      e.button === 2;   // Right click
+  /** A press on one of the canvas's own controls (the ruler's unit switch, the crop bar) is theirs, not a drag. */
+  const onControl = (e: React.PointerEvent) =>
+    (e.target as Element).closest?.('button, select, input, [role="separator"]') != null;
 
-    if (isPanAction) startPan(e);
+  // Touch pointers are recorded in the capture phase, before the crop box or
+  // a control can stop them, so the canvas knows every finger on it: a pinch
+  // can start with the first finger on the crop box. Recording takes no
+  // pointer capture, so a tap on a control still reaches it. Space+drag pans
+  // whatever is under the pointer, so it is taken here too.
+  const handlePointerDownCapture = (e: React.PointerEvent<HTMLDivElement>) => {
+    const pointers = pointersRef.current;
+    if (isSpaceHeld && pointers.size === 0) {
+      e.stopPropagation();
+      e.preventDefault();
+      pointers.down(e.pointerId, pointOf(e));
+      e.currentTarget.setPointerCapture?.(e.pointerId);
+      startPan(e.pointerId, e.clientX, e.clientY);
+    } else if (e.pointerType !== 'mouse' && !pointers.has(e.pointerId)) {
+      if (pointers.size === 0) {
+        // The first finger: the bubble phase decides whether it pans.
+        pointers.down(e.pointerId, pointOf(e));
+      } else if (pointers.size === 1) {
+        // The second finger makes a pinch, whatever either one landed on.
+        e.stopPropagation();
+        e.preventDefault();
+        pointers.down(e.pointerId, pointOf(e));
+        e.currentTarget.setPointerCapture?.(e.pointerId);
+        const pair = pointers.pair();
+        if (pair) startPinch(pair);
+      }
+    }
   };
 
-  const handleMouseMove = useCallback((e: MouseEvent) => {
-    if (isDraggingSplit && dims && canvasRef.current) {
-      const rect = canvasRef.current.getBoundingClientRect();
-      const relativeX = (e.clientX - rect.left) / rect.width;
-      setSplitPosition(Math.max(0, Math.min(1, relativeX)));
-    } else if (isDraggingPan) {
-      const deltaX = e.clientX - dragStartRef.current.clientX;
-      const deltaY = e.clientY - dragStartRef.current.clientY;
+  const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (isDraggingSplit || onControl(e)) return;
+    const pointers = pointersRef.current;
+    if (e.pointerType !== 'mouse') {
+      // The first finger reached the canvas itself: with the pan tool it pans.
+      if (pointers.size === 1 && pointers.has(e.pointerId) && pansCanvas(e)) {
+        e.currentTarget.setPointerCapture?.(e.pointerId);
+        startPan(e.pointerId, e.clientX, e.clientY);
+      }
+      return;
+    }
+    if (pointers.has(e.pointerId)) return;
+    if (pansCanvas(e)) {
+      pointers.down(e.pointerId, pointOf(e));
+      e.currentTarget.setPointerCapture?.(e.pointerId);
+      startPan(e.pointerId, e.clientX, e.clientY);
+    }
+  };
+
+  const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!pointersRef.current.move(e.pointerId, pointOf(e))) return;
+    const gesture = gestureRef.current;
+    if (gesture?.kind === 'pinch') {
+      const pair = pointersRef.current.pair();
+      if (pair) {
+        setView(pinchView({ zoom: gesture.zoom, pan: { x: gesture.panX, y: gesture.panY } }, gesture.start, pair));
+      }
+    } else if (gesture?.kind === 'pan' && gesture.pointerId === e.pointerId) {
       setPan({
-        x: dragStartRef.current.panX + deltaX,
-        y: dragStartRef.current.panY + deltaY,
+        x: gesture.panX + e.clientX - gesture.clientX,
+        y: gesture.panY + e.clientY - gesture.clientY,
       });
     }
-  }, [isDraggingSplit, isDraggingPan, dims, setPan, setSplitPosition]);
+  };
 
-  const handleMouseUp = useCallback(() => {
-    setIsDraggingPan(false);
-    setIsDraggingSplit(false);
-  }, []);
+  const handlePointerEnd = (e: React.PointerEvent<HTMLDivElement>) => {
+    const pointers = pointersRef.current;
+    if (!pointers.has(e.pointerId)) return;
+    pointers.up(e.pointerId);
+    const wasPinch = gestureRef.current?.kind === 'pinch';
+    gestureRef.current = null;
+    if (wasPinch) setPinching(false);
+    // Lifting one finger of a pinch carries on as a pan with the other,
+    // from where it is now, so the view does not jump.
+    const rest = pointers.first();
+    if (wasPinch && rest && canvasTool === 'pan' && container) {
+      const rect = container.getBoundingClientRect();
+      startPan(rest.id, rest.at.x + rect.left + rect.width / 2, rest.at.y + rect.top + rect.height / 2);
+    }
+  };
+
+  // The split divider follows the pointer until it is released anywhere.
+  useEffect(() => {
+    if (!isDraggingSplit) return;
+    const handleMove = (e: PointerEvent) => {
+      if (!dims || !canvasRef.current) return;
+      const rect = canvasRef.current.getBoundingClientRect();
+      setSplitPosition(Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width)));
+    };
+    const handleUp = () => setIsDraggingSplit(false);
+    window.addEventListener('pointermove', handleMove);
+    window.addEventListener('pointerup', handleUp);
+    window.addEventListener('pointercancel', handleUp);
+    return () => {
+      window.removeEventListener('pointermove', handleMove);
+      window.removeEventListener('pointerup', handleUp);
+      window.removeEventListener('pointercancel', handleUp);
+    };
+  }, [isDraggingSplit, dims, setSplitPosition]);
 
   // Drag and drop onto canvas
   const handleDragOver = (e: React.DragEvent) => {
@@ -269,17 +353,6 @@ export const PreviewCanvas: React.FC = () => {
       });
     }
   };
-
-  useEffect(() => {
-    if (isDraggingPan || isDraggingSplit) {
-      window.addEventListener('mousemove', handleMouseMove);
-      window.addEventListener('mouseup', handleMouseUp);
-    }
-    return () => {
-      window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('mouseup', handleMouseUp);
-    };
-  }, [isDraggingPan, isDraggingSplit, handleMouseMove, handleMouseUp]);
 
   if (!previewBuffer || !dims) {
     return (
@@ -307,10 +380,13 @@ export const PreviewCanvas: React.FC = () => {
     <div
       ref={setContainer}
       className={`${styles.canvasContainer} ${styles.canvasContainerPan} ${isDragOverCanvas ? styles.dragOver : ''}`}
-      onMouseEnter={() => (pointerOverCanvasRef.current = true)}
-      onMouseLeave={() => (pointerOverCanvasRef.current = false)}
-      onMouseDownCapture={handleMouseDownCapture}
-      onMouseDown={handleMouseDown}
+      onPointerEnter={() => (pointerOverCanvasRef.current = true)}
+      onPointerLeave={() => (pointerOverCanvasRef.current = false)}
+      onPointerDownCapture={handlePointerDownCapture}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerEnd}
+      onPointerCancel={handlePointerEnd}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
@@ -318,6 +394,8 @@ export const PreviewCanvas: React.FC = () => {
     >
       {/* Interactive Physical Canvas Rulers (mm, in, px) */}
       <CanvasRulers />
+
+      <div ref={setCropBarHost} className={styles.cropBarHost} />
 
       {isSplitView && (
         <>
@@ -329,7 +407,8 @@ export const PreviewCanvas: React.FC = () => {
       <div
         // The pan and zoom are the run-time values; the inverted view is a class.
         className={`${styles.canvasWrapper} ${isInvertedView ? styles.invertedView : ''}`}
-        style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})` }}
+        // --view-zoom lets the crop handles keep their screen size at any zoom.
+        style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`, '--view-zoom': zoom } as React.CSSProperties}
       >
         <canvas ref={canvasRef} className={styles.mainCanvas} />
 
@@ -404,7 +483,7 @@ export const PreviewCanvas: React.FC = () => {
         )}
 
         {/* Interactive Canvas Crop Tool Overlay */}
-        <CanvasCropOverlay />
+        <CanvasCropOverlay barHost={cropBarHost} />
 
         {/* Split View Line & Drag Handle */}
         {isSplitView && (
@@ -426,12 +505,12 @@ interface SplitDividerProps {
   /** Where the divider is, 0 (left edge) to 1 (right edge). */
   splitPosition: number;
   onChange: (position: number) => void;
-  /** A mouse drag on the divider starts; the canvas follows the pointer. */
+  /** A pointer drag on the divider starts; the canvas follows the pointer. */
   onDragStart: () => void;
 }
 
 /**
- * The before/after divider. Dragged with the mouse, or focused and moved with
+ * The before/after divider. Dragged with a pointer, or focused and moved with
  * the arrow keys (Shift for a larger step; Home and End go to the edges), as a
  * focusable separator, so the comparison can be moved from the keyboard (#55).
  */
@@ -461,7 +540,7 @@ export const SplitDivider: React.FC<SplitDividerProps> = ({ splitPosition, onCha
       aria-valuenow={Math.round(splitPosition * 100)}
       tabIndex={0}
       onKeyDown={handleKeyDown}
-      onMouseDown={(e) => {
+      onPointerDown={(e) => {
         e.stopPropagation();
         onDragStart();
       }}

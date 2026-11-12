@@ -43,13 +43,13 @@ export const CanvasRulers: React.FC = () => {
   // The rulers measure preview pixels, so use the preview's own resolution.
   const dpi = (pxPerMm ?? 0) * MM_PER_INCH;
 
-  // Track global mouse position for ruler crosshair indicators
+  // Track the pointer (mouse, pen or touch) for ruler crosshair indicators
   useEffect(() => {
-    const handleMouseMove = (e: MouseEvent) => {
+    const handlePointerMove = (e: PointerEvent) => {
       setMousePos({ x: e.clientX, y: e.clientY });
     };
-    window.addEventListener('mousemove', handleMouseMove);
-    return () => window.removeEventListener('mousemove', handleMouseMove);
+    window.addEventListener('pointermove', handlePointerMove);
+    return () => window.removeEventListener('pointermove', handlePointerMove);
   }, []);
 
   // Render Horizontal (Top) Ruler

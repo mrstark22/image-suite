@@ -82,3 +82,32 @@
   background: var(--surface);
   border-top: 1px solid var(--border);
 }
+
+/* Touch (#54) */
+@media (pointer: coarse) {
+  .close {
+    min-width: var(--touch-target);
+    min-height: var(--touch-target);
+    align-items: center;
+    justify-content: center;
+  }
+}
+
+/* Phone (#54): a dialog takes the screen's width, and its height under the browser's toolbars. */
+@media (max-width: 599px) {
+  .dialog {
+    max-width: calc(100vw - 16px);
+    max-height: calc(100dvh - 16px);
+  }
+
+  .md,
+  .lg {
+    width: calc(100vw - 16px);
+  }
+
+  .body {
+    max-height: none;
+    flex: 1;
+    min-height: 0;
+  }
+}

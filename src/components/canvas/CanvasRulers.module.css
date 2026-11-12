@@ -58,3 +58,18 @@
   width: 100%;
   height: 100%;
 }
+
+/*
+ * Touch (#54): the unit switch keeps the rulers' 24 px corner, and its target
+ * reaches over the rulers, which take no input, to --touch-target.
+ */
+@media (pointer: coarse) {
+  .rulerCorner::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: var(--touch-target);
+    height: var(--touch-target);
+  }
+}

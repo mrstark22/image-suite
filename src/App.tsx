@@ -1,13 +1,14 @@
 import React, { useEffect } from 'react';
 import { MenuBar } from './components/toolbar/MenuBar';
-import { StepRail } from './components/shell/StepRail';
-import { StepInspector } from './components/shell/StepInspector';
+import { StepBar, StepRail } from './components/shell/StepRail';
+import { StepInspector, StepSheet } from './components/shell/StepInspector';
 import { PreviewCanvas } from './components/canvas/PreviewCanvas';
 import { ZoomControls } from './components/canvas/ZoomControls';
 import { SizeDialog } from './components/dialogs/SizeDialog';
 import { MaterialTestGridDialog } from './components/dialogs/MaterialTestGridDialog';
 import { ShortcutsDialog } from './components/dialogs/ShortcutsDialog';
 import { ErrorBanner } from './components/shared/ErrorBanner';
+import { useLayout } from './components/shared/breakpoints';
 import { useUIStore } from './store/uiStore';
 import { startSchedulers } from './lib/schedulers';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
@@ -17,6 +18,11 @@ import styles from './App.module.css';
  * The workflow shell (#53): the top bar chooses the job, the rail lists its
  * steps, and the inspector shows the current one. The canvas stays in view
  * through every step.
+ *
+ * The structure follows the layout (#54): on a desktop the rail, canvas and
+ * inspector sit side by side; on a tablet the rail narrows and the inspector
+ * can fold away; on a phone a compact step bar sits above the canvas and the
+ * step's controls are in a bottom sheet below it.
  */
 export const App: React.FC = () => {
   const isTestGridDialogOpen = useUIStore((s) => s.isTestGridDialogOpen);
@@ -29,20 +35,22 @@ export const App: React.FC = () => {
     startSchedulers();
   }, []);
   useKeyboardShortcuts();
+  const layout = useLayout();
 
   return (
-    <div className={styles.appContainer}>
+    <div className={styles.appContainer} data-layout={layout}>
       <header>
         <MenuBar />
       </header>
+      {layout === 'phone' && <StepBar />}
       <div className={styles.mainLayout}>
-        <StepRail />
+        {layout !== 'phone' && <StepRail />}
         <main className={styles.canvasArea}>
           <ErrorBanner />
           <PreviewCanvas />
           <ZoomControls />
         </main>
-        <StepInspector />
+        {layout === 'phone' ? <StepSheet /> : <StepInspector collapsible={layout === 'tablet'} />}
       </div>
       <SizeDialog />
       <MaterialTestGridDialog isOpen={isTestGridDialogOpen} onClose={() => setTestGridDialogOpen(false)} />
