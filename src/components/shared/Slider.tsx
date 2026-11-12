@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useId, useRef, useState } from 'react';
 import type { DocumentUpdate } from '../../types/document';
 import { useDocumentStore } from '../../store/documentStore';
 import { DraftField, SliderGesture, isValueKey } from '../../lib/slider-input';
@@ -53,6 +53,7 @@ export const Slider: React.FC<SliderProps> = ({
   // Shown while typing; the DraftField decides what is committed.
   const [draft, setDraft] = useState<string | null>(null);
   const field = useRef(new DraftField()).current;
+  const rangeId = useId();
 
   /** Commits the typed value once. Blur after Enter or Escape finds nothing to commit. */
   const commitDraft = () => {
@@ -80,13 +81,14 @@ export const Slider: React.FC<SliderProps> = ({
   return (
     <div className={`${styles.container} ${disabled ? styles.disabled : ''}`}>
       <div className={styles.header}>
-        <span
+        <label
+          htmlFor={rangeId}
           className={`${styles.label} ${onReset && !disabled ? styles.resettable : ''}`}
           onDoubleClick={disabled ? undefined : onReset}
           title={onReset && !disabled ? 'Double-click to reset' : undefined}
         >
           {label}
-        </span>
+        </label>
         <div className={styles.valueContainer}>
           <input
             type="number"
@@ -109,6 +111,7 @@ export const Slider: React.FC<SliderProps> = ({
       </div>
       <div className={styles.sliderRow}>
         <input
+          id={rangeId}
           type="range"
           className={styles.inputRange}
           min={min}
@@ -116,7 +119,7 @@ export const Slider: React.FC<SliderProps> = ({
           step={step}
           value={value}
           disabled={disabled}
-          aria-label={label}
+          aria-valuetext={unit ? `${formatted(value, step)} ${unit}` : undefined}
           onPointerDown={onDragStart}
           onPointerUp={onDragEnd}
           onPointerCancel={onDragEnd}

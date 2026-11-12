@@ -188,6 +188,8 @@ describe('components use the tokens', () => {
       'src/components/panels/Panels.module.css .primaryActionBtn:hover',
       'src/components/panels/VectorizationPanel.module.css .traceBtn',
       'src/components/panels/VectorizationPanel.module.css .traceBtn:hover',
+      'src/components/shared/Button.module.css .primary',
+      'src/components/shared/Button.module.css .primary:hover:not(:disabled)',
       'src/components/shared/DropZone.module.css .browseButton',
       'src/components/shared/DropZone.module.css .browseButton:hover',
     ];

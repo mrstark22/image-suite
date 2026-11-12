@@ -1,0 +1,39 @@
+/* Status message (#55): info, success, warning and error, each in its own colour. */
+
+.message {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 1px solid;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.info {
+  border-color: var(--control-border);
+  color: var(--text-2);
+}
+
+.success {
+  border-color: var(--success);
+  color: var(--success);
+}
+
+.warning {
+  border-color: var(--warning);
+  color: var(--warning);
+}
+
+.error {
+  border-color: var(--danger);
+  color: var(--danger);
+}

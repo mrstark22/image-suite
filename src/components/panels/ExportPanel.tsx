@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Download, CheckCircle, FileCode, Box, X } from 'lucide-react';
+import { Download, CheckCircle, FileCode, Box } from 'lucide-react';
 import { useDocumentStore } from '../../store/documentStore';
 import { useRenderStore } from '../../store/renderStore';
 import { useUIStore } from '../../store/uiStore';
@@ -14,7 +14,17 @@ import { lightBurnSettings } from '../../lib/lightburn-settings';
 import { machineById, materialById } from '../../lib/machines';
 import type { ExportProgress, RasterFormat } from '../../types/worker-messages';
 import { ReliefExports } from './ReliefExports';
+import { Button } from '../shared/Button';
+import { Progress } from '../shared/Progress';
+import { Section } from '../shared/Section';
+import { Select, type SelectOption } from '../shared/Select';
+import { StatusMessage } from '../shared/StatusMessage';
 import styles from './Panels.module.css';
+
+const FORMAT_OPTIONS: SelectOption<RasterFormat>[] = [
+  { value: 'png', label: 'PNG (Lossless 8-bit)' },
+  { value: 'bmp', label: 'BMP (Windows Bitmap CNC/Laser)' },
+];
 
 const STAGE_LABEL: Record<ExportProgress['stage'], string> = {
   preparing: 'Preparing the full-resolution image',
@@ -114,8 +124,7 @@ export const ExportPanel: React.FC = () => {
   return (
     <div className={styles.panel}>
       {/* Physical size, from the document */}
-      <div className={styles.section}>
-        <div className={styles.sectionTitle}>Physical Size & Resolution</div>
+      <Section title="Physical Size & Resolution">
         {size && file ? (
           <div className={styles.readoutBox}>
             <div className={styles.readoutRow}>
@@ -147,72 +156,52 @@ export const ExportPanel: React.FC = () => {
           <div className={styles.readoutBox}>
             <div className={styles.readoutRow}>
               <span>Size not set</span>
-              <button className={styles.resetButton} onClick={() => setSizeDialogOpen(true)}>
+              <Button variant="link" onClick={() => setSizeDialogOpen(true)}>
                 Set size…
-              </button>
+              </Button>
             </div>
             <div className={styles.controlNote}>Set the size to export: the file needs a physical size to carry.</div>
           </div>
         )}
-      </div>
+      </Section>
 
       {job === 'photo' && (
-        <div className={styles.section}>
-          <div className={styles.sectionTitle}>Image File</div>
-          <select
-            className={styles.select}
-            value={format}
-            onChange={(e) => setFormat(e.target.value as RasterFormat)}
-          >
-            <option value="png">PNG (Lossless 8-bit)</option>
-            <option value="bmp">BMP (Windows Bitmap CNC/Laser)</option>
-          </select>
-          <button
-            className={styles.primaryActionBtn}
+        <Section title="Image File">
+          <Select label="Image file format" labelHidden value={format} options={FORMAT_OPTIONS} onChange={setFormat} />
+          <Button
+            variant="primary"
+            className={styles.stackGap}
+            icon={isDone ? <CheckCircle size={16} /> : <Download size={16} />}
             onClick={() => void handleRasterExport()}
             disabled={!canExport}
           >
-            {isDone ? (
-              <>
-                <CheckCircle size={16} color="var(--on-accent)" /> Export Complete
-              </>
-            ) : (
-              <>
-                <Download size={16} />
-                Export Prepared Image
-              </>
-            )}
-          </button>
+            {isDone ? 'Export Complete' : 'Export Prepared Image'}
+          </Button>
           {progress && (
-            <div className={`${styles.readoutBox} ${styles.stackGap}`} role="status">
-              <div className={styles.readoutRow}>
-                <span>
-                  {STAGE_LABEL[progress.stage]}
-                  {progress.stage === 'encoding' ? ` ${Math.round(progress.fraction * 100)}%` : '…'}
-                </span>
-                <button className={styles.resetButton} onClick={cancelRasterExport}>
-                  <X size={12} /> Cancel
-                </button>
-              </div>
-              <div className={styles.controlNote}>The preview is paused while exporting.</div>
-            </div>
+            <Progress
+              className={styles.stackGap}
+              label={STAGE_LABEL[progress.stage]}
+              // Only encoding reports how far it is; the WASM calls before it cannot.
+              fraction={progress.stage === 'encoding' ? progress.fraction : null}
+              onCancel={cancelRasterExport}
+              note="The preview is paused while exporting."
+            />
           )}
           {blocker && plan && <div className={`${styles.controlNote} ${styles.stackGap}`}>{blocker}</div>}
           {error && (
-            <div className={`${styles.controlNote} ${styles.stackGap} ${styles.errorText}`} role="alert">
+            <StatusMessage tone="error" className={styles.stackGap}>
               Export failed: {error}
-            </div>
+            </StatusMessage>
           )}
-        </div>
+        </Section>
       )}
 
       {job === 'vector' && (
-        <div className={styles.section}>
-          <div className={styles.sectionTitle}>Vector Files</div>
+        <Section title="Vector Files">
           {!vectorResult && <div className={styles.controlNote}>Nothing traced yet: go back to the Trace step.</div>}
           <div className={styles.buttonRow}>
-            <button
-              className={styles.secondaryActionBtn}
+            <Button
+              icon={<Download size={14} />}
               disabled={!vectorResult || !previewResolution}
               onClick={() => {
                 if (!vectorResult || !previewResolution) return;
@@ -224,37 +213,32 @@ export const ExportPanel: React.FC = () => {
                 download([svg], 'image/svg+xml', `${baseName}-vectors.svg`);
               }}
             >
-              <Download size={14} /> SVG (mm)
-            </button>
-            <button
-              className={styles.secondaryActionBtn}
+              SVG (mm)
+            </Button>
+            <Button
+              icon={<FileCode size={14} />}
               disabled={!vectorResult}
               onClick={() => {
                 if (!vectorResult) return;
                 download([generateDXF(vectorResult)], 'application/dxf', `${baseName}-vectors.dxf`);
               }}
             >
-              <FileCode size={14} /> DXF (pixels)
-            </button>
+              DXF (pixels)
+            </Button>
           </div>
           <div className={`${styles.controlNote} ${styles.stackGap}`}>
             The DXF has no units: its coordinates are preview pixels, so scale it on import (#30).
           </div>
-        </div>
+        </Section>
       )}
 
       {job === 'relief' && (
         <>
           <ReliefExports />
           {depthHeightMapBuffer && (
-            <div className={styles.section}>
-              <div className={styles.sectionTitle}>
-                <span className={styles.titleWithIcon}>
-                  <Box size={14} color="var(--text-2)" /> Heightmap as Viewed
-                </span>
-              </div>
-              <button
-                className={styles.secondaryActionBtn}
+            <Section title="Heightmap as Viewed" icon={<Box size={14} />}>
+              <Button
+                icon={<Download size={14} />}
                 disabled={!previewResolution}
                 onClick={() => {
                   if (!previewResolution) return;
@@ -269,24 +253,19 @@ export const ExportPanel: React.FC = () => {
                     .catch((err: unknown) => setError(err instanceof Error ? err.message : String(err)));
                 }}
               >
-                <Download size={14} /> 16-Bit Heightmap with DPI (.PNG)
-              </button>
+                16-Bit Heightmap with DPI (.PNG)
+              </Button>
               <div className={`${styles.controlNote} ${styles.stackGap}`}>
                 The heightmap the view shows. Two heightmap exports remain until #46 leaves one.
               </div>
-              {error && (
-                <div className={`${styles.controlNote} ${styles.errorText}`} role="alert">
-                  Export failed: {error}
-                </div>
-              )}
-            </div>
+              {error && <StatusMessage tone="error">Export failed: {error}</StatusMessage>}
+            </Section>
           )}
         </>
       )}
 
       {/* What to set in LightBurn for this file */}
-      <div className={styles.section}>
-        <div className={styles.sectionTitle}>LightBurn Settings</div>
+      <Section title="LightBurn Settings">
         <div className={styles.readoutBox}>
           {settings.rows.map((row) => (
             <div key={row.label} className={styles.readoutRow}>
@@ -296,17 +275,16 @@ export const ExportPanel: React.FC = () => {
           ))}
         </div>
         <div className={`${styles.controlNote} ${styles.stackGap}`}>{settings.calibration}</div>
-        <button className={styles.resetButton} onClick={() => setTestGridDialogOpen(true)}>
+        <Button variant="link" onClick={() => setTestGridDialogOpen(true)}>
           Make a calibration test card…
-        </button>
-      </div>
+        </Button>
+      </Section>
 
-      <div className={styles.section}>
-        <div className={styles.sectionTitle}>Settings</div>
-        <button className={styles.secondaryActionBtn} onClick={handleRecipe}>
-          <Download size={14} /> Save Edit Recipe (.imgsuite)
-        </button>
-      </div>
+      <Section title="Settings">
+        <Button icon={<Download size={14} />} onClick={handleRecipe}>
+          Save Edit Recipe (.imgsuite)
+        </Button>
+      </Section>
     </div>
   );
 };
