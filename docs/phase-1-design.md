@@ -1,6 +1,6 @@
 # Phase 1 design: document, pipeline and units
 
-Status: approved on PR #64, with the second review's points folded in. Covers issues #15 to #22 (tracking issue #2). Sections 1 and 3 are implemented by #15 (parts 1 and 2); the rest is not implemented yet. Where part 2 differs from this text, a note says so.
+Status: approved on PR #64, with the second review's points folded in. Covers issues #15 to #22 (tracking issue #2). Sections 1 and 3 are implemented by #15 (parts 1 and 2), section 6 by #17. Where part 2 or a later issue differs from this text, a note says so.
 
 ## 1. The document
 
@@ -413,6 +413,15 @@ A Cancel button takes effect at the next boundary. `process_pipeline` is split l
 - **JPEG and WebP** are removed from raster export (confirmed by the owner).
 - **The Export panel** shows the size and DPI computed from the same target and scale that the export uses. It has no DPI input of its own, and export is disabled while the size is not set.
 - **Heightmap exports** in `DepthMapPanel` and the second heightmap button in `ExportPanel` are preview-sized too. They belong to #46 and #42 in phase 4 and are left alone, except that they read the document's DPI.
+
+**As built in #17** (where it differs from the above, and what was measured):
+
+- **PNG is greyscale or RGB, not RGBA.** The pipeline's output is opaque after flattening, so the encoder writes greyscale when every pixel's channels are equal (any dither, greyscale output) and RGB otherwise. RGBA is written only if a pixel is not opaque, which the pipeline does not produce. Rows use filter type 0 (None).
+- **BMP stays 24-bit RGB**, written straight from WASM memory into the file buffer, with the document's pixels per metre.
+- **Background removal blocks raster export.** Its pixels exist only at the preview's size (the stopgap until phase 5), so a full-resolution file cannot include them. Export is refused with a message saying so, rather than writing a file without the removal or a smaller one. Restore the background to export.
+- **The worker also waits.** Besides the schedulers being disabled while `renderStore.exportProgress` is set, the worker's renders await the running export, and loads and releases queue behind it, so nothing else touches WASM memory while the render is being encoded from it.
+- **The ExportPanel's 16-bit heightmap button now writes through the 16-bit encoder**, because the canvas path it used is gone. It is still preview-sized; removing the duplicate stays with #46.
+- **Measured** in headless Chromium 145 on a 6000 x 4000 PNG at 508 mm wide: the PNG export took 0.74 s from click to download, 7.3 MB, 6000 x 4000 with `pHYs` 11,811 px/m (300 DPI).
 
 ## 7. Tests
 
