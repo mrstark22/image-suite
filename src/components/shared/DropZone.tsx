@@ -3,8 +3,10 @@ import { Upload, Image, ShieldCheck, Sparkles } from 'lucide-react';
 import { generateTestPattern } from '../../lib/sample-images';
 import { openImageFiles } from '../../lib/open-image';
 import { useRenderStore } from '../../store/renderStore';
+import { Button } from './Button';
 import styles from './DropZone.module.css';
 
+/** The empty canvas: drop an image here, browse for one, or open a test pattern. */
 export const DropZone: React.FC = () => {
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -67,17 +69,19 @@ export const DropZone: React.FC = () => {
         ref={fileInputRef}
         type="file"
         accept="image/png,image/jpeg,image/webp,image/svg+xml,image/bmp,image/tiff"
-        className={styles.fileInput}
+        hidden
         onChange={handleFileChange}
       />
 
-      <button
+      <Button
+        variant="primary"
+        compact
         className={styles.browseButton}
+        icon={<Image size={16} />}
         onClick={() => fileInputRef.current?.click()}
       >
-        <Image size={16} />
         Browse Files
-      </button>
+      </Button>
 
       <div className={styles.formats}>
         <span className={styles.badge}>PNG</span>
@@ -90,16 +94,16 @@ export const DropZone: React.FC = () => {
       <div className={styles.samplesSection}>
         <div className={styles.samplesTitle}>Or try a precision test pattern</div>
         <div className={styles.samplesGrid}>
-          <button className={styles.sampleButton} onClick={() => loadSample('gradient')}>
-            <Sparkles size={14} style={{ marginBottom: 4, color: 'var(--warning)' }} />
+          <button type="button" className={styles.sampleButton} onClick={() => loadSample('gradient')}>
+            <Sparkles size={14} className={`${styles.sampleIcon} ${styles.sampleIconWarm}`} />
             Gradient Ramp
           </button>
-          <button className={styles.sampleButton} onClick={() => loadSample('emblem')}>
-            <ShieldCheck size={14} style={{ marginBottom: 4, color: 'var(--text-2)' }} />
+          <button type="button" className={styles.sampleButton} onClick={() => loadSample('emblem')}>
+            <ShieldCheck size={14} className={`${styles.sampleIcon} ${styles.sampleIconNeutral}`} />
             Laser Emblem
           </button>
-          <button className={styles.sampleButton} onClick={() => loadSample('grid')}>
-            <Image size={14} style={{ marginBottom: 4, color: 'var(--success)' }} />
+          <button type="button" className={styles.sampleButton} onClick={() => loadSample('grid')}>
+            <Image size={14} className={`${styles.sampleIcon} ${styles.sampleIconGreen}`} />
             Calibration Grid
           </button>
         </div>

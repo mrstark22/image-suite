@@ -181,17 +181,8 @@ describe('components use the tokens', () => {
     const PRIMARY = [
       'src/components/canvas/CanvasCropOverlay.module.css .btnApply',
       'src/components/canvas/CanvasCropOverlay.module.css .btnApply:hover',
-      'src/components/dialogs/MaterialTestGridDialog.module.css .btnPrimary',
-      'src/components/dialogs/SizeDialog.module.css .applyBtn',
-      'src/components/dialogs/SizeDialog.module.css .applyBtn:hover',
-      'src/components/panels/Panels.module.css .primaryActionBtn',
-      'src/components/panels/Panels.module.css .primaryActionBtn:hover',
-      'src/components/panels/VectorizationPanel.module.css .traceBtn',
-      'src/components/panels/VectorizationPanel.module.css .traceBtn:hover',
       'src/components/shared/Button.module.css .primary',
       'src/components/shared/Button.module.css .primary:hover:not(:disabled)',
-      'src/components/shared/DropZone.module.css .browseButton',
-      'src/components/shared/DropZone.module.css .browseButton:hover',
     ];
     const usesAccent = /var\(--accent(-hover)?\)/;
     const inCss = CSS.filter((s) => s.file !== 'src/index.css').flatMap(({ file, text }) =>

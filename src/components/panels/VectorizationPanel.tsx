@@ -8,13 +8,17 @@ import {
   RotateCcw,
   Scissors,
   Sparkles,
-  Zap,
 } from 'lucide-react';
 import { useDocumentStore } from '../../store/documentStore';
 import { useRenderStore } from '../../store/renderStore';
 import { DocumentSlider, Slider } from '../shared/Slider';
+import { Button } from '../shared/Button';
+import { Section } from '../shared/Section';
+import { Toggle } from '../shared/Toggle';
+import { StatusMessage } from '../shared/StatusMessage';
 import { DEFAULT_VECTOR, resetVector, setVector } from '../../lib/document';
 import type { VectorMode } from '../../types/vector';
+import panelStyles from './Panels.module.css';
 import styles from './VectorizationPanel.module.css';
 
 const VECTOR_MODES: Array<{ id: VectorMode; title: string; desc: string }> = [
@@ -51,84 +55,62 @@ export const VectorizationPanel: React.FC = () => {
   const handleTraceNow = () => requestTrace();
 
   return (
-    <div className={styles.panel}>
+    <div className={panelStyles.panel}>
       {/* Panel Header */}
-      <div className={styles.panelHeader}>
-        <span className={styles.panelTitle}>
-          <Zap size={14} color="var(--text-2)" />
-          <span>Vector Engine</span>
-        </span>
+      <div className={panelStyles.panelHeader}>
+        <span className={panelStyles.panelTitle}>Vector Engine</span>
         <div className={styles.headerActions}>
           {vectorResult && (
-            <button
-              className={`${styles.headerIconBtn} ${styles.headerIconBtnDanger}`}
-              onClick={clearVectors}
-              title="Clear all vector paths"
-            >
-              <Trash2 size={12} />
-              <span>Clear</span>
-            </button>
+            <Button variant="link" icon={<Trash2 size={12} />} onClick={clearVectors} title="Clear all vector paths">
+              Clear
+            </Button>
           )}
-          <button
-            className={styles.headerIconBtn}
+          <Button
+            variant="link"
+            icon={<RotateCcw size={12} />}
             onClick={() => edit(resetVector)}
             title="Reset parameters to default"
           >
-            <RotateCcw size={12} />
-            <span>Reset</span>
-          </button>
+            Reset
+          </Button>
         </div>
       </div>
 
       {/* Primary Action & Auto-Trace Toggle */}
       <div className={styles.actionBar}>
-        <div className={styles.actionRow}>
-          <button
-            className={`${styles.traceBtn} ${isVectorStale && vectorResult ? styles.traceBtnStale : ''}`}
-            onClick={handleTraceNow}
-          >
-            <Play size={13} fill="currentColor" />
-            <span>{vectorResult ? (isVectorStale ? 'Re-Trace Vectors' : 'Update Vectors') : 'Trace Vectors'}</span>
-          </button>
-        </div>
+        <Button variant="primary" icon={<Play size={13} />} onClick={handleTraceNow}>
+          {vectorResult ? (isVectorStale ? 'Re-Trace Vectors' : 'Update Vectors') : 'Trace Vectors'}
+        </Button>
+        {isVectorStale && vectorResult && (
+          <StatusMessage tone="warning">The settings changed since the last trace.</StatusMessage>
+        )}
 
-        <label className={styles.autoTraceToggle}>
-          <span className={styles.autoTraceLabel}>Auto-trace on change</span>
-          <span className={styles.switch}>
-            <input
-              type="checkbox"
-              checked={autoTrace}
-              onChange={(e) => setAutoTrace(e.target.checked)}
-            />
-            <span className={styles.slider} />
-          </span>
-        </label>
+        <Toggle label="Auto-trace on change" checked={autoTrace} onChange={setAutoTrace} />
       </div>
 
       {/* Trace Mode Selection */}
-      <div className={styles.section}>
-        <div className={styles.sectionTitle}>Trace Mode</div>
-        <div className={styles.modeGrid}>
+      <Section title="Trace Mode">
+        <div className={panelStyles.gridCards}>
           {VECTOR_MODES.map((mode) => {
             const isActive = vector.mode === mode.id;
             return (
               <button
                 key={mode.id}
-                className={`${styles.modeCard} ${isActive ? styles.modeCardActive : ''}`}
+                type="button"
+                className={`${panelStyles.cardButton} ${isActive ? panelStyles.cardButtonActive : ''}`}
+                aria-pressed={isActive}
                 onClick={() => edit(setVector({ mode: mode.id }))}
               >
-                <span className={styles.modeCardTitle}>{mode.title}</span>
-                <span className={styles.modeCardDesc}>{mode.desc}</span>
+                <span className={panelStyles.cardTitle}>{mode.title}</span>
+                <span className={panelStyles.cardDesc}>{mode.desc}</span>
               </button>
             );
           })}
         </div>
-      </div>
+      </Section>
 
       {/* Detection Parameters */}
-      <div className={styles.section}>
-        <div className={styles.sectionTitle}>Detection Settings</div>
-
+      <Section title="Detection Settings">
         {vector.mode === 'multi-color' && (
           <DocumentSlider
             label="Palette Colors (K-Means)"
@@ -172,25 +154,17 @@ export const VectorizationPanel: React.FC = () => {
               update={(v) => setVector({ threshold: v })}
               reset={setVector({ threshold: 128 })}
             />
-            <label className={styles.autoTraceToggle} style={{ marginTop: 6 }}>
-              <span className={styles.autoTraceLabel}>Invert Detection</span>
-              <span className={styles.switch}>
-                <input
-                  type="checkbox"
-                  checked={vector.invert}
-                  onChange={(e) => edit(setVector({ invert: e.target.checked }))}
-                />
-                <span className={styles.slider} />
-              </span>
-            </label>
+            <Toggle
+              label="Invert Detection"
+              checked={vector.invert}
+              onChange={(checked) => edit(setVector({ invert: checked }))}
+            />
           </>
         )}
-      </div>
+      </Section>
 
       {/* Simplification & Noise Filter */}
-      <div className={styles.section}>
-        <div className={styles.sectionTitle}>Path Optimization</div>
-
+      <Section title="Path Optimization">
         <DocumentSlider
           label="Pre-Filter Denoise"
           value={vector.denoise ?? 0.0}
@@ -224,183 +198,137 @@ export const VectorizationPanel: React.FC = () => {
           reset={setVector({ rdpTolerance: 1.0 })}
         />
 
-        <label className={styles.autoTraceToggle} style={{ marginTop: 6 }}>
-          <span className={styles.autoTraceLabel}>Bézier Curve Fitting</span>
-          <span className={styles.switch}>
-            <input
-              type="checkbox"
-              checked={vector.curveFitting}
-              onChange={(e) => edit(setVector({ curveFitting: e.target.checked }))}
-            />
-            <span className={styles.slider} />
-          </span>
-        </label>
-      </div>
+        <Toggle
+          label="Bézier Curve Fitting"
+          checked={vector.curveFitting}
+          onChange={(checked) => edit(setVector({ curveFitting: checked }))}
+        />
+      </Section>
 
       {/* Laser Contour Cutline Generator */}
-      <div className={styles.section}>
-        <div className={styles.featureCard} style={{ borderColor: 'rgba(239, 68, 68, 0.3)' }}>
-          <div className={styles.featureCardHeader}>
-            <span className={styles.featureCardTitle} style={{ color: 'var(--danger)' }}>
-              <Scissors size={13} />
-              <span>Contour Cutline (Offset Path)</span>
-            </span>
-          </div>
-          <p className={styles.featureDesc}>
-            Extracts subject boundary and expands by +offset for laser cutlines (Red #FF0000).
-          </p>
+      <Section title="Contour Cutline (Offset Path)" icon={<Scissors size={13} />}>
+        <p className={styles.featureDesc}>
+          Extracts subject boundary and expands by +offset for laser cutlines (Red #FF0000).
+        </p>
 
-          <Slider
-            label="Boundary Offset"
-            value={cutlineOffsetMm}
-            min={0.0}
-            max={20.0}
-            step={0.5}
-            unit="mm"
-            onChange={setCutlineOffsetMm}
-            onReset={() => setCutlineOffsetMm(2.0)}
-          />
+        <Slider
+          label="Boundary Offset"
+          value={cutlineOffsetMm}
+          min={0.0}
+          max={20.0}
+          step={0.5}
+          unit="mm"
+          onChange={setCutlineOffsetMm}
+          onReset={() => setCutlineOffsetMm(2.0)}
+        />
 
-          <Slider
-            label="Curve Smoothing"
-            value={cutlineSmoothness}
-            min={1}
-            max={10}
-            step={1}
-            onChange={setCutlineSmoothness}
-            onReset={() => setCutlineSmoothness(3)}
-          />
+        <Slider
+          label="Curve Smoothing"
+          value={cutlineSmoothness}
+          min={1}
+          max={10}
+          step={1}
+          onChange={setCutlineSmoothness}
+          onReset={() => setCutlineSmoothness(3)}
+        />
 
-          {!sizeSet && <p className={styles.featureDesc}>Set the size to use this.</p>}
-          <button
-            className={styles.actionBtnRed}
-            disabled={!sizeSet}
-            onClick={() => generateCutline(cutlineOffsetMm, cutlineSmoothness)}
-          >
-            <Scissors size={13} />
-            <span>Generate Cutline (+{cutlineOffsetMm}mm)</span>
-          </button>
-        </div>
-      </div>
+        {!sizeSet && <p className={styles.featureDesc}>Set the size to use this.</p>}
+        <Button
+          icon={<Scissors size={13} />}
+          disabled={!sizeSet}
+          onClick={() => generateCutline(cutlineOffsetMm, cutlineSmoothness)}
+        >
+          Generate Cutline (+{cutlineOffsetMm}mm)
+        </Button>
+      </Section>
 
       {/* Node Reduction & Spline Smoothing (Active Vectors) */}
       {vectorResult && (
-        <div className={styles.section}>
-          <div className={styles.featureCard}>
-            <div className={styles.featureCardHeader}>
-              <span className={styles.featureCardTitle}>
-                <Sparkles size={13} color="var(--text-2)" />
-                <span>Node Reduction & Splines</span>
-              </span>
-            </div>
-            <p className={styles.featureDesc}>
-              Simplifies dense point clouds into smooth arcs to eliminate CNC stuttering.
-            </p>
+        <Section title="Node Reduction & Splines" icon={<Sparkles size={13} />}>
+          <p className={styles.featureDesc}>
+            Simplifies dense point clouds into smooth arcs to eliminate CNC stuttering.
+          </p>
 
-            <Slider
-              label="Tolerance"
-              value={smoothTolerance}
-              min={0.5}
-              max={5.0}
-              step={0.2}
-              unit="px"
-              onChange={setSmoothTolerance}
-              onReset={() => setSmoothTolerance(1.5)}
-            />
+          <Slider
+            label="Tolerance"
+            value={smoothTolerance}
+            min={0.5}
+            max={5.0}
+            step={0.2}
+            unit="px"
+            onChange={setSmoothTolerance}
+            onReset={() => setSmoothTolerance(1.5)}
+          />
 
-            <label className={styles.autoTraceToggle}>
-              <span className={styles.autoTraceLabel}>Fit Cubic Bézier Curves</span>
-              <span className={styles.switch}>
-                <input
-                  type="checkbox"
-                  checked={fitCurves}
-                  onChange={(e) => setFitCurves(e.target.checked)}
-                />
-                <span className={styles.slider} />
-              </span>
-            </label>
+          <Toggle label="Fit Cubic Bézier Curves" checked={fitCurves} onChange={setFitCurves} />
 
-            <button
-              className={styles.actionBtnSecondary}
-              onClick={() => smoothVectors(smoothTolerance, fitCurves)}
-            >
-              <Sparkles size={13} />
-              <span>Optimize & Smooth Nodes</span>
-            </button>
-          </div>
-        </div>
+          <Button icon={<Sparkles size={13} />} onClick={() => smoothVectors(smoothTolerance, fitCurves)}>
+            Optimize & Smooth Nodes
+          </Button>
+        </Section>
       )}
 
       {/* Layer List */}
       {vectorResult && vectorResult.layers.length > 0 && (
-        <div className={styles.section}>
-          <div className={styles.sectionTitle}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <Layers size={13} />
-              <span>Vector Layers ({vectorResult.layers.length})</span>
-            </div>
-          </div>
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <Section title={`Vector Layers (${vectorResult.layers.length})`} icon={<Layers size={13} />}>
+          <ul className={styles.layerList}>
             {vectorResult.layers.map((layer) => (
-              <div key={layer.id} className={styles.layerItem}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span
-                    className={styles.layerDot}
-                    style={{ backgroundColor: layer.color }}
-                  />
-                  <span style={{ fontWeight: 600 }}>{layer.name}</span>
-                  <span style={{ color: 'var(--text-3)', fontSize: 10.5 }}>
+              <li key={layer.id} className={styles.layerItem}>
+                <div className={styles.layerInfo}>
+                  {/* The layer's own colour, known only at run time. */}
+                  <span className={styles.layerDot} style={{ backgroundColor: layer.color }} />
+                  <span className={styles.layerName}>{layer.name}</span>
+                  <span className={styles.layerCounts}>
                     ({layer.paths.length} paths • {layer.totalNodes} nodes)
                   </span>
                 </div>
 
-                <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                <div className={styles.layerActions}>
                   <button
-                    className={styles.iconButton}
-                    style={{ color: layer.visible ? 'var(--text)' : 'var(--text-3)' }}
+                    type="button"
+                    className={`${styles.iconButton} ${layer.visible ? '' : styles.iconButtonOff}`}
                     onClick={() => toggleVectorLayer(layer.id)}
+                    aria-label={`Show ${layer.name}`}
+                    aria-pressed={layer.visible}
                     title={layer.visible ? 'Hide layer' : 'Show layer'}
                   >
-                    {layer.visible ? <Eye size={13} /> : <EyeOff size={13} />}
+                    {layer.visible ? <Eye size={13} aria-hidden="true" /> : <EyeOff size={13} aria-hidden="true" />}
                   </button>
                   <button
+                    type="button"
                     className={`${styles.iconButton} ${styles.iconButtonDanger}`}
                     onClick={() => removeVectorLayer(layer.id)}
+                    aria-label={`Delete ${layer.name}`}
                     title="Delete layer"
                   >
-                    <Trash2 size={13} />
+                    <Trash2 size={13} aria-hidden="true" />
                   </button>
                 </div>
-              </div>
+              </li>
             ))}
-          </div>
-        </div>
+          </ul>
+        </Section>
       )}
 
       {/* Statistics & Export */}
       {vectorResult ? (
-        <div className={styles.section}>
-          <div className={styles.sectionTitle}>Vector Telemetry</div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            <div className={styles.statRow}>
+        <Section title="Vector Telemetry">
+          <div className={panelStyles.readoutBox}>
+            <div className={panelStyles.readoutRow}>
               <span>Total Paths:</span>
-              <span className={styles.statValue} style={{ color: 'var(--text)' }}>
-                {vectorResult.totalPaths}
-              </span>
+              <strong>{vectorResult.totalPaths}</strong>
             </div>
-            <div className={styles.statRow}>
+            <div className={panelStyles.readoutRow}>
               <span>Total Nodes:</span>
-              <span className={styles.statValue} style={{ color: 'var(--success)' }}>
-                {vectorResult.totalNodes}
-              </span>
+              <strong>{vectorResult.totalNodes}</strong>
             </div>
           </div>
-
-        </div>
+        </Section>
       ) : (
-        <div style={{ padding: '20px 16px', textAlign: 'center', color: 'var(--text-3)', fontSize: 11.5 }}>
-          Click <strong>Trace Vectors</strong> above to generate toolpaths.
+        <div className={panelStyles.emptyNote}>
+          <span>
+            Click <strong>Trace Vectors</strong> above to generate toolpaths.
+          </span>
         </div>
       )}
     </div>

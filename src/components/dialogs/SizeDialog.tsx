@@ -1,5 +1,5 @@
 import React, { useEffect, useReducer, useState } from 'react';
-import { Maximize, X, Check } from 'lucide-react';
+import { Maximize, Check } from 'lucide-react';
 import { useDocumentStore } from '../../store/documentStore';
 import { useUIStore } from '../../store/uiStore';
 import { setScale } from '../../lib/document';
@@ -11,7 +11,16 @@ import {
   type PhysicalUnit,
 } from '../../lib/document-size';
 import { canApplySize, sizeDraftReducer, type SizeField as Field } from '../../lib/size-draft';
+import { Button } from '../shared/Button';
+import { Dialog } from '../shared/Dialog';
+import { Select, type SelectOption } from '../shared/Select';
+import { StatusMessage } from '../shared/StatusMessage';
 import styles from './SizeDialog.module.css';
+
+const UNIT_OPTIONS: SelectOption<PhysicalUnit>[] = [
+  { value: 'mm', label: 'Millimetres (mm)' },
+  { value: 'in', label: 'Inches (in)' },
+];
 
 function rounded(value: number, unit: PhysicalUnit): string {
   return String(Number(value.toFixed(unit === 'mm' ? 1 : 3)));
@@ -66,109 +75,87 @@ export const SizeDialog: React.FC = () => {
   };
 
   return (
-    <div className={styles.backdrop} onClick={close}>
-      <div
-        className={styles.modal}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="size-dialog-title"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className={styles.header}>
-          <div className={styles.title} id="size-dialog-title">
-            <Maximize size={16} color="var(--text-2)" />
-            Physical size
-          </div>
-          <button className={styles.closeBtn} onClick={close} aria-label="Close">
-            <X size={16} />
-          </button>
-        </div>
-
-        <div className={styles.content}>
-          {doc.mmPerPx === null && (
-            <p className={styles.notice}>
-              Size not set. Enter the width or height this image should have on the material. Sharpening, the
-              adaptive threshold and export need it.
-            </p>
-          )}
-
-          <div className={styles.inputField}>
-            <span className={styles.label}>Image{doc.steps.crop ? ' (cropped)' : ''}</span>
-            <span className={styles.readout}>
-              {crop.width} × {crop.height} px
-            </span>
-          </div>
-
-          {fileDpi !== null && suggestion !== null && (
-            <div className={styles.suggestion}>
-              <span>
-                File says {Number(fileDpi.toFixed(2))} DPI: {rounded(fromMm(crop.width * suggestion, unit), unit)} ×{' '}
-                {rounded(fromMm(crop.height * suggestion, unit), unit)} {unit}
-              </span>
-              <button
-                className={styles.suggestionBtn}
-                onClick={() => dispatch({ type: 'suggest', scale: suggestion })}
-              >
-                Use this
-              </button>
-            </div>
-          )}
-
-          <div className={styles.unitRow}>
-            <span className={styles.label}>Unit</span>
-            <select
-              className={styles.unitSelect}
-              value={unit}
-              onChange={(e) => {
-                setUnit(e.target.value as PhysicalUnit);
-                dispatch({ type: 'stopEditing' });
-              }}
-            >
-              <option value="mm">Millimetres (mm)</option>
-              <option value="in">Inches (in)</option>
-            </select>
-          </div>
-
-          <div className={styles.inputGrid}>
-            {(['width', 'height'] as const).map((field) => (
-              <label className={styles.inputField} key={field}>
-                <span className={styles.label}>{field === 'width' ? 'Width' : 'Height'}</span>
-                <div className={styles.inputWrapper}>
-                  <input
-                    type="number"
-                    min={0}
-                    className={styles.input}
-                    placeholder="not set"
-                    value={lengthText(field)}
-                    onChange={(e) => handleType(field, e.target.value)}
-                    onBlur={() => dispatch({ type: 'stopEditing' })}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && canApply) handleApply();
-                    }}
-                  />
-                  <span className={styles.unitLabel}>{unit}</span>
-                </div>
-              </label>
-            ))}
-          </div>
-
-          <div className={styles.inputField}>
-            <span className={styles.label}>Resolution</span>
-            <span className={styles.readout}>
-              {pending === null ? 'not set' : `${Number((MM_PER_INCH / pending).toFixed(2))} DPI`}
-            </span>
-          </div>
-        </div>
-
-        <div className={styles.footer}>
-          <button className={styles.cancelBtn} onClick={close}>
+    <Dialog
+      open
+      onClose={close}
+      icon={<Maximize size={16} />}
+      title="Physical size"
+      footer={
+        <>
+          <Button compact onClick={close}>
             Cancel
-          </button>
-          <button className={styles.applyBtn} onClick={handleApply} disabled={!canApply}>
-            <Check size={14} /> Apply
-          </button>
-        </div>
+          </Button>
+          <Button variant="primary" compact icon={<Check size={14} />} onClick={handleApply} disabled={!canApply}>
+            Apply
+          </Button>
+        </>
+      }
+    >
+      {doc.mmPerPx === null && (
+        <StatusMessage tone="warning">
+          Size not set. Enter the width or height this image should have on the material. Sharpening, the adaptive
+          threshold and export need it.
+        </StatusMessage>
+      )}
+
+      <div className={styles.inputField}>
+        <span className={styles.label}>Image{doc.steps.crop ? ' (cropped)' : ''}</span>
+        <span className={styles.readout}>
+          {crop.width} × {crop.height} px
+        </span>
       </div>
-    </div>
+
+      {fileDpi !== null && suggestion !== null && (
+        <div className={styles.suggestion}>
+          <span>
+            File says {Number(fileDpi.toFixed(2))} DPI: {rounded(fromMm(crop.width * suggestion, unit), unit)} ×{' '}
+            {rounded(fromMm(crop.height * suggestion, unit), unit)} {unit}
+          </span>
+          <Button compact onClick={() => dispatch({ type: 'suggest', scale: suggestion })}>
+            Use this
+          </Button>
+        </div>
+      )}
+
+      <Select
+        label="Unit"
+        value={unit}
+        options={UNIT_OPTIONS}
+        onChange={(next) => {
+          setUnit(next);
+          dispatch({ type: 'stopEditing' });
+        }}
+      />
+
+      <div className={styles.inputGrid}>
+        {(['width', 'height'] as const).map((field) => (
+          <label className={styles.inputField} key={field}>
+            <span className={styles.label}>{field === 'width' ? 'Width' : 'Height'}</span>
+            <div className={styles.inputWrapper}>
+              <input
+                type="number"
+                min={0}
+                className={styles.input}
+                placeholder="not set"
+                value={lengthText(field)}
+                onChange={(e) => handleType(field, e.target.value)}
+                onBlur={() => dispatch({ type: 'stopEditing' })}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && canApply) handleApply();
+                }}
+              />
+              <span className={styles.unitLabel}>{unit}</span>
+            </div>
+          </label>
+        ))}
+      </div>
+
+      <div className={styles.inputField}>
+        <span className={styles.label}>Resolution</span>
+        <span className={styles.readout}>
+          {pending === null ? 'not set' : `${Number((MM_PER_INCH / pending).toFixed(2))} DPI`}
+        </span>
+      </div>
+    </Dialog>
   );
 };

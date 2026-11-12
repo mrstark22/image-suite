@@ -1,8 +1,10 @@
-import React from 'react';
+import React, { useId } from 'react';
 import { Sun, Layers, Sparkles } from 'lucide-react';
 import { useDocumentStore } from '../../store/documentStore';
 import { DEFAULT_DEPTH, setDepth } from '../../lib/document';
 import { DocumentSlider } from '../shared/Slider';
+import { Section } from '../shared/Section';
+import { Toggle } from '../shared/Toggle';
 import type { BevelStyle, DepthSource, DepthViewMode, ReliefMaterial } from '../../types/depth';
 import styles from './Panels.module.css';
 
@@ -26,17 +28,26 @@ const VIEW_MODES: Array<{ id: DepthViewMode; label: string; desc: string }> = [
   { id: 'grayscale', label: 'Raw 2D Grayscale', desc: '16-bit heightmap data for CAM output' },
 ];
 
-const MATERIALS: Array<{ id: ReliefMaterial; label: string; color: string }> = [
-  { id: 'walnut', label: 'Walnut Wood', color: '#b87333' },
-  { id: 'brass', label: 'Brushed Brass', color: '#e5c158' },
-  { id: 'slate', label: 'Ceramic Slate', color: '#64748b' },
-  { id: 'grayscale', label: 'Monochrome', color: '#94a3b8' },
+/** The substrate materials of the shaded view; each swatch's colour is in the stylesheet. */
+const MATERIALS: Array<{ id: ReliefMaterial; label: string }> = [
+  { id: 'walnut', label: 'Walnut Wood' },
+  { id: 'brass', label: 'Brushed Brass' },
+  { id: 'slate', label: 'Ceramic Slate' },
+  { id: 'grayscale', label: 'Monochrome' },
 ];
+
+const SWATCH_CLASS: Partial<Record<ReliefMaterial, string>> = {
+  walnut: styles.swatchWalnut,
+  brass: styles.swatchBrass,
+  slate: styles.swatchSlate,
+  grayscale: styles.swatchGrayscale,
+};
 
 /** Relief settings of the open document. Its files are written by the export step (ReliefExports). */
 export const DepthMapPanel: React.FC = () => {
   const depth = useDocumentStore((s) => s.doc?.depth ?? DEFAULT_DEPTH);
   const edit = useDocumentStore((s) => s.edit);
+  const materialLabelId = useId();
   return (
     <div className={styles.panel}>
       <div className={styles.panelHeader}>
@@ -44,22 +55,19 @@ export const DepthMapPanel: React.FC = () => {
       </div>
 
       {/* 3D Preview Shading Mode */}
-      <div className={styles.section}>
-        <div className={styles.sectionTitle} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <Sparkles size={14} />
-          <span>3D Relief View Mode</span>
-        </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 12 }}>
+      <Section title="3D Relief View Mode" icon={<Sparkles size={14} />}>
+        <div className={styles.stackCards}>
           {VIEW_MODES.map((vm) => {
             const isActive = (depth.viewMode || '3d-shaded') === vm.id;
             return (
               <button
                 key={vm.id}
-                className={`${styles.cardButton} ${isActive ? styles.cardButtonActive : ''}`}
-                style={{ width: '100%', padding: '8px 10px' }}
+                type="button"
+                className={`${styles.cardButton} ${styles.cardButtonWide} ${isActive ? styles.cardButtonActive : ''}`}
+                aria-pressed={isActive}
                 onClick={() => edit(setDepth({ viewMode: vm.id }))}
               >
-                <span className={styles.cardTitle} style={{ fontSize: 12 }}>{vm.label}</span>
+                <span className={`${styles.cardTitle} ${styles.cardTitleLarge}`}>{vm.label}</span>
                 <span className={styles.cardDesc}>{vm.desc}</span>
               </button>
             );
@@ -68,39 +76,22 @@ export const DepthMapPanel: React.FC = () => {
 
         {/* Material Selection for 3D Shaded Mode */}
         {depth.viewMode !== 'heatmap' && depth.viewMode !== 'grayscale' && (
-          <div>
-            <div style={{ fontSize: 11, color: 'var(--text-2)', marginBottom: 6 }}>
+          <div role="group" aria-labelledby={materialLabelId}>
+            <div id={materialLabelId} className={styles.choiceLabel}>
               Substrate Material
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginBottom: 12 }}>
+            <div className={styles.gridCards}>
               {MATERIALS.map((m) => {
                 const isActive = (depth.material || 'walnut') === m.id;
                 return (
                   <button
                     key={m.id}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 8,
-                      padding: '6px 8px',
-                      background: isActive ? 'var(--surface-hover)' : 'var(--surface)',
-                      border: isActive ? '1px solid var(--text)' : '1px solid var(--border)',
-                      borderRadius: 6,
-                      cursor: 'pointer',
-                      fontSize: 11,
-                      color: 'var(--text)',
-                    }}
+                    type="button"
+                    className={`${styles.materialButton} ${isActive ? styles.materialButtonActive : ''}`}
+                    aria-pressed={isActive}
                     onClick={() => edit(setDepth({ material: m.id }))}
                   >
-                    <span
-                      style={{
-                        width: 12,
-                        height: 12,
-                        borderRadius: '50%',
-                        backgroundColor: m.color,
-                        display: 'inline-block',
-                      }}
-                    />
+                    <span className={`${styles.swatch} ${SWATCH_CLASS[m.id] ?? ''}`} aria-hidden="true" />
                     <span>{m.label}</span>
                   </button>
                 );
@@ -108,47 +99,41 @@ export const DepthMapPanel: React.FC = () => {
             </div>
           </div>
         )}
-      </div>
+      </Section>
 
       {/* Source Selection Cards */}
-      <div className={styles.section}>
-        <div className={styles.sectionTitle} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <Layers size={14} />
-          <span>Depth Calculation Engine</span>
-        </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 12 }}>
+      <Section title="Depth Calculation Engine" icon={<Layers size={14} />}>
+        <div className={styles.stackCards}>
           {DEPTH_SOURCES.map((src) => {
             const isActive = depth.source === src.id;
             return (
               <button
                 key={src.id}
-                className={`${styles.cardButton} ${isActive ? styles.cardButtonActive : ''}`}
-                style={{ width: '100%', padding: '8px 10px' }}
+                type="button"
+                className={`${styles.cardButton} ${styles.cardButtonWide} ${isActive ? styles.cardButtonActive : ''}`}
+                aria-pressed={isActive}
                 onClick={() => edit(setDepth({ source: src.id }))}
               >
-                <span className={styles.cardTitle} style={{ fontSize: 12 }}>{src.title}</span>
+                <span className={`${styles.cardTitle} ${styles.cardTitleLarge}`}>{src.title}</span>
                 <span className={styles.cardDesc}>{src.desc}</span>
               </button>
             );
           })}
         </div>
-      </div>
+      </Section>
 
       {/* Profile & Controls */}
-      <div className={styles.section}>
-        <div className={styles.sectionTitle} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <Sun size={14} />
-          <span>Relief & Lighting Controls</span>
-        </div>
-
+      <Section title="Relief & Lighting Controls" icon={<Sun size={14} />}>
         {depth.source === 'distance-transform' && (
-          <div className={styles.gridCards} style={{ marginBottom: 12 }}>
+          <div className={styles.gridCards}>
             {BEVEL_STYLES.map((b) => {
               const isActive = depth.bevelStyle === b.id;
               return (
                 <button
                   key={b.id}
+                  type="button"
                   className={`${styles.cardButton} ${isActive ? styles.cardButtonActive : ''}`}
+                  aria-pressed={isActive}
                   onClick={() => edit(setDepth({ bevelStyle: b.id }))}
                 >
                   <span className={styles.cardTitle}>{b.title}</span>
@@ -158,7 +143,6 @@ export const DepthMapPanel: React.FC = () => {
             })}
           </div>
         )}
-
         <DocumentSlider
           label="Relief Depth Exaggeration"
           value={depth.depthScale}
@@ -229,22 +213,13 @@ export const DepthMapPanel: React.FC = () => {
           reset={setDepth({ smoothingRadius: 2.0 })}
         />
 
-        <div className={styles.toggleRow} style={{ marginTop: 12 }}>
-          <div>
-            <div className={styles.toggleLabel}>Invert Z-Axis Height</div>
-            <div style={{ fontSize: 10, color: 'var(--text-3)' }}>
-              {depth.invertZ ? 'Dark = Highest / Light = Deepest' : 'Light = Highest / Dark = Deepest (Standard CNC)'}
-            </div>
-          </div>
-          <input
-            type="checkbox"
-            className={styles.checkbox}
-            checked={depth.invertZ}
-            onChange={(e) => edit(setDepth({ invertZ: e.target.checked }))}
-          />
-        </div>
-      </div>
-
+        <Toggle
+          label="Invert Z-Axis Height"
+          checked={depth.invertZ}
+          note={depth.invertZ ? 'Dark = Highest / Light = Deepest' : 'Light = Highest / Dark = Deepest (Standard CNC)'}
+          onChange={(checked) => edit(setDepth({ invertZ: checked }))}
+        />
+      </Section>
     </div>
   );
 };

@@ -6,6 +6,7 @@ import { useUIStore } from '../../store/uiStore';
 import { openImagePicker } from '../../lib/open-image';
 import { setCrop } from '../../lib/document';
 import { cropRectOf, dpiOf, fromMm, physicalSize } from '../../lib/document-size';
+import { Button } from '../shared/Button';
 import styles from './Panels.module.css';
 
 /**
@@ -40,13 +41,13 @@ export const ImageStepPanel: React.FC = () => {
         ) : (
           <div className={styles.controlNote}>Drop an image on the canvas, or open one.</div>
         )}
-        <button className={`${styles.secondaryActionBtn} ${styles.stackGap}`} onClick={openImagePicker}>
-          <FolderOpen size={14} /> {doc ? 'Open Another Image…' : 'Open Image…'}
-        </button>
+        <Button className={styles.stackGap} icon={<FolderOpen size={14} />} onClick={openImagePicker}>
+          {doc ? 'Open Another Image…' : 'Open Image…'}
+        </Button>
         {doc && (
-          <button className={`${styles.resetButton} ${styles.stackGap}`} onClick={close}>
+          <Button variant="link" className={styles.stackGap} onClick={close}>
             Close image
-          </button>
+          </Button>
         )}
       </div>
     </div>
@@ -83,20 +84,17 @@ export const CropStepPanel: React.FC = () => {
             </div>
           )}
         </div>
-        <button
-          className={`${styles.secondaryActionBtn} ${styles.stackGap}`}
+        <Button
+          className={styles.stackGap}
+          icon={<Crop size={14} />}
           onClick={() => setCanvasTool(canvasTool === 'crop' ? 'pan' : 'crop')}
           aria-pressed={canvasTool === 'crop'}
         >
-          <Crop size={14} /> {canvasTool === 'crop' ? 'Cancel Crop Box' : cropped ? 'Crop Further…' : 'Draw Crop Box…'}
-        </button>
-        <button
-          className={`${styles.secondaryActionBtn} ${styles.stackGap}`}
-          disabled={!cropped}
-          onClick={() => edit(setCrop(null))}
-        >
-          <X size={14} /> Remove Crop
-        </button>
+          {canvasTool === 'crop' ? 'Cancel Crop Box' : cropped ? 'Crop Further…' : 'Draw Crop Box…'}
+        </Button>
+        <Button className={styles.stackGap} icon={<X size={14} />} disabled={!cropped} onClick={() => edit(setCrop(null))}>
+          Remove Crop
+        </Button>
         <div className={`${styles.controlNote} ${styles.stackGap}`}>
           The physical size follows the crop: its scale (mm per pixel) is kept.
         </div>
@@ -143,9 +141,9 @@ export const SizeStepPanel: React.FC = () => {
             </div>
           )}
         </div>
-        <button className={`${styles.secondaryActionBtn} ${styles.stackGap}`} onClick={() => setSizeDialogOpen(true)}>
-          <Maximize size={14} /> {size ? 'Change Size…' : 'Set Size…'}
-        </button>
+        <Button className={styles.stackGap} icon={<Maximize size={14} />} onClick={() => setSizeDialogOpen(true)}>
+          {size ? 'Change Size…' : 'Set Size…'}
+        </Button>
         <div className={`${styles.controlNote} ${styles.stackGap}`}>
           The machine and material are chosen in the top bar. They set the LightBurn settings shown at export.
         </div>
@@ -161,9 +159,9 @@ export const NeedsImage: React.FC = () => {
     <div className={styles.panel}>
       <div className={styles.emptyNote}>
         Open an image first.
-        <button className={`${styles.resetButton} ${styles.stackGap}`} onClick={() => goToStep('image')}>
+        <Button variant="link" className={styles.stackGap} onClick={() => goToStep('image')}>
           Go to the Image step
-        </button>
+        </Button>
       </div>
     </div>
   );

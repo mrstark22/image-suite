@@ -1,17 +1,20 @@
 // @vitest-environment jsdom
 /**
- * The panels moved onto the shared components (#55, part 1 of 2): Background
- * (AIPanel), Dither and Export, and the shortcuts dialog.
+ * The panels on the shared components (#55): Background (AIPanel), Dither and
+ * Export and the shortcuts dialog in part 1; Adjust, Trace, Relief, the prep
+ * steps, the relief exports, the size and test grid dialogs and the drop zone
+ * in part 2.
  *
- * - A failed background removal is reported as an error, not in the success
- *   style it used to share with every other message.
- * - The export's progress shows its percentage and its Cancel reaches the worker.
- * - Every control in these panels is a native, focusable control with a name
- *   a screen reader can read, so each is reachable and operable by keyboard.
- * - Inline styles in these files are down to values computed at run time,
- *   and the count across src can only go down until part 2 removes the rest.
+ * - A failed background removal or test grid is reported as an error, not in
+ *   the success style it used to share with every other message.
+ * - The export's progress shows its percentage and its Cancel reaches the
+ *   worker.
+ * - Every control in every panel and dialog is a native, focusable control
+ *   with a name a screen reader can read, so each is reachable and operable
+ *   by keyboard.
+ * - Inline styles across src are down to values computed at run time.
  */
-import React from 'react';
+import React, { act } from 'react';
 import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
@@ -19,15 +22,35 @@ import { AIPanel } from '../../src/components/panels/AIPanel';
 import { DitheringPanel } from '../../src/components/panels/DitheringPanel';
 import { ExportPanel } from '../../src/components/panels/ExportPanel';
 import { ShortcutsDialog } from '../../src/components/dialogs/ShortcutsDialog';
+import { AdjustmentsPanel } from '../../src/components/panels/AdjustmentsPanel';
+import { VectorizationPanel } from '../../src/components/panels/VectorizationPanel';
+import { DepthMapPanel } from '../../src/components/panels/DepthMapPanel';
+import { CropStepPanel, ImageStepPanel, NeedsImage, SizeStepPanel } from '../../src/components/panels/PrepSteps';
+import { SizeDialog } from '../../src/components/dialogs/SizeDialog';
+import { MaterialTestGridDialog } from '../../src/components/dialogs/MaterialTestGridDialog';
+import { DropZone } from '../../src/components/shared/DropZone';
 import { setPipeline, type Pipeline } from '../../src/lib/pipeline-client';
 import { useDocumentStore } from '../../src/store/documentStore';
 import { useRenderStore } from '../../src/store/renderStore';
 import { useUIStore } from '../../src/store/uiStore';
-import { setDither } from '../../src/lib/document';
+import { setDepth, setDetail, setDither, setVector } from '../../src/lib/document';
 import type { DitherAlgorithm } from '../../src/types/dither';
+import type { VectorMode, VectorResult } from '../../src/types/vector';
+import type { DepthSource, DepthViewMode } from '../../src/types/depth';
 import type { PreviewSource } from '../../src/lib/crop';
 import { decodedImage, resetStores } from '../helpers/documents';
-import { accessibleName, button, click, mount, one, settle, type Mounted } from '../helpers/dom';
+import { accessibleName, button, click, mount, one, press, settle, type Mounted } from '../helpers/dom';
+
+// The test grid dialog opens its grid through this module; a test makes it fail.
+const testGridDocument = vi.hoisted(() => ({ failWith: null as Error | null }));
+vi.mock('../../src/lib/test-grid-document', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../src/lib/test-grid-document')>();
+  return {
+    ...actual,
+    openTestGridRaster: (...args: Parameters<typeof actual.openTestGridRaster>) =>
+      testGridDocument.failWith ? Promise.reject(testGridDocument.failWith) : actual.openTestGridRaster(...args),
+  };
+});
 
 let mounted: Mounted | null = null;
 const render = (el: React.ReactElement) => (mounted = mount(el));
@@ -54,8 +77,15 @@ const realReplace = useRenderStore.getState().replaceSourcePixels;
 
 beforeEach(() => {
   resetStores();
-  useRenderStore.setState({ source: null, processed: null, exportProgress: null, backgroundRemoval: null });
+  useRenderStore.setState({
+    source: null,
+    processed: null,
+    exportProgress: null,
+    backgroundRemoval: null,
+    vectorResult: null,
+  });
   useUIStore.setState({ job: 'photo' });
+  testGridDocument.failWith = null;
 });
 
 afterEach(() => {
@@ -146,11 +176,13 @@ describe('Export step: progress and cancel', () => {
  * Controls in `root` that a keyboard user cannot reach or a screen reader
  * cannot name: anything taken out of the tab order or put in a custom order,
  * a click target that is not a native control, and a control with no name.
+ * A control inside a `hidden` element is not shown, so it is skipped.
  */
 function inaccessibleControls(root: HTMLElement): string[] {
   const problems: string[] = [];
   const describe = (el: Element) => `${el.tagName.toLowerCase()} "${(el.textContent ?? '').trim().slice(0, 40)}"`;
   for (const el of root.querySelectorAll<HTMLElement>('button, input, select, textarea, a[href]')) {
+    if (el.closest('[hidden]')) continue;
     if (el.tabIndex < 0) problems.push(`${describe(el)} is out of the tab order`);
     if (!accessibleName(el)) problems.push(`${describe(el)} has no accessible name`);
   }
@@ -204,6 +236,144 @@ describe('every control in the migrated panels is reachable and named', () => {
     expect(container.querySelector('[role=dialog]')).not.toBeNull();
     expect(inaccessibleControls(container)).toEqual([]);
   });
+
+  it('Adjust, with every section open and every optional control shown, with and without a size', () => {
+    for (const mmPerPx of [10, null]) {
+      resetStores();
+      useDocumentStore.getState().open(decodedImage(4, 4), mmPerPx);
+      useDocumentStore.getState().edit(setDetail({ clahe: true, adaptiveThreshold: true, unsharpStrength: 50 }));
+      const { container, unmount } = mount(<AdjustmentsPanel />);
+      for (const toggle of container.querySelectorAll<HTMLButtonElement>('h3 button[aria-expanded=false]')) click(toggle);
+      expect(container.querySelectorAll('h3 button[aria-expanded=true]')).toHaveLength(5);
+      expect(container.querySelectorAll('input[type=range]').length).toBeGreaterThan(20);
+      expect(inaccessibleControls(container), `size ${mmPerPx}`).toEqual([]);
+      unmount();
+    }
+  });
+
+  it('Trace, in every mode, and with a result', () => {
+    openWithPreview();
+    useRenderStore.setState({ vectorResult: twoLayers(), isVectorStale: true });
+    const modes: VectorMode[] = ['outline', 'multi-color', 'edge-detect', 'centerline'];
+    const { container, rerender } = render(<VectorizationPanel />);
+    for (const mode of modes) {
+      useDocumentStore.getState().edit(setVector({ mode }));
+      rerender(<VectorizationPanel />);
+      expect(inaccessibleControls(container), mode).toEqual([]);
+    }
+    expect(container.querySelectorAll('[aria-pressed=true]').length).toBeGreaterThanOrEqual(1);
+    // Each layer's buttons say which layer they act on.
+    expect(button(container, /^Delete Outline$/)).toBeTruthy();
+    expect(button(container, /^Show Cutline$/).getAttribute('aria-pressed')).toBe('false');
+  });
+
+  it('Relief, for every source and view mode', () => {
+    openWithPreview();
+    const sources: DepthSource[] = ['ai-estimation', 'tonal-height', 'distance-transform'];
+    const views: DepthViewMode[] = ['3d-interactive', '3d-shaded', 'heatmap', 'grayscale'];
+    const { container, rerender } = render(<DepthMapPanel />);
+    for (const source of sources) {
+      for (const viewMode of views) {
+        useDocumentStore.getState().edit(setDepth({ source, viewMode }));
+        rerender(<DepthMapPanel />);
+        expect(inaccessibleControls(container), `${source} ${viewMode}`).toEqual([]);
+      }
+    }
+    const invert = one<HTMLInputElement>(container, 'input[type=checkbox]');
+    expect(accessibleName(invert)).toBe('Invert Z-Axis Height');
+    expect(invert.getAttribute('aria-describedby')).toBeTruthy();
+  });
+
+  it('the image, crop and size steps, with an image and without', () => {
+    for (const panel of [<ImageStepPanel />, <NeedsImage />]) {
+      const { container, unmount } = mount(panel);
+      expect(inaccessibleControls(container)).toEqual([]);
+      unmount();
+    }
+    openWithPreview();
+    for (const panel of [<ImageStepPanel />, <CropStepPanel />, <SizeStepPanel />]) {
+      const { container, unmount } = mount(panel);
+      expect(container.querySelectorAll('button').length).toBeGreaterThan(0);
+      expect(inaccessibleControls(container)).toEqual([]);
+      unmount();
+    }
+  });
+
+  it('the size dialog, with the file\'s own DPI offered', () => {
+    useDocumentStore.getState().open(decodedImage(400, 300, 300));
+    useUIStore.setState({ isSizeDialogOpen: true });
+    const { container } = render(<SizeDialog />);
+    expect(container.querySelector('[role=dialog]')).not.toBeNull();
+    expect(container.querySelectorAll('input[type=number]')).toHaveLength(2);
+    expect(inaccessibleControls(container)).toEqual([]);
+  });
+
+  it('the test grid dialog, for a raster and a vector grid', () => {
+    openWithPreview();
+    const { container } = render(<MaterialTestGridDialog isOpen onClose={() => {}} />);
+    expect(container.querySelectorAll('input[type=number]')).toHaveLength(5);
+    expect(inaccessibleControls(container)).toEqual([]);
+    const output = [...container.querySelectorAll('select')].find((el) => accessibleName(el) === 'Output Format')!;
+    act(() => {
+      output.value = 'vector';
+      output.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    expect(container.querySelectorAll('input[type=number]')).toHaveLength(4);
+    expect(inaccessibleControls(container)).toEqual([]);
+  });
+
+  it('the drop zone', () => {
+    const { container } = render(<DropZone />);
+    expect(inaccessibleControls(container)).toEqual([]);
+  });
+});
+
+/** A trace result with two layers, as the panel lists them. */
+function twoLayers(): VectorResult {
+  const layer = (id: string, name: string, visible: boolean) => ({
+    id,
+    name,
+    color: '#000000',
+    paths: [],
+    visible,
+    totalNodes: 0,
+  });
+  return {
+    layers: [layer('a', 'Outline', true), layer('b', 'Cutline', false)],
+    totalPaths: 0,
+    totalNodes: 0,
+    svgString: '',
+    dimensions: { width: 4, height: 4 },
+  };
+}
+
+describe('dialogs on the shared Dialog', () => {
+  it('the size dialog takes focus when it opens, and Escape closes it without reaching the app shortcuts', () => {
+    useDocumentStore.getState().open(decodedImage(400, 300));
+    useUIStore.setState({ isSizeDialogOpen: true });
+    const appShortcut = vi.fn();
+    window.addEventListener('keydown', appShortcut);
+    try {
+      const { container } = render(<SizeDialog />);
+      expect(one(container, '[role=dialog]').contains(document.activeElement)).toBe(true);
+      press('Escape');
+      expect(useUIStore.getState().isSizeDialogOpen).toBe(false);
+      expect(appShortcut).not.toHaveBeenCalled();
+    } finally {
+      window.removeEventListener('keydown', appShortcut);
+    }
+  });
+
+  it('a test grid that fails to open is shown as an error alert with the reason, and the dialog stays open', async () => {
+    testGridDocument.failWith = new Error('the grid is larger than the largest image allowed');
+    const onClose = vi.fn();
+    const { container } = render(<MaterialTestGridDialog isOpen onClose={onClose} />);
+    await settle(() => button(container, /Generate Calibration Grid/).click());
+    const alert = one(container, '[role=alert]');
+    expect(alert.getAttribute('data-tone')).toBe('error');
+    expect(alert.textContent).toContain('larger than the largest image allowed');
+    expect(onClose).not.toHaveBeenCalled();
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -240,52 +410,57 @@ function inlineStyles(file: string): string[] {
   return found;
 }
 
-/** Files moved onto the shared components: no inline styles except the run-time values below. */
-const MIGRATED = [
-  'src/components/panels/AIPanel.tsx',
-  'src/components/panels/DitheringPanel.tsx',
-  'src/components/panels/ExportPanel.tsx',
-  'src/components/dialogs/ShortcutsDialog.tsx',
-  // The shared component library. DropZone, ErrorBanner and Histogram are older and move in part 2.
-  ...['BottomSheet', 'Button', 'Dialog', 'Progress', 'Section', 'Select', 'Slider', 'StatusMessage', 'Toggle'].map(
-    (name) => `src/components/shared/${name}.tsx`,
-  ),
-];
+/** Every component: no inline styles except the run-time values below (#55). */
+const MIGRATED = tsxFiles(join(ROOT, 'src'));
 
-/** The inline styles allowed in those files: each is a value known only at run time. */
-const RUN_TIME_STYLES: Record<string, RegExp> = {
+/** A crop overlay box: each side is fixed at 0 or follows the crop box or the canvas. */
+const CROP_GEOMETRY =
+  /^style=\{\{ (?:(?:top|left|right|bottom|width|height): (?:0|(?:cropBox|dims)\.\w+(?: \+ cropBox\.\w+)?),? ?)+\}\}$/;
+
+/** The inline styles allowed: each is a value known only at run time. */
+const RUN_TIME_STYLES: Record<string, RegExp[]> = {
   // The slider's filled part follows its value.
-  'src/components/shared/Slider.tsx': /^style=\{\{ background: `linear-gradient\(.*\$\{percentage\}%.*`,? \}\}$/,
+  'src/components/shared/Slider.tsx': [/^style=\{\{ background: `linear-gradient\(.*\$\{percentage\}%.*`,? \}\}$/],
   // The progress bar's fill follows the fraction done.
-  'src/components/shared/Progress.tsx': /^style=\{\{ width: `\$\{percent\}%` \}\}$/,
+  'src/components/shared/Progress.tsx': [/^style=\{\{ width: `\$\{percent\}%` \}\}$/],
+  // A trace layer's swatch is that layer's colour.
+  'src/components/panels/VectorizationPanel.tsx': [/^style=\{\{ backgroundColor: layer\.color \}\}$/],
+  // The image follows the pan and zoom; the before/after divider follows the split.
+  'src/components/canvas/PreviewCanvas.tsx': [
+    /^style=\{\{ transform: `translate\(\$\{pan\.x\}px, \$\{pan\.y\}px\) scale\(\$\{zoom\}\)` \}\}$/,
+    /^style=\{\{ left: `\$\{splitPosition \* 100\}%` \}\}$/,
+  ],
+  // The crop box, and the four dimmed areas around it, follow the crop being drawn.
+  'src/components/canvas/CanvasCropOverlay.tsx': [CROP_GEOMETRY],
 };
 
-/**
- * Inline style attributes across src after part 1. Part 2 of #55 migrates
- * the remaining panels and lowers this to the run-time values only; it must
- * never rise.
- */
-const INLINE_STYLE_CEILING = 56;
+/** Inline style attributes across src: exactly the run-time values allowed above. */
+const INLINE_STYLE_COUNT = 11;
 
 describe('inline styles (#55)', () => {
-  it('the migrated files have none, apart from values computed at run time', () => {
+  it('no component has one, apart from values computed at run time', () => {
     const found = MIGRATED.flatMap((file) =>
       inlineStyles(file)
-        .filter((style) => !RUN_TIME_STYLES[file]?.test(style))
+        .filter((style) => !(RUN_TIME_STYLES[file] ?? []).some((allowed) => allowed.test(style)))
         .map((style) => `${file}: ${style}`),
     );
     expect(found).toEqual([]);
   });
 
-  it('the migrated files pass no colour to an icon as a prop: colours come from the stylesheet', () => {
+  it('no component passes a colour to an icon as a prop: colours come from the stylesheet', () => {
     const found = MIGRATED.flatMap((file) =>
       [...readFileSync(join(ROOT, file), 'utf8').matchAll(/color="[^"]*"/g)].map((m) => `${file}: ${m[0]}`),
     );
     expect(found).toEqual([]);
   });
 
-  it(`src has at most ${INLINE_STYLE_CEILING} inline style attributes`, () => {
-    const count = tsxFiles(join(ROOT, 'src')).reduce((n, file) => n + inlineStyles(file).length, 0);
-    expect(count).toBeLessThanOrEqual(INLINE_STYLE_CEILING);
+  it(`src has ${INLINE_STYLE_COUNT} inline style attributes, all of them run-time values`, () => {
+    const count = MIGRATED.reduce((n, file) => n + inlineStyles(file).length, 0);
+    expect(count).toBe(INLINE_STYLE_COUNT);
+  });
+
+  it('no element imitates a button with role="button": every clickable control is a native one', () => {
+    const found = MIGRATED.filter((file) => /role="button"/.test(readFileSync(join(ROOT, file), 'utf8')));
+    expect(found).toEqual([]);
   });
 });
