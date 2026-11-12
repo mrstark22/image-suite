@@ -26,6 +26,7 @@ export const CanvasCropOverlay: React.FC<{ barHost: HTMLElement | null }> = ({ b
   const source = useRenderStore((s) => s.source);
   const mmPerPx = useDocumentStore((s) => s.doc?.mmPerPx ?? null);
   const zoom = useViewStore((s) => s.zoom);
+  const isPinching = useViewStore((s) => s.isPinching);
   const dimsWidth = source?.width ?? 0;
   const dimsHeight = source?.height ?? 0;
   const dims = useMemo(
@@ -74,6 +75,11 @@ export const CanvasCropOverlay: React.FC<{ barHost: HTMLElement | null }> = ({ b
     }
   }, [canvasTool, dims]);
 
+  // A pinch that began with a finger on the box ends the box's drag (#54).
+  useEffect(() => {
+    if (isPinching) setDragHandle(null);
+  }, [isPinching]);
+
   // Keyboard shortcut listener (Enter to apply, Esc to cancel)
   useEffect(() => {
     if (canvasTool !== 'crop') return;
@@ -104,6 +110,7 @@ export const CanvasCropOverlay: React.FC<{ barHost: HTMLElement | null }> = ({ b
 
   const handlePointerMove = useCallback((e: PointerEvent) => {
     if (!dragHandle || !dims || e.pointerId !== dragStartRef.current.pointerId) return;
+    if (useViewStore.getState().isPinching) return;
     const dx = (e.clientX - dragStartRef.current.clientX) / zoom;
     const dy = (e.clientY - dragStartRef.current.clientY) / zoom;
     const startBox = dragStartRef.current.box;

@@ -321,6 +321,70 @@ describe('canvas pointer gestures (#54)', () => {
     expect(useViewStore.getState().zoom).toBeCloseTo(0.5 * (100 / 20), 9);
   });
 
+  /** The crop box: the element on the image whose left, top, width and height follow the crop. */
+  const cropBox = (root: HTMLElement): HTMLElement => {
+    const box = [...root.querySelectorAll<HTMLElement>('div')].find(
+      (d) => d.style.left !== '' && d.style.width !== '' && d.querySelectorAll('div').length >= 12,
+    );
+    if (!box) throw new Error('no crop box');
+    return box;
+  };
+
+  it('a pinch can begin with the first finger on the crop box, and the box stops following that finger', () => {
+    const el = canvas();
+    act(() => useViewStore.setState({ canvasTool: 'crop' }));
+    const box = cropBox(el);
+    const before = { left: box.style.left, width: box.style.width };
+    // The first finger lands on the box and starts to drag it.
+    pointer(box, 'pointerdown', { id: 1, x: 0, y: 0 });
+    // The second lands on the box too.
+    pointer(box, 'pointerdown', { id: 2, x: 20, y: 0 });
+    pointer(box, 'pointermove', { id: 1, x: -40, y: 0 });
+    pointer(box, 'pointermove', { id: 2, x: 60, y: 0 });
+    expect(useViewStore.getState().zoom).toBeCloseTo(0.5 * (100 / 20), 9);
+    // The box was not moved or resized by the finger that was dragging it.
+    expect({ left: cropBox(el).style.left, width: cropBox(el).style.width }).toEqual(before);
+    pointer(box, 'pointerup', { id: 1, x: -40, y: 0 });
+    pointer(box, 'pointerup', { id: 2, x: 60, y: 0 });
+    expect(useViewStore.getState().isPinching).toBe(false);
+  });
+
+  it('a crop box drag by one finger still moves the box', () => {
+    const el = canvas();
+    act(() => useViewStore.setState({ canvasTool: 'crop', zoom: 1 }));
+    const box = cropBox(el);
+    const left = parseFloat(box.style.left);
+    pointer(box, 'pointerdown', { id: 1, x: 0, y: 0 });
+    pointer(box, 'pointermove', { id: 1, x: -5, y: 0 });
+    pointer(box, 'pointerup', { id: 1, x: -5, y: 0 });
+    expect(parseFloat(cropBox(el).style.left)).toBe(left - 5);
+    expect(useViewStore.getState().pan).toEqual({ x: 10, y: -20 });
+  });
+
+  it("a mouse press on the ruler's unit switch takes no pointer capture and starts no pan, so its click works", () => {
+    const capture = vi.fn();
+    (HTMLElement.prototype as { setPointerCapture?: unknown }).setPointerCapture = capture;
+    try {
+      const el = canvas();
+      act(() => useViewStore.setState({ container: { width: 600, height: 400 } }));
+      const unit = el.querySelector<HTMLButtonElement>('button[aria-label^="Ruler unit"]')!;
+      expect(unit).not.toBeNull();
+      const label = unit.getAttribute('aria-label');
+      pointer(unit, 'pointerdown', { id: 1, x: 0, y: 0, pointerType: 'mouse' });
+      pointer(unit, 'pointermove', { id: 1, x: 30, y: 30, pointerType: 'mouse' });
+      pointer(unit, 'pointerup', { id: 1, x: 30, y: 30, pointerType: 'mouse' });
+      expect(capture).not.toHaveBeenCalled();
+      expect(useViewStore.getState().pan).toEqual({ x: 10, y: -20 });
+      click(unit);
+      expect(unit.getAttribute('aria-label')).not.toBe(label);
+      // The canvas itself still takes the capture for a pan.
+      pointer(el, 'pointerdown', { id: 2, x: 0, y: 0, pointerType: 'mouse' });
+      expect(capture).toHaveBeenCalledWith(2);
+    } finally {
+      delete (HTMLElement.prototype as { setPointerCapture?: unknown }).setPointerCapture;
+    }
+  });
+
   it('one finger pans with the pan tool, by the distance it moved', () => {
     const el = canvas();
     pointer(el, 'pointerdown', { id: 1, x: 0, y: 0 });

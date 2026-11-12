@@ -42,6 +42,7 @@ export const PreviewCanvas: React.FC = () => {
   const zoomBy = useViewStore((s) => s.zoomBy);
   const setPan = useViewStore((s) => s.setPan);
   const setView = useViewStore((s) => s.setView);
+  const setPinching = useViewStore((s) => s.setPinching);
   const splitPosition = useViewStore((s) => s.splitPosition);
   const setSplitPosition = useViewStore((s) => s.setSplitPosition);
   const fit = useViewStore((s) => s.fit);
@@ -220,6 +221,8 @@ export const PreviewCanvas: React.FC = () => {
   const startPinch = (pair: PointerPair) => {
     const { zoom, pan } = useViewStore.getState();
     gestureRef.current = { kind: 'pinch', start: pair, zoom, panX: pan.x, panY: pan.y };
+    // A crop drag the first finger started stops: the fingers now move the view.
+    setPinching(true);
   };
 
   /** Whether one pointer going down on the canvas starts a pan. */
@@ -227,9 +230,15 @@ export const PreviewCanvas: React.FC = () => {
     canvasTool === 'pan' ||
     (e.pointerType === 'mouse' && (e.button === 1 || e.button === 2)); // Middle or right button
 
-  // Space+drag pans whatever is under the pointer, so it is taken in the
-  // capture phase, before the crop box or the split handle can claim it. So
-  // is a second finger, so a pinch begun on the canvas can land on the crop box.
+  /** A press on one of the canvas's own controls (the ruler's unit switch, the crop bar) is theirs, not a drag. */
+  const onControl = (e: React.PointerEvent) =>
+    (e.target as Element).closest?.('button, select, input, [role="separator"]') != null;
+
+  // Touch pointers are recorded in the capture phase, before the crop box or
+  // a control can stop them, so the canvas knows every finger on it: a pinch
+  // can start with the first finger on the crop box. Recording takes no
+  // pointer capture, so a tap on a control still reaches it. Space+drag pans
+  // whatever is under the pointer, so it is taken here too.
   const handlePointerDownCapture = (e: React.PointerEvent<HTMLDivElement>) => {
     const pointers = pointersRef.current;
     if (isSpaceHeld && pointers.size === 0) {
@@ -238,28 +247,35 @@ export const PreviewCanvas: React.FC = () => {
       pointers.down(e.pointerId, pointOf(e));
       e.currentTarget.setPointerCapture?.(e.pointerId);
       startPan(e.pointerId, e.clientX, e.clientY);
-    } else if (e.pointerType !== 'mouse' && pointers.size === 1 && !pointers.has(e.pointerId)) {
-      e.stopPropagation();
-      e.preventDefault();
-      pointers.down(e.pointerId, pointOf(e));
-      e.currentTarget.setPointerCapture?.(e.pointerId);
-      const pair = pointers.pair();
-      if (pair) startPinch(pair);
+    } else if (e.pointerType !== 'mouse' && !pointers.has(e.pointerId)) {
+      if (pointers.size === 0) {
+        // The first finger: the bubble phase decides whether it pans.
+        pointers.down(e.pointerId, pointOf(e));
+      } else if (pointers.size === 1) {
+        // The second finger makes a pinch, whatever either one landed on.
+        e.stopPropagation();
+        e.preventDefault();
+        pointers.down(e.pointerId, pointOf(e));
+        e.currentTarget.setPointerCapture?.(e.pointerId);
+        const pair = pointers.pair();
+        if (pair) startPinch(pair);
+      }
     }
   };
 
   const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (isDraggingSplit) return;
+    if (isDraggingSplit || onControl(e)) return;
     const pointers = pointersRef.current;
-    if (pointers.has(e.pointerId)) return;
-    if (e.pointerType !== 'mouse' && pointers.size === 0) {
-      // The first finger: it may become a pinch when a second one lands.
-      pointers.down(e.pointerId, pointOf(e));
-      e.currentTarget.setPointerCapture?.(e.pointerId);
-      if (pansCanvas(e)) startPan(e.pointerId, e.clientX, e.clientY);
+    if (e.pointerType !== 'mouse') {
+      // The first finger reached the canvas itself: with the pan tool it pans.
+      if (pointers.size === 1 && pointers.has(e.pointerId) && pansCanvas(e)) {
+        e.currentTarget.setPointerCapture?.(e.pointerId);
+        startPan(e.pointerId, e.clientX, e.clientY);
+      }
       return;
     }
-    if (e.pointerType === 'mouse' && pansCanvas(e)) {
+    if (pointers.has(e.pointerId)) return;
+    if (pansCanvas(e)) {
       pointers.down(e.pointerId, pointOf(e));
       e.currentTarget.setPointerCapture?.(e.pointerId);
       startPan(e.pointerId, e.clientX, e.clientY);
@@ -288,6 +304,7 @@ export const PreviewCanvas: React.FC = () => {
     pointers.up(e.pointerId);
     const wasPinch = gestureRef.current?.kind === 'pinch';
     gestureRef.current = null;
+    if (wasPinch) setPinching(false);
     // Lifting one finger of a pinch carries on as a pan with the other,
     // from where it is now, so the view does not jump.
     const rest = pointers.first();

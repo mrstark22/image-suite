@@ -22,6 +22,8 @@ interface ViewState {
   /** The canvas container and the image shown in it, in pixels; null until the canvas is laid out. */
   container: Size | null;
   image: Size | null;
+  /** True while two fingers pinch the canvas; the crop box ignores a drag meanwhile (#54). */
+  isPinching: boolean;
   /** True while the view is fitted: a new container or image size fits it again. Zooming or panning clears it. */
   fitted: boolean;
 
@@ -32,6 +34,7 @@ interface ViewState {
   setPan: (pan: Point) => void;
   /** Sets the zoom (clamped) and pan together, as a pinch does (#54). */
   setView: (view: View) => void;
+  setPinching: (pinching: boolean) => void;
   setSplitPosition: (pos: number) => void;
   /** Actual size: 100 %, centred. */
   resetViewport: () => void;
@@ -51,6 +54,7 @@ export const useViewStore = create<ViewState>((set, get) => ({
   container: null,
   image: null,
   fitted: false,
+  isPinching: false,
 
   setCanvasTool: (canvasTool) => set({ canvasTool }),
 
@@ -63,6 +67,8 @@ export const useViewStore = create<ViewState>((set, get) => ({
   setPan: (pan) => set({ pan, fitted: false }),
 
   setView: (view) => set({ zoom: clampZoom(view.zoom), pan: view.pan, fitted: false }),
+
+  setPinching: (isPinching) => set({ isPinching }),
 
   setSplitPosition: (splitPosition) => set({ splitPosition: Math.min(Math.max(splitPosition, 0), 1) }),
 
