@@ -20,6 +20,8 @@ import { PipelineEngine } from '../lib/pipeline-engine';
 import { exportPlan, previewTarget, sameTarget, sourceStageKey } from '../lib/render-target';
 import { cropRectOf } from '../lib/document-size';
 import { encodeRaster } from '../lib/raster-encode';
+import { vectorFile, type VectorExportRequest } from '../lib/vector-file-export';
+import { withView } from '../lib/trace-view';
 import type { ImageDocument } from '../types/document';
 import type { RustWasmEngine } from '../wasm/wasm-bridge';
 
@@ -185,6 +187,16 @@ export class PipelineWorkerApi {
       if (pxPerMm === null) throw new Error('Set the size of the image before tracing.');
       return core.traceAt(ptr, req.target.widthPx, req.target.heightPx, pxPerMm, req.doc.vector);
     });
+  }
+
+  /**
+   * Traces and writes a vector file (#23, #30): the trace at the request's
+   * target, shown as on screen, as SVG or DXF text. Both the trace and the
+   * writing run here, off the main thread (architecture rule 2).
+   */
+  public async exportVectorFile(req: VectorExportRequest): Promise<{ text: string; mimeType: string }> {
+    const result = await this.traceDocument({ doc: req.doc, target: req.target, sourceStagePixels: req.sourceStagePixels });
+    return vectorFile(withView(result, req.view), req.format);
   }
 
   /**

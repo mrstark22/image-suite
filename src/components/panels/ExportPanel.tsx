@@ -4,7 +4,7 @@ import { useDocumentStore } from '../../store/documentStore';
 import { traceIsCurrent, useRenderStore } from '../../store/renderStore';
 import { useUIStore } from '../../store/uiStore';
 import { encodePngGrayscale16 } from '../../lib/png-encoder';
-import { traceForExport, vectorExportSource, vectorFile, type VectorFormat } from '../../lib/vector-file-export';
+import { vectorExportRequest, vectorExportSource, vectorFile, type VectorFormat } from '../../lib/vector-file-export';
 import { traceSizeMm } from '../../lib/vector-export';
 import { getPipeline } from '../../lib/pipeline-client';
 import { recipeFromDocument } from '../../lib/document';
@@ -135,8 +135,12 @@ export const ExportPanel: React.FC = () => {
     setVectorBusy(fmt);
     setVectorError(null);
     try {
-      const result = await traceForExport(getPipeline(), doc, vectorResult, vectorSource, backgroundRemoval);
-      const { text, mimeType } = vectorFile(result, fmt);
+      const { text, mimeType } =
+        vectorSource === 'as-shown'
+          ? vectorFile(vectorResult, fmt)
+          : await getPipeline().exportVectorFile(
+              vectorExportRequest(doc, vectorResult, vectorSource, backgroundRemoval, fmt)
+            );
       download([text], mimeType, `${baseName}-vectors.${fmt}`);
     } catch (err) {
       setVectorError(err instanceof Error ? err.message : String(err));

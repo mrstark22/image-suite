@@ -9,7 +9,7 @@ import { fromCentre, panForKey } from '../../lib/viewport';
 import { ActivePointers, pinchView, type PointerPair } from '../../lib/gestures';
 import { isTypingTarget } from '../../lib/shortcuts';
 import { useUIStore } from '../../store/uiStore';
-import { canvasImage, showsOrbitView } from '../../lib/workflows';
+import { showsOrbitView } from '../../lib/workflows';
 import { DropZone } from '../shared/DropZone';
 import { DepthViewer3D } from './DepthViewer3D';
 import { CanvasRulers } from './CanvasRulers';
@@ -24,11 +24,9 @@ export const PreviewCanvas: React.FC = () => {
 
   const source = useRenderStore((s) => s.source);
   const previewBuffer = source?.buffer ?? null;
-  // What the job's output is made from: in the vector job, the image the trace reads.
+  // The processed preview: in the vector job, the adjusted image the trace reads (`canvasImage`).
   const job = useUIStore((s) => s.job);
-  const shows = canvasImage(job);
-  const processedRender = useRenderStore((s) => s.processed);
-  const processedBuffer = shows === 'source' ? previewBuffer : processedRender;
+  const processedBuffer = useRenderStore((s) => s.processed);
   const depthHeightMapBuffer = useRenderStore((s) => s.depthHeightMap);
   const previewVersion = useRenderStore((s) => s.previewVersion);
   const docId = useDocumentStore((s) => s.doc?.id ?? null);
@@ -55,7 +53,7 @@ export const PreviewCanvas: React.FC = () => {
   );
 
   // With the source shown there is no before and after to split.
-  const isSplitView = useUIStore((s) => s.isSplitView) && shows !== 'source';
+  const isSplitView = useUIStore((s) => s.isSplitView);
   const isInvertedView = useUIStore((s) => s.isInvertedView);
   const showVectorOverlay = useUIStore((s) => s.showVectorOverlay);
 
@@ -325,7 +323,8 @@ export const PreviewCanvas: React.FC = () => {
     const next = panForKey(view, view.container, view.image, e);
     if (!next) return;
     e.preventDefault();
-    setPan(next);
+    // A key that moves nothing (a fitted image cannot pan) must not end fit-to-window.
+    if (next.x !== view.pan.x || next.y !== view.pan.y) setPan(next);
   };
 
   // The split divider follows the pointer until it is released anywhere.

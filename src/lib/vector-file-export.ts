@@ -5,6 +5,8 @@ import { nativeTarget, previewTarget, sourceStageKey } from './render-target';
 import { traceToDxf, traceToSvg } from './vector-export';
 import { setVector } from './document';
 import { paletteFromResult } from './trace-palette';
+import { viewOf, withView, type TraceView } from './trace-view';
+import type { RenderTarget } from '../types/render';
 
 export type VectorFormat = 'svg' | 'dxf';
 
@@ -23,43 +25,56 @@ export function vectorExportSource(shown: VectorResult, tracedWithSettings: bool
   return hasRemoval ? 'preview-background-removed' : 'full-resolution';
 }
 
+/** What the worker needs to trace and write a vector file (see `PipelineWorkerApi.exportVectorFile`). */
+export interface VectorExportRequest {
+  doc: ImageDocument;
+  target: RenderTarget;
+  sourceStagePixels?: ArrayBuffer;
+  view: TraceView;
+  format: VectorFormat;
+}
+
 /**
- * The trace to write for `doc`: traced again in the worker at the source's
- * full resolution, so detail the preview cannot hold is in the file, with
- * the layers hidden in `shown` hidden here too.
+ * The export of `shown`, the trace of `doc` on screen (see `traceIsCurrent`):
+ * traced again in the worker at the source's full resolution, so detail the
+ * preview cannot hold is in the file, with the layers hidden and ordered as
+ * on screen.
  *
- * `shown` must be the trace of `doc` as it is (see `traceIsCurrent`). With an
- * automatic palette the export uses the colours `shown` found, so its layers
- * are the colours on screen: clustering the full-resolution image again can
- * split the colours differently (review of #84). Layers come out in the
- * order shown.
+ * With an automatic palette the export uses the colours `shown` found, so its
+ * layers are the colours on screen: clustering the full-resolution image
+ * again can split the colours differently (review of #84).
  */
+export function vectorExportRequest(
+  doc: ImageDocument,
+  shown: VectorResult,
+  source: Exclude<VectorExportSource, 'as-shown'>,
+  removal: { key: string; pixels: ArrayBuffer } | null,
+  format: VectorFormat
+): VectorExportRequest {
+  const view = viewOf(shown);
+  if (source === 'preview-background-removed') {
+    const target = previewTarget(doc);
+    if (!removal || removal.key !== sourceStageKey(doc, target)) {
+      throw new Error('The background removal no longer matches the image. Apply it again.');
+    }
+    return { doc, target, sourceStagePixels: removal.pixels.slice(0), view, format };
+  }
+  const palette = doc.vector.colorMode === 'color' && doc.vector.palette === null ? paletteFromResult(shown) : null;
+  return { doc: palette ? setVector({ palette })(doc) : doc, target: nativeTarget(doc), view, format };
+}
+
+/** The trace an export of `shown` writes (`vectorExportRequest`, traced), as a result rather than a file. */
 export async function traceForExport(
-  pipeline: Pipeline,
+  pipeline: Pick<Pipeline, 'traceDocument'>,
   doc: ImageDocument,
   shown: VectorResult,
   source: VectorExportSource,
   removal: { key: string; pixels: ArrayBuffer } | null
 ): Promise<VectorResult> {
   if (source === 'as-shown') return shown;
-  let result: VectorResult;
-  if (source === 'preview-background-removed') {
-    const target = previewTarget(doc);
-    if (!removal || removal.key !== sourceStageKey(doc, target)) {
-      throw new Error('The background removal no longer matches the image. Apply it again.');
-    }
-    result = await pipeline.traceDocument({ doc, target, sourceStagePixels: removal.pixels.slice(0) });
-  } else {
-    const palette = doc.vector.colorMode === 'color' && doc.vector.palette === null ? paletteFromResult(shown) : null;
-    const traced = palette ? setVector({ palette })(doc) : doc;
-    result = await pipeline.traceDocument({ doc: traced, target: nativeTarget(doc) });
-  }
-  const hidden = new Set(shown.layers.filter((l) => !l.visible).map((l) => l.id));
-  const order = new Map(shown.layers.map((l, i) => [l.id, i]));
-  const layers = result.layers
-    .map((l) => ({ ...l, visible: !hidden.has(l.id) }))
-    .sort((a, b) => (order.get(a.id) ?? Infinity) - (order.get(b.id) ?? Infinity));
-  return { ...result, layers };
+  const req = vectorExportRequest(doc, shown, source, removal, 'svg');
+  const result = await pipeline.traceDocument({ doc: req.doc, target: req.target, sourceStagePixels: req.sourceStagePixels });
+  return withView(result, req.view);
 }
 
 /** The file contents and type for `result` in `format`. */

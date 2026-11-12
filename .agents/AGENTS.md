@@ -50,7 +50,7 @@ Run `npm run typecheck` and `npm test` before every commit. Run `npm run test:ru
 3. Run `npm test`. The tests load `src/wasm/pkg/image_suite_wasm.wasm`, so they only see your change after step 2.
 4. Commit the rebuilt `.wasm` together with the source. It is committed on purpose: the Vercel build has no Rust toolchain. CI tests the committed binary and then a fresh build, so a stale binary fails.
 
-The exported functions take long positional argument lists. Their order is written in three places that must agree: `src/wasm/src/lib.rs`, `src/wasm/wasm-bridge.ts` and `tests/helpers/wasm.ts`.
+The exported functions take long positional argument lists, and the call must match the Rust signature in `src/wasm/src/lib.rs` exactly: WASM ignores extra arguments and fills missing ones with zero, so a mismatch shifts settings silently. For `process_pipeline` and `process_depth` the order is also written in `src/wasm/wasm-bridge.ts` and `tests/helpers/wasm.ts`. For `process_trace` it is written once, in `traceImageAt` in `src/lib/trace-call.ts`, which the bridge and the tests both call.
 
 ## Architecture rules
 

@@ -42,7 +42,7 @@ import type { TraceColorMode, TraceShapes, VectorResult } from '../../src/types/
 import type { DepthSource, DepthViewMode } from '../../src/types/depth';
 import type { PreviewSource } from '../../src/lib/crop';
 import { decodedImage, resetStores } from '../helpers/documents';
-import { accessibleName, button, click, mount, one, press, settle, type Mounted } from '../helpers/dom';
+import { accessibleName, button, click, mount, one, press, setInputValue, settle, type Mounted } from '../helpers/dom';
 
 // The test grid dialog opens its grid through this module; a test makes it fail.
 const testGridDocument = vi.hoisted(() => ({ failWith: null as Error | null }));
@@ -285,6 +285,23 @@ describe('every control in the migrated panels is reachable and named', () => {
     const pressed = [...container.querySelectorAll('[aria-pressed=true]')].map((b) => accessibleName(b));
     expect(pressed).toEqual([expect.stringMatching(/^Colour/), expect.stringMatching(/^Centreline/), 'Show Outline']);
     expect(button(container, /^Show Cutline$/).getAttribute('aria-pressed')).toBe('false');
+  });
+
+  it('a colour chosen in the palette picker is one undo step, however often the picker reports (review of #84)', () => {
+    openWithPreview();
+    useDocumentStore.getState().edit(setVector({ colorMode: 'color' }));
+    useRenderStore.setState({ vectorResult: twoLayers() });
+    const { container } = render(<VectorizationPanel />);
+    const before = useDocumentStore.getState().past.length;
+    const swatch = container.querySelectorAll<HTMLInputElement>('input[type=color]')[1];
+    for (const c of ['#101010', '#202020', '#303030', '#404040']) setInputValue(swatch, c);
+    expect(useDocumentStore.getState().gesture).not.toBeNull();
+    act(() => {
+      swatch.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    expect(useDocumentStore.getState().gesture).toBeNull();
+    expect(useDocumentStore.getState().past.length).toBe(before + 1);
+    expect(useDocumentStore.getState().doc!.vector.palette![1].color).toBe('#404040');
   });
 
   it('Relief, for every source and view mode', () => {

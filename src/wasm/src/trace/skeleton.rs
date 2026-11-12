@@ -544,8 +544,103 @@ pub fn chains_of(
     for ch in chains.iter_mut() {
         centre_chain(ch, w, h, dt, field);
     }
+    place_junctions(&mut chains, w, h, dt);
     chains.retain(|c| c.pts.len() >= 2);
     chains
+}
+
+/// Moves each junction to where the centred branches meeting there cross: the
+/// point nearest, in least squares, to the lines through the branches just
+/// outside it. The thinned junction's own pixels are not centred, so left
+/// alone a straight bar would dip towards a stem joining it (review of #84).
+/// Every chain that passes through or ends at the junction gets the same point.
+fn place_junctions(chains: &mut [Chain], w: usize, h: usize, dt: &[f32]) {
+    let mut groups: HashMap<(u64, u64), Vec<(usize, usize)>> = HashMap::new();
+    for (ci, ch) in chains.iter().enumerate() {
+        for (pi, &f) in ch.fixed.iter().enumerate() {
+            if f {
+                let p = ch.pts[pi];
+                groups
+                    .entry((p.x.to_bits(), p.y.to_bits()))
+                    .or_default()
+                    .push((ci, pi));
+            }
+        }
+    }
+    for members in groups.values() {
+        let (ci0, pi0) = members[0];
+        let j = chains[ci0].pts[pi0];
+        let x = (j.x.floor() as isize).clamp(0, w as isize - 1) as usize;
+        let y = (j.y.floor() as isize).clamp(0, h as isize - 1) as usize;
+        let hw = (dt[y * w + x] as f64).max(1.0);
+        // Points of a branch between these distances from the junction describe its line.
+        let (near, far) = (hw + 0.5, 2.0 * hw + 4.0);
+        let (mut a11, mut a12, mut a22, mut b1, mut b2) = (0.0, 0.0, 0.0, 0.0, 0.0);
+        let mut lines = 0;
+        for &(ci, pi) in members {
+            let ch = &chains[ci];
+            let n = ch.pts.len() as isize;
+            for dir in [-1isize, 1] {
+                let mut pts: Vec<P> = Vec::new();
+                let mut k = pi as isize + dir;
+                for _ in 0..n {
+                    let idx = if ch.closed {
+                        k.rem_euclid(n)
+                    } else if k < 0 || k >= n {
+                        break;
+                    } else {
+                        k
+                    } as usize;
+                    if idx == pi {
+                        break;
+                    }
+                    let d = ch.pts[idx].dist(j);
+                    if d > far {
+                        break;
+                    }
+                    if d >= near {
+                        pts.push(ch.pts[idx]);
+                    }
+                    k += dir;
+                }
+                if pts.len() < 2 {
+                    continue;
+                }
+                // Total least squares line through the points.
+                let c = pts
+                    .iter()
+                    .fold(P::new(0.0, 0.0), |s, p| s.add(*p))
+                    .scale(1.0 / pts.len() as f64);
+                let (mut sxx, mut sxy, mut syy) = (0.0, 0.0, 0.0);
+                for p in &pts {
+                    let d = p.sub(c);
+                    sxx += d.x * d.x;
+                    sxy += d.x * d.y;
+                    syy += d.y * d.y;
+                }
+                let angle = 0.5 * (2.0 * sxy).atan2(sxx - syy);
+                let nrm = P::new(-angle.sin(), angle.cos());
+                let proj = nrm.dot(c);
+                a11 += nrm.x * nrm.x;
+                a12 += nrm.x * nrm.y;
+                a22 += nrm.y * nrm.y;
+                b1 += nrm.x * proj;
+                b2 += nrm.y * proj;
+                lines += 1;
+            }
+        }
+        let det = a11 * a22 - a12 * a12;
+        if lines < 2 || det.abs() < 1e-3 {
+            continue;
+        }
+        let p = P::new((a22 * b1 - a12 * b2) / det, (a11 * b2 - a12 * b1) / det);
+        if p.dist(j) > hw + 1.0 {
+            continue;
+        }
+        for &(ci, pi) in members {
+            chains[ci].pts[pi] = p;
+        }
+    }
 }
 
 /// Number of 8-connected groups among the set pixels of a 3x3 ring.

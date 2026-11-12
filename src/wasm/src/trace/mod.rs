@@ -31,6 +31,11 @@ use contour::{marching_squares, Field};
 use fit::{fit_path, FitOptions, FitPath, Seg};
 use geom::signed_area2;
 use std::fmt::Write;
+use std::sync::atomic::AtomicBool;
+
+/// Set when a stage could not have the memory it needs; the trace's result is
+/// then not used, and the caller reports the image as too large.
+pub static OUT_OF_MEMORY: AtomicBool = AtomicBool::new(false);
 
 /// How each shape is traced.
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -243,34 +248,43 @@ fn background_colour(seg: &colour::Segmentation, w: usize, h: usize) -> Option<u
 
 /// Bytes the tracer may need at once for a `w` x `h` image with `cfg`, used to
 /// refuse an image the device cannot hold instead of running out of memory
-/// part way (review of #84).
-pub fn memory_estimate(w: usize, h: usize, cfg: &TraceConfig) -> usize {
-    let n = w * h;
+/// part way (review of #84). `None` when the figure does not even fit a
+/// `usize`, which is certainly too much. Computed in 64 bits, as 32-bit
+/// WASM arithmetic wraps at about 60 MP.
+pub fn memory_estimate(w: usize, h: usize, cfg: &TraceConfig) -> Option<usize> {
+    let n = w as u64 * h as u64;
     // A layer: its field, the inside mask, component labels, the distance
     // transform, the skeleton mask and the thinning list, and the background
     // labels when specks are removed.
-    let mut per_px = 4 + 1 + 4 + 4 + 1 + 1 + 4;
+    let mut per_px: u64 = 4 + 1 + 4 + 4 + 1 + 1 + 4;
+    // Boundary data is not counted here: marching squares counts its crossings
+    // and reserves for them itself. Reserving a worst case up front would grow
+    // WASM memory for good, as it never shrinks.
     if cfg.denoise_mm > 0.0 {
-        per_px += 4 + 7 * 4; // the denoised copy and the guided filter's buffers
+        per_px += 4 + 8 * 4; // the denoised copy and the guided filter's buffers
     }
     if cfg.colour {
         per_px += 12 + 8 + 1; // Lab, the mixture and the fringe flag of every pixel
     }
-    let mut bytes = n * per_px;
+    let mut bytes = n.checked_mul(per_px)?;
     if cfg.cutline_mm > 0.0 {
-        let s = cutline_scale(w, h);
-        let margin = (cfg.cutline_mm * cfg.px_per_mm).ceil() as usize + 2;
-        let grid = (w * s + 2 * margin * s) * (h * s + 2 * margin * s);
-        bytes += 4 * n + grid * (1 + 4); // the union field, and the seed and distance grids
+        let s = cutline_scale(w, h) as u64;
+        let margin = (cfg.cutline_mm * cfg.px_per_mm).ceil().max(0.0) as u64 + 2;
+        let gw = (w as u64 + 2 * margin).checked_mul(s)?;
+        let gh = (h as u64 + 2 * margin).checked_mul(s)?;
+        // The union field, and the seed and distance grids.
+        bytes = bytes
+            .checked_add(4 * n)?
+            .checked_add(gw.checked_mul(gh)?.checked_mul(5)?)?;
     }
-    bytes
+    usize::try_from(bytes).ok()
 }
 
 /// The cutline's distance transform runs at twice the resolution on images
 /// up to 4 MP, for accuracy, and at the image's own resolution above that,
 /// where a pixel is already small and memory is the limit.
 fn cutline_scale(w: usize, h: usize) -> usize {
-    if w * h <= 4_000_000 {
+    if (w as u64) * (h as u64) <= 4_000_000 {
         2
     } else {
         1
@@ -436,6 +450,55 @@ fn trace_layer(
                 if !chains.is_empty() {
                     is_stroke[l] = true;
                     chains_by[l] = chains;
+                }
+            }
+            // In Centreline mode every shape is traced along its middle, including
+            // dots and blobs whose skeleton gives no path: each becomes a centre
+            // line along its main axis, as long as the shape is longer than wide,
+            // or a point for a round dot (review of #84).
+            if p.shapes == Shapes::Centreline {
+                // Per shape: pixel count, sums of x, y, x², y², xy.
+                let mut mom = vec![[0.0f64; 6]; nc];
+                for i in 0..w * h {
+                    let l = labels[i] as usize;
+                    if l == 0 || is_stroke[l] {
+                        continue;
+                    }
+                    let (x, y) = ((i % w) as f64 + 0.5, (i / w) as f64 + 0.5);
+                    let m = &mut mom[l];
+                    m[0] += 1.0;
+                    m[1] += x;
+                    m[2] += y;
+                    m[3] += x * x;
+                    m[4] += y * y;
+                    m[5] += x * y;
+                }
+                for (l, m) in mom.iter().enumerate() {
+                    if l == 0 || is_stroke[l] || m[0] == 0.0 {
+                        continue;
+                    }
+                    let c = geom::P::new(m[1] / m[0], m[2] / m[0]);
+                    let sxx = m[3] / m[0] - c.x * c.x;
+                    let syy = m[4] / m[0] - c.y * c.y;
+                    let sxy = m[5] / m[0] - c.x * c.y;
+                    // Principal axes of the shape's spread.
+                    let mean = 0.5 * (sxx + syy);
+                    let diff = (0.25 * (sxx - syy) * (sxx - syy) + sxy * sxy).sqrt();
+                    let (major, minor) = (mean + diff, (mean - diff).max(0.0));
+                    let angle = 0.5 * (2.0 * sxy).atan2(sxx - syy);
+                    let u = geom::P::new(angle.cos(), angle.sin());
+                    // A uniform bar of length a has variance a² / 12 along it.
+                    let half = 0.5 * ((12.0 * major).sqrt() - (12.0 * minor).sqrt()).max(0.0);
+                    let (a, b) = (c.sub(u.scale(half)), c.add(u.scale(half)));
+                    out.push(TracedPath {
+                        kind: Kind::Stroke,
+                        path: FitPath {
+                            start: a,
+                            segs: vec![Seg::Line(b)],
+                            closed: false,
+                        },
+                    });
+                    is_stroke[l] = true;
                 }
             }
             // The outlines are traced from the field with the strokes taken out.

@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
+import type { DocumentUpdate, GestureToken } from '../../types/document';
 import { Eye, EyeOff, Layers, Palette, Play, RotateCcw, Scissors, Trash2 } from 'lucide-react';
 import { useDocumentStore } from '../../store/documentStore';
 import { useRenderStore } from '../../store/renderStore';
@@ -15,6 +16,48 @@ import { editPalette, paletteChoice, paletteChoiceOptions, paletteFromResult, ty
 import type { TraceColorMode, TraceShapes } from '../../types/vector';
 import panelStyles from './Panels.module.css';
 import styles from './VectorizationPanel.module.css';
+
+/**
+ * A palette colour picker. The browser's picker reports every movement while
+ * it is open; those changes are one gesture, so choosing a colour is one undo
+ * step and traces once, when the picker closes (review of #84).
+ */
+const PaletteSwatch: React.FC<{ color: string; label: string; update: (color: string) => DocumentUpdate }> = ({
+  color,
+  label,
+  update,
+}) => {
+  const ref = useRef<HTMLInputElement>(null);
+  const token = useRef<GestureToken | null>(null);
+  const end = () => {
+    if (token.current !== null) useDocumentStore.getState().endGesture(token.current);
+    token.current = null;
+  };
+  useEffect(() => {
+    const input = ref.current;
+    // The native change event fires once, when the picker closes; React's onChange fires on every input.
+    input?.addEventListener('change', end);
+    return () => {
+      input?.removeEventListener('change', end);
+      end();
+    };
+  }, []);
+  return (
+    <input
+      ref={ref}
+      type="color"
+      className={styles.swatch}
+      value={color}
+      aria-label={label}
+      onChange={(e) => {
+        const store = useDocumentStore.getState();
+        if (token.current === null || store.gesture?.token !== token.current) token.current = store.beginGesture();
+        store.updateGesture(token.current, update(e.target.value));
+      }}
+      onBlur={end}
+    />
+  );
+};
 
 const COLOR_MODES: Array<{ id: TraceColorMode; title: string; desc: string }> = [
   { id: 'mono', title: 'Black & White', desc: 'One layer: everything darker than the threshold' },
@@ -153,12 +196,10 @@ export const VectorizationPanel: React.FC = () => {
           <ul className={styles.paletteList}>
             {palette.map((entry, i) => (
               <li key={i} className={styles.paletteItem}>
-                <input
-                  type="color"
-                  className={styles.swatch}
-                  value={entry.color}
-                  aria-label={`Colour ${i + 1}`}
-                  onChange={(e) => edit(setVector({ palette: editPalette(palette, i, { color: e.target.value }) }))}
+                <PaletteSwatch
+                  color={entry.color}
+                  label={`Colour ${i + 1}`}
+                  update={(color) => setVector({ palette: editPalette(palette, i, { color }) })}
                 />
                 <Select<PaletteChoice>
                   label={`What to do with colour ${i + 1}`}

@@ -6,6 +6,7 @@ import { MM_PER_INCH } from '../lib/document-size';
 import { sameValue } from '../lib/document';
 import type { ExportProgress, SourceStage } from '../types/worker-messages';
 import { useDocumentStore } from './documentStore';
+import { layerKey } from '../lib/trace-view';
 
 /**
  * Results derived from the document, and the status of producing them. None
@@ -48,7 +49,12 @@ interface RenderState {
    * the tracing settings (#23, review of #84).
    */
   tracedInputs: TraceInputs | null;
-  /** Ids of the layers hidden on screen, kept across traces so a re-trace does not show them again. */
+  /**
+   * The layers hidden on screen, by `layerKey`, kept across traces so a
+   * re-trace does not show them again. A colour layer is known by its
+   * colour, not its position, so a re-clustering that renumbers the colours
+   * hides the same colour or, if it is gone, nothing (review of #84).
+   */
   hiddenLayers: string[];
   /**
    * Increases when the user asks for a trace, so one runs even if nothing
@@ -238,7 +244,7 @@ export const useRenderStore = create<RenderState>((set, get) => ({
     set({
       vectorResult: vectorResult && {
         ...vectorResult,
-        layers: vectorResult.layers.map((l) => ({ ...l, visible: !hidden.has(l.id) })),
+        layers: vectorResult.layers.map((l) => ({ ...l, visible: !hidden.has(layerKey(l)) })),
       },
       isVectorStale: false,
       tracedInputs: doc ? traceInputsOf(doc) : null,
@@ -278,18 +284,22 @@ export const useRenderStore = create<RenderState>((set, get) => ({
     });
   },
 
-  clearVectors: () => set({ vectorResult: null, autoTrace: false, isVectorStale: false, tracedInputs: null }),
+  clearVectors: () =>
+    set({ vectorResult: null, autoTrace: false, isVectorStale: false, tracedInputs: null, hiddenLayers: [] }),
 
   toggleVectorLayer: (layerId) => {
     const vr = get().vectorResult;
     if (!vr) return;
+    const layer = vr.layers.find((l) => l.id === layerId);
+    if (!layer) return;
+    const key = layerKey(layer);
     const hidden = get().hiddenLayers;
-    const hiddenLayers = hidden.includes(layerId) ? hidden.filter((id) => id !== layerId) : [...hidden, layerId];
+    const hiddenLayers = hidden.includes(key) ? hidden.filter((k) => k !== key) : [...hidden, key];
     set({
       hiddenLayers,
       vectorResult: {
         ...vr,
-        layers: vr.layers.map((l) => ({ ...l, visible: !hiddenLayers.includes(l.id) })),
+        layers: vr.layers.map((l) => ({ ...l, visible: !hiddenLayers.includes(layerKey(l)) })),
       },
     });
   },
@@ -320,8 +330,11 @@ useDocumentStore.subscribe((state, prev) => {
 
   // By value: Reset All and recipes build new objects even when nothing in them changes.
   // Any input of the trace counts: adjustments and the size as well as the tracing settings.
+  // A test grid's paths are not a trace of the image, so nothing makes them
+  // stale and they stay exportable (review of #84).
   const render = useRenderStore.getState();
-  if (!render.autoTrace && !sameValue(traceInputsOf(doc), traceInputsOf(before))) {
+  const showsTestGrid = render.vectorResult !== null && render.tracedInputs === null;
+  if (!render.autoTrace && !showsTestGrid && !sameValue(traceInputsOf(doc), traceInputsOf(before))) {
     useRenderStore.setState({ isVectorStale: true });
   }
 });

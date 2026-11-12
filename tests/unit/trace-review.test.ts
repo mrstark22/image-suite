@@ -5,6 +5,7 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { useDocumentStore } from '../../src/store/documentStore';
 import { traceIsCurrent, useRenderStore } from '../../src/store/renderStore';
+import { generateTestGridVector } from '../../src/lib/test-grid-generator';
 import { useUIStore } from '../../src/store/uiStore';
 import { setTonal, setVector } from '../../src/lib/document';
 import { cropBoxForKey } from '../../src/lib/crop';
@@ -261,4 +262,105 @@ it('the exported file of finding 1 is the same physical size as the image', asyn
   await pipeline.settled();
   const full = await traceForExport(pipeline.api, store().doc!, render().vectorResult!, 'full-resolution', null);
   expect(vectorFile(full, 'svg').text).toMatch(/width="20mm"/);
+});
+
+describe('second review of #84', () => {
+  it('1: a test grid stays exportable when settings change', async () => {
+    store().open(await loadPixels(pipeline.api, colourBlocks(80, 40, [[255, 255, 255], [0, 0, 0]]), 80, 40), 0.1);
+    await pipeline.settled();
+    render().addVectorLayer(
+      generateTestGridVector({ rows: 2, cols: 2, boxSizeMm: 2, gapMm: 1, dpi: 254, type: 'power-matrix' } as Parameters<typeof generateTestGridVector>[0])
+    );
+    store().edit(setTonal({ contrast: 30 }));
+    store().edit(setVector({ threshold: 90 }));
+    expect(render().isVectorStale).toBe(false);
+    expect(traceIsCurrent()).toBe(true);
+  });
+
+  it('2: a hidden colour stays hidden by colour when a re-trace renumbers the colours', async () => {
+    store().open(await loadPixels(pipeline.api, colourBlocks(80, 40, [[255, 255, 255], [0, 0, 0]]), 80, 40), 0.1);
+    await pipeline.settled();
+    render().setAutoTrace(false);
+    const layer = (i: number, color: string) => ({
+      id: `color-${i}`,
+      name: `Colour ${i + 1}`,
+      color,
+      paletteIndex: i,
+      visible: true,
+      totalNodes: 0,
+      paths: [],
+    });
+    const result = (a: string, b: string): VectorResult => ({
+      layers: [layer(0, a), layer(1, b)],
+      palette: [a, b],
+      totalPaths: 0,
+      totalNodes: 0,
+      dimensions: { width: 80, height: 40 },
+      pxPerMm: 10,
+    });
+    render().setVectorResult(result('#ff0000', '#00ff00'));
+    render().toggleVectorLayer('color-1'); // hide green
+    render().setVectorResult(result('#00ff00', '#ff0000'));
+    const shown = render().vectorResult!.layers.map((l) => [l.color, l.visible]);
+    expect(shown).toEqual([
+      ['#00ff00', false],
+      ['#ff0000', true],
+    ]);
+  });
+
+  it('3: a 64 MP colour trace with denoise is refused as too large, not wrapped round to a small estimate', () => {
+    expect(() => runTrace(wasm, new Uint8Array(4), 8000, 8000, { colorMode: 'color', denoiseMm: 0.2 }, 10)).toThrow(
+      TooLargeError
+    );
+  });
+
+  it('4: Centreline mode traces dots and blobs along their middle too', () => {
+    const [w, h] = [60, 30];
+    const img = new Uint8Array(w * h * 4).fill(255);
+    const ink = (x: number, y: number) => img.fill(0, (y * w + x) * 4, (y * w + x) * 4 + 3);
+    ink(5, 5); // a single-pixel dot
+    for (let y = 10; y < 16; y++) for (let x = 10; x < 16; x++) ink(x, y); // a square blob
+    for (let y = 20; y < 23; y++) for (let x = 30; x < 50; x++) ink(x, y); // a bar
+    const paths = runTrace(wasm, img, w, h, { shapes: 'centerline' }).layers[0].paths;
+    expect(paths.length).toBe(3);
+    expect(paths.every((p) => p.kind === 'stroke')).toBe(true);
+  });
+
+  it('5: a centreline junction is shared exactly by the branches that meet there', () => {
+    // T-junctions with strokes of uneven widths, so the junction is not where the fitted lines cross.
+    const [w, h] = [100, 100];
+    for (const [stemX, stemW, barW] of [
+      [48, 4, 5],
+      [47, 6, 4],
+      [48, 3, 6],
+      [49, 5, 3],
+    ]) {
+      const img = new Uint8Array(w * h * 4).fill(255);
+      for (let y = 0; y < h; y++)
+        for (let x = 0; x < w; x++)
+          if ((x >= 10 && x < 90 && y >= 18 && y < 18 + barW) || (x >= stemX && x < stemX + stemW && y >= 18 && y < 90))
+            img.fill(0, (y * w + x) * 4, (y * w + x) * 4 + 3);
+      const paths = runTrace(wasm, img, w, h).layers[0].paths;
+      expect(paths, `stem ${stemX}+${stemW}, bar ${barW}`).toHaveLength(2);
+      const pts = paths.map((p) => parsePathData(p.d).flatMap((c) => (c.op === 'Z' ? [] : [c.p])));
+      const [a, b] = pts;
+      // An end of one path is an on-path point of the other, to the thousandth of a pixel.
+      const gap = Math.min(
+        ...[b[0], b[b.length - 1]].flatMap((e) => a.map((q) => Math.hypot(q.x - e.x, q.y - e.y))),
+        ...[a[0], a[a.length - 1]].flatMap((e) => b.map((q) => Math.hypot(q.x - e.x, q.y - e.y)))
+      );
+      expect(gap, `stem ${stemX}+${stemW}, bar ${barW}`).toBeLessThan(1e-3);
+    }
+  });
+
+  it('8: the worker writes the file, at the physical size', async () => {
+    store().open(await loadPixels(pipeline.api, colourBlocks(200, 100, [[255, 255, 255], [0, 0, 0]]), 200, 100), 0.1);
+    await pipeline.settled();
+    const { vectorExportRequest } = await import('../../src/lib/vector-file-export');
+    const file = await pipeline.api.exportVectorFile(
+      vectorExportRequest(store().doc!, render().vectorResult!, 'full-resolution', null, 'dxf')
+    );
+    expect(file.mimeType).toBe('application/dxf');
+    expect(file.text).toContain('$INSUNITS');
+  });
 });

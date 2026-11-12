@@ -297,12 +297,19 @@ pub extern "C" fn process_trace(
     // running out of memory part way, which would trap the module.
     let need = trace::memory_estimate(width, height, &cfg);
     let mut probe: Vec<u8> = Vec::new();
-    let json = if probe.try_reserve_exact(need).is_err() {
-        format!("{{\"error\":\"memory\",\"bytes\":{need}}}")
+    let json = if need.is_none_or(|bytes| probe.try_reserve_exact(bytes).is_err()) {
+        let bytes = need.map_or(u64::MAX, |b| b as u64);
+        format!("{{\"error\":\"memory\",\"bytes\":{bytes}}}")
     } else {
         drop(probe);
         let pixels = unsafe { std::slice::from_raw_parts(ptr, width * height * 4) };
-        trace::to_json(&trace::trace(pixels, width, height, &cfg))
+        trace::OUT_OF_MEMORY.store(false, std::sync::atomic::Ordering::Relaxed);
+        let result = trace::trace(pixels, width, height, &cfg);
+        if trace::OUT_OF_MEMORY.load(std::sync::atomic::Ordering::Relaxed) {
+            format!("{{\"error\":\"memory\",\"bytes\":{}}}", need.unwrap_or(0))
+        } else {
+            trace::to_json(&result)
+        }
     };
 
     #[allow(static_mut_refs)]

@@ -236,6 +236,15 @@ describe('panning the canvas from the keyboard (#81)', () => {
     return canvas;
   }
 
+  it('a key that cannot pan a fitted image leaves it fitted (review of #84)', () => {
+    const canvas = openCanvas();
+    act(() => useViewStore.setState({ zoom: 0.5, pan: { x: 0, y: 0 }, container, image, fitted: true }));
+    act(() => canvas.focus());
+    press('ArrowRight');
+    expect(useViewStore.getState().pan).toEqual({ x: 0, y: 0 });
+    expect(useViewStore.getState().fitted).toBe(true);
+  });
+
   it('the canvas is in the tab order, named and described', () => {
     const canvas = zoomedCanvas();
     expect(canvas.tabIndex).toBe(0);

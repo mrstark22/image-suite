@@ -81,7 +81,7 @@ export function previousStep(job: Job, step: StepId): StepId | null {
  * trace reads the adjusted image (#23), which the preview renders without the
  * dither in the vector job; the relief reads the crop before adjustments.
  */
-export function canvasImage(job: Job): 'processed' | 'source' | 'relief' {
+export function canvasImage(job: Job): 'processed' | 'relief' {
   if (job === 'relief') return 'relief';
   return 'processed';
 }

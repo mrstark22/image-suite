@@ -83,8 +83,34 @@ pub fn marching_squares(field: &Field) -> Vec<Loop> {
     let hkey = |x: isize, y: isize| node(x, y) * 2;
     let vkey = |x: isize, y: isize| node(x, y) * 2 + 1;
 
+    // Count the boundary segments first and reserve for them, so a noisy image
+    // with millions of crossings is reported as too large rather than running
+    // out of memory part way (review of #84).
+    let mut segments = 0usize;
+    for cy in -1..h {
+        for cx in -1..w {
+            let (a, b) = (is_in(field.at(cx, cy)), is_in(field.at(cx + 1, cy)));
+            let (c, d) = (is_in(field.at(cx + 1, cy + 1)), is_in(field.at(cx, cy + 1)));
+            let ins = a as usize + b as usize + c as usize + d as usize;
+            segments += match ins {
+                0 | 4 => 0,
+                2 if a == c => 2,
+                _ => 1,
+            };
+        }
+    }
     let mut next: HashMap<u64, u64> = HashMap::new();
     let mut starts: Vec<u64> = Vec::new();
+    // Each segment also becomes a loop point of 16 bytes.
+    let mut points: Vec<P> = Vec::new();
+    if next.try_reserve(segments).is_err()
+        || starts.try_reserve_exact(segments).is_err()
+        || points.try_reserve_exact(segments).is_err()
+    {
+        super::OUT_OF_MEMORY.store(true, std::sync::atomic::Ordering::Relaxed);
+        return Vec::new();
+    }
+    drop(points);
 
     for cy in -1..h {
         for cx in -1..w {

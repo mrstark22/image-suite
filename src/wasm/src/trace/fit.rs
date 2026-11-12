@@ -307,6 +307,19 @@ pub fn fit_path(pts: &[P], fixed: &[bool], closed: bool, opt: &FitOptions) -> Op
                 }
             }
         };
+        // A fixed point (a centreline junction) is kept exactly, even where a
+        // fitted line would pass beside it, so the branches meeting there meet
+        // with no gap (review of #84).
+        let fixed_here = if closed {
+            fx[(anchor + k) % n]
+        } else {
+            fx[k.min(n - 1)]
+        };
+        let joint = if fixed_here {
+            Joint { p: idx_pt, ..joint }
+        } else {
+            joint
+        };
         joints.push(joint);
     }
 

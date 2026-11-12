@@ -1,4 +1,4 @@
-import type { VectorLayer, VectorResult } from '../types/vector';
+import type { VectorLayer, VectorPath, VectorResult } from '../types/vector';
 
 /**
  * SVG and DXF export of a trace at its physical size (#30). Paths are traced
@@ -34,6 +34,21 @@ export function parsePathData(d: string): Cmd[] {
   return cmds;
 }
 
+/**
+ * Each path's commands, parsed once per path object: an export reads every
+ * path twice (for the page bounds and for the output), and a full-resolution
+ * trace can have hundreds of thousands of nodes (review of #84).
+ */
+const parsed = new WeakMap<VectorPath, Cmd[]>();
+function cmdsOf(path: VectorPath): Cmd[] {
+  let cmds = parsed.get(path);
+  if (!cmds) {
+    cmds = parsePathData(path.d);
+    parsed.set(path, cmds);
+  }
+  return cmds;
+}
+
 function requireScale(result: VectorResult): number {
   if (result.pxPerMm === null || !(result.pxPerMm > 0)) {
     throw new Error('This trace has no physical size. Set the size of the image and trace again.');
@@ -52,7 +67,7 @@ export function tracePageMm(result: VectorResult): { x: number; y: number; width
   let [x0, y0, x1, y1] = [0, 0, result.dimensions.width, result.dimensions.height];
   for (const layer of shown(result)) {
     for (const p of layer.paths) {
-      for (const c of parsePathData(p.d)) {
+      for (const c of cmdsOf(p)) {
         const pts = c.op === 'C' ? [c.c1, c.c2, c.p] : c.op === 'Z' ? [] : [c.p];
         for (const q of pts) {
           x0 = Math.min(x0, q.x);
@@ -77,8 +92,8 @@ const fmt = (v: number) => {
   return Object.is(r, -0) ? '0' : String(r);
 };
 
-function scaledPathData(d: string, s: number): string {
-  return parsePathData(d)
+function scaledPathData(cmds: Cmd[], s: number): string {
+  return cmds
     .map((c) => {
       switch (c.op) {
         case 'M':
@@ -120,7 +135,7 @@ export function traceToSvg(result: VectorResult): string {
       `  <g id="${escapeXml(layer.id)}" inkscape:groupmode="layer" inkscape:label="${escapeXml(layer.name)}" fill="none" stroke="${escapeXml(layer.color)}" stroke-width="${SVG_STROKE_MM}" stroke-linecap="round" stroke-linejoin="round">`
     );
     for (const p of layer.paths) {
-      lines.push(`    <path id="${escapeXml(p.id)}" d="${scaledPathData(p.d, s)}" />`);
+      lines.push(`    <path id="${escapeXml(p.id)}" d="${scaledPathData(cmdsOf(p), s)}" />`);
     }
     lines.push('  </g>');
   }
@@ -154,7 +169,7 @@ function flattenCubic(p0: Pt, c1: Pt, c2: Pt, p3: Pt, out: Pt[], depth = 0): voi
 }
 
 /** The subpaths of path data as polylines in millimetres, with whether each is closed. */
-export function pathPolylines(d: string, mmPerPx: number): Array<{ pts: Pt[]; closed: boolean }> {
+export function pathPolylines(d: string | Cmd[], mmPerPx: number): Array<{ pts: Pt[]; closed: boolean }> {
   const out: Array<{ pts: Pt[]; closed: boolean }> = [];
   let cur: Pt[] = [];
   const s = (p: Pt) => ({ x: p.x * mmPerPx, y: p.y * mmPerPx });
@@ -162,7 +177,7 @@ export function pathPolylines(d: string, mmPerPx: number): Array<{ pts: Pt[]; cl
     if (cur.length >= 2) out.push({ pts: cur, closed });
     cur = [];
   };
-  for (const c of parsePathData(d)) {
+  for (const c of typeof d === 'string' ? parsePathData(d) : d) {
     if (c.op === 'M') {
       flush(false);
       cur.push(s(c.p));
@@ -305,7 +320,7 @@ export function traceToDxf(result: VectorResult): string {
   g(2, 'ENTITIES');
   layers.forEach((layer, i) => {
     for (const path of layer.paths) {
-      for (const poly of pathPolylines(path.d, 1 / ppm)) {
+      for (const poly of pathPolylines(cmdsOf(path), 1 / ppm)) {
         g(0, 'POLYLINE');
         g(8, names[i]);
         g(66, 1);
