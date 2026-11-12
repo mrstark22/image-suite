@@ -4,6 +4,7 @@ import { pxPerMmOfSource, useRenderStore } from '../../store/renderStore';
 import { useViewStore } from '../../store/viewStore';
 import { useUIStore } from '../../store/uiStore';
 import { MM_PER_INCH } from '../../lib/document-size';
+import { RULER_THICKNESS, rulerZero } from '../../lib/viewport';
 import styles from './CanvasRulers.module.css';
 
 export const CanvasRulers: React.FC = () => {
@@ -12,6 +13,7 @@ export const CanvasRulers: React.FC = () => {
   const dims = source;
   const zoom = useViewStore((s) => s.zoom);
   const pan = useViewStore((s) => s.pan);
+  const container = useViewStore((s) => s.container);
   // Preview pixels per mm; null while the size is not set, when only pixels can be shown.
   const pxPerMm = useDocumentStore((s) => (s.doc && source ? pxPerMmOfSource(s.doc, source) : null));
 
@@ -35,10 +37,10 @@ export const CanvasRulers: React.FC = () => {
 
   // Render Horizontal (Top) Ruler
   useEffect(() => {
-    if (!showRulers || !topCanvasRef.current || !dims) return;
+    if (!showRulers || !topCanvasRef.current || !dims || !container) return;
     const canvas = topCanvasRef.current;
-    const width = canvas.parentElement?.clientWidth || 800;
-    const height = 24;
+    const width = container.width - RULER_THICKNESS;
+    const height = RULER_THICKNESS;
 
     if (canvas.width !== width || canvas.height !== height) {
       canvas.width = width;
@@ -52,8 +54,8 @@ export const CanvasRulers: React.FC = () => {
     ctx.fillStyle = '#0d1117';
     ctx.fillRect(0, 0, width, height);
 
-    // Canvas center origin in screen coordinates (accounting for left offset 24px)
-    const canvasOriginX = (width / 2) + pan.x - (dims.width * zoom) / 2;
+    // The image's left edge on this ruler, which starts past the corner box.
+    const canvasOriginX = rulerZero({ zoom, pan }, container, dims).x;
 
     // Unit step size in pixels
     let stepUnitPx = 1;
@@ -114,14 +116,14 @@ export const CanvasRulers: React.FC = () => {
         ctx.stroke();
       }
     }
-  }, [showRulers, dims, zoom, pan, dpi, unit, mousePos]);
+  }, [showRulers, dims, container, zoom, pan, dpi, unit, mousePos]);
 
   // Render Vertical (Left) Ruler
   useEffect(() => {
-    if (!showRulers || !leftCanvasRef.current || !dims) return;
+    if (!showRulers || !leftCanvasRef.current || !dims || !container) return;
     const canvas = leftCanvasRef.current;
-    const width = 24;
-    const height = canvas.parentElement?.clientHeight || 600;
+    const width = RULER_THICKNESS;
+    const height = container.height - RULER_THICKNESS;
 
     if (canvas.width !== width || canvas.height !== height) {
       canvas.width = width;
@@ -135,8 +137,8 @@ export const CanvasRulers: React.FC = () => {
     ctx.fillStyle = '#0d1117';
     ctx.fillRect(0, 0, width, height);
 
-    // Canvas center origin in screen coordinates (accounting for top offset 24px)
-    const canvasOriginY = (height / 2) + pan.y - (dims.height * zoom) / 2;
+    // The image's top edge on this ruler, which starts below the corner box.
+    const canvasOriginY = rulerZero({ zoom, pan }, container, dims).y;
 
     let stepUnitPx = 1;
     let stepIncrement = 10;
@@ -200,7 +202,7 @@ export const CanvasRulers: React.FC = () => {
         ctx.stroke();
       }
     }
-  }, [showRulers, dims, zoom, pan, dpi, unit, mousePos]);
+  }, [showRulers, dims, container, zoom, pan, dpi, unit, mousePos]);
 
   if (!showRulers || !dims) return null;
 

@@ -18,7 +18,7 @@ export function useKeyboardShortcuts() {
   };
 
   const setCanvasTool = useViewStore((s) => s.setCanvasTool);
-  const setZoom = useViewStore((s) => s.setZoom);
+  const zoomBy = useViewStore((s) => s.zoomBy);
   const resetViewport = useViewStore((s) => s.resetViewport);
 
   useEffect(() => {
@@ -69,14 +69,14 @@ export function useKeyboardShortcuts() {
         // Zoom In: Ctrl++ or Ctrl+=
         if (key === '=' || key === '+') {
           e.preventDefault();
-          setZoom((z) => z * 1.25);
+          zoomBy(1.25);
           return;
         }
 
         // Zoom Out: Ctrl+-
         if (key === '-' || key === '_') {
           e.preventDefault();
-          setZoom((z) => z * 0.8);
+          zoomBy(0.8);
           return;
         }
 
@@ -110,7 +110,7 @@ export function useKeyboardShortcuts() {
     undo,
     redo,
     setCanvasTool,
-    setZoom,
+    zoomBy,
     resetViewport,
   ]);
 }

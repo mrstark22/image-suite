@@ -35,7 +35,8 @@ export const MenuBar: React.FC = () => {
   const isProcessing = useRenderStore((s) => s.isProcessing);
   const isExporting = useRenderStore((s) => s.exportProgress !== null);
   const durationMs = useRenderStore((s) => s.processingDurationMs);
-  const setZoom = useViewStore((s) => s.setZoom);
+  const zoomBy = useViewStore((s) => s.zoomBy);
+  const fit = useViewStore((s) => s.fit);
   const resetViewport = useViewStore((s) => s.resetViewport);
 
   const undo = useDocumentStore((s) => s.undo);
@@ -256,7 +257,7 @@ export const MenuBar: React.FC = () => {
                 <button
                   className={styles.dropdownItem}
                   onClick={() => {
-                    setZoom((z) => z * 1.25);
+                    zoomBy(1.25);
                     setOpenMenu(null);
                   }}
                 >
@@ -266,12 +267,21 @@ export const MenuBar: React.FC = () => {
                 <button
                   className={styles.dropdownItem}
                   onClick={() => {
-                    setZoom((z) => z * 0.8);
+                    zoomBy(0.8);
                     setOpenMenu(null);
                   }}
                 >
                   <span className={styles.itemLabel}><ZoomOut size={14} /> Zoom Out</span>
                   <span className={styles.itemShortcut}>Ctrl+-</span>
+                </button>
+                <button
+                  className={styles.dropdownItem}
+                  onClick={() => {
+                    fit();
+                    setOpenMenu(null);
+                  }}
+                >
+                  <span className={styles.itemLabel}><Maximize size={14} /> Fit to Screen</span>
                 </button>
                 <button
                   className={styles.dropdownItem}
