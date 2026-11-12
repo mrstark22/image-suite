@@ -131,11 +131,6 @@
   line-height: 1.2;
 }
 
-.exportActionBlock {
-  padding: var(--space-4);
-  margin-top: auto;
-}
-
 .primaryActionBtn {
   width: 100%;
   height: 34px;
@@ -341,4 +336,69 @@
 
 .readoutRow strong {
   color: var(--text);
+}
+
+/* Export step (#53) */
+.secondaryActionBtn {
+  width: 100%;
+  height: 32px;
+  padding: 0 12px;
+  background: var(--surface-hover);
+  color: var(--text);
+  font-weight: var(--weight-medium);
+  font-size: var(--text-md);
+  border: 1px solid var(--control-border);
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  transition: background var(--transition-fast);
+}
+
+.secondaryActionBtn:hover:not(:disabled) {
+  background: var(--surface-2);
+}
+
+.secondaryActionBtn:disabled,
+.primaryActionBtn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.buttonRow {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.stackGap {
+  margin-top: var(--space-2);
+}
+
+.errorText {
+  color: var(--danger);
+}
+
+.titleWithIcon {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.readoutValue {
+  text-align: right;
+}
+
+.emptyNote {
+  padding: var(--space-6);
+  text-align: center;
+  color: var(--text-3);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.primaryActionBtn + .primaryActionBtn,
+.select + .primaryActionBtn {
+  margin-top: var(--space-2);
 }

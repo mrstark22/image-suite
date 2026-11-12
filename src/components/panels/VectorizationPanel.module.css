@@ -380,10 +380,3 @@
   font-weight: 700;
   color: var(--text);
 }
-
-/* Export row */
-.exportRow {
-  display: flex;
-  gap: 8px;
-  margin-top: 10px;
-}

@@ -190,12 +190,6 @@ describe('components use the tokens', () => {
       'src/components/panels/VectorizationPanel.module.css .traceBtn:hover',
       'src/components/shared/DropZone.module.css .browseButton',
       'src/components/shared/DropZone.module.css .browseButton:hover',
-      'src/components/toolbar/MenuBar.module.css .exportBtn',
-      'src/components/toolbar/MenuBar.module.css .exportBtn:hover',
-      'src/components/toolbar/ToolSubheader.module.css .actionBtnPrimary',
-      'src/components/toolbar/ToolSubheader.module.css .actionBtnPrimary:hover',
-      'src/components/toolbar/Toolbar.module.css .exportButton',
-      'src/components/toolbar/Toolbar.module.css .exportButton:hover',
     ];
     const usesAccent = /var\(--accent(-hover)?\)/;
     const inCss = CSS.filter((s) => s.file !== 'src/index.css').flatMap(({ file, text }) =>

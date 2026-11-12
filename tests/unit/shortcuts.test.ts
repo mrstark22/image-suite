@@ -16,7 +16,7 @@ import {
 } from '../../src/lib/shortcuts';
 import type { Size } from '../../src/lib/viewport';
 import { useViewStore } from '../../src/store/viewStore';
-import { useUIStore } from '../../src/store/uiStore';
+import { currentStep, firstSteps, useUIStore } from '../../src/store/uiStore';
 import { useDocumentStore } from '../../src/store/documentStore';
 import { setTonal } from '../../src/lib/document';
 import { openImagePicker } from '../../src/lib/open-image';
@@ -36,12 +36,12 @@ describe('shortcuts', () => {
     resetStores();
     useViewStore.setState({ zoom: 1, pan: { x: 0, y: 0 }, container: null, image: null, fitted: false, canvasTool: 'pan' });
     useUIStore.setState({
-      activeTab: 'adjustments',
+      job: 'photo',
+      stepByJob: firstSteps(),
       isSplitView: false,
-      isInvertedBurn: false,
+      isInvertedView: false,
       showRulers: true,
       isShortcutsDialogOpen: false,
-      isPresetDialogOpen: false,
       isTestGridDialogOpen: false,
     });
     vi.mocked(openImagePicker).mockClear();
@@ -96,7 +96,7 @@ describe('shortcuts', () => {
       changed: () => useDocumentStore.getState().doc?.steps.tonal.contrast === 30,
     },
     open: { changed: () => vi.mocked(openImagePicker).mock.calls.length === 1 },
-    export: { changed: () => useUIStore.getState().activeTab === 'export' },
+    export: { changed: () => currentStep(useUIStore.getState()) === 'export' },
     zoomIn: { changed: () => view().zoom > 1 },
     zoomOut: { changed: () => view().zoom < 1 },
     fit: {
@@ -109,7 +109,7 @@ describe('shortcuts', () => {
     },
     toggleRulers: { changed: () => useUIStore.getState().showRulers === false },
     toggleSplit: { changed: () => useUIStore.getState().isSplitView },
-    toggleBurn: { changed: () => useUIStore.getState().isInvertedBurn },
+    toggleInvertedView: { changed: () => useUIStore.getState().isInvertedView },
     panTool: { setup: () => view().setCanvasTool('crop'), changed: () => view().canvasTool === 'pan' },
     cropTool: { changed: () => view().canvasTool === 'crop' },
     showShortcuts: { changed: () => useUIStore.getState().isShortcutsDialogOpen },
@@ -129,6 +129,13 @@ describe('shortcuts', () => {
       expect(effects[command].changed()).toBe(true);
     });
   }
+
+  it('Split View does nothing, and keeps the key, in the vector job: its canvas has no before and after (#53)', () => {
+    useDocumentStore.getState().open(decodedImage(900, 600));
+    useUIStore.getState().setJob('vector');
+    expect(runCommand('toggleSplit')).toBe(false);
+    expect(useUIStore.getState().isSplitView).toBe(false);
+  });
 
   it('Go to Export and Close Dialog do nothing, and keep the key, when they do not apply', () => {
     expect(runCommand('export')).toBe(false);

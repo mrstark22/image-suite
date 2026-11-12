@@ -3,13 +3,24 @@
  * export step shows. The machine and material must change what the user is
  * told or what is exported, or they would be dead controls.
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { MACHINES, MATERIALS, applyMaterial, machineById, materialById } from '../../src/lib/machines';
+import { chooseMaterial } from '../../src/lib/job-setup';
 import { lightBurnSettings, lineIntervalMm, photoImageMode } from '../../src/lib/lightburn-settings';
-import { createDocument, defaultSteps, sameValue, setCrop, setDepth, setScale, setVector } from '../../src/lib/document';
+import { DEFAULT_DITHER, DEFAULT_TONAL, createDocument, defaultSteps, sameValue, setCrop, setDepth, setScale, setVector } from '../../src/lib/document';
+import { useDocumentStore } from '../../src/store/documentStore';
+import { useUIStore } from '../../src/store/uiStore';
 import type { DitherAlgorithm } from '../../src/types/dither';
+import { currentDoc, openPhoto, resetStores } from '../helpers/documents';
+
+const docs = () => useDocumentStore.getState();
 
 describe('machines and materials', () => {
+  beforeEach(() => {
+    resetStores();
+    useUIStore.setState({ materialId: null });
+  });
+
   it('the two machines in use are offered: 60 W and 155 W CO2', () => {
     expect(MACHINES.map((m) => [m.source, m.watts])).toEqual([
       ['co2', 60],
@@ -40,6 +51,30 @@ describe('machines and materials', () => {
       // And it does change the photo output.
       expect(sameValue(after.steps, before.steps), material.id).toBe(false);
     }
+  });
+
+  it('choosing a material applies its starting point as one edit, which undo takes back', () => {
+    openPhoto();
+    chooseMaterial('dark-walnut');
+    expect(useUIStore.getState().materialId).toBe('dark-walnut');
+    expect(currentDoc().steps.dither.algorithm).toBe('floyd-steinberg');
+    expect(currentDoc().steps.tonal.gamma).toBe(1.3);
+    expect(docs().past).toHaveLength(1);
+    docs().undo();
+    expect(currentDoc().steps.tonal).toEqual(DEFAULT_TONAL);
+    expect(currentDoc().steps.dither).toEqual(DEFAULT_DITHER);
+  });
+
+  it('with no image open, choosing a material only records the choice', () => {
+    chooseMaterial('leather');
+    expect(useUIStore.getState().materialId).toBe('leather');
+    expect(docs().doc).toBeNull();
+  });
+
+  it('"Not chosen" edits nothing', () => {
+    openPhoto();
+    chooseMaterial(null);
+    expect(docs().past).toHaveLength(0);
   });
 });
 

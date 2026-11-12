@@ -1,10 +1,8 @@
 import React, { useState } from 'react';
 import {
-  Download,
   Eye,
   EyeOff,
   Layers,
-  FileCode,
   Play,
   Trash2,
   RotateCcw,
@@ -16,8 +14,6 @@ import { useDocumentStore } from '../../store/documentStore';
 import { useRenderStore } from '../../store/renderStore';
 import { DocumentSlider, Slider } from '../shared/Slider';
 import { DEFAULT_VECTOR, resetVector, setVector } from '../../lib/document';
-import { generateDXF } from '../../lib/dxf-export';
-import { generateProductionSVG } from '../../lib/svg-export';
 import type { VectorMode } from '../../types/vector';
 import styles from './VectorizationPanel.module.css';
 
@@ -53,33 +49,6 @@ export const VectorizationPanel: React.FC = () => {
   const [fitCurves, setFitCurves] = useState<boolean>(true);
 
   const handleTraceNow = () => requestTrace();
-
-  const handleDownloadSVG = () => {
-    if (!vectorResult) return;
-    const svgStr = generateProductionSVG(vectorResult, {
-      strokeWidth: vector.strokeWidth,
-      physicalUnits: 'px',
-    });
-    const blob = new Blob([svgStr], { type: 'image/svg+xml' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `vector-${vector.mode}-output.svg`;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
-  const handleDownloadDXF = () => {
-    if (!vectorResult) return;
-    const dxfStr = generateDXF(vectorResult);
-    const blob = new Blob([dxfStr], { type: 'application/dxf' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `vector-${vector.mode}-output.dxf`;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
 
   return (
     <div className={styles.panel}>
@@ -428,14 +397,6 @@ export const VectorizationPanel: React.FC = () => {
             </div>
           </div>
 
-          <div className={styles.exportRow}>
-            <button className={styles.actionBtnSecondary} onClick={handleDownloadSVG}>
-              <Download size={13} /> SVG
-            </button>
-            <button className={styles.actionBtnSecondary} onClick={handleDownloadDXF}>
-              <FileCode size={13} /> DXF
-            </button>
-          </div>
         </div>
       ) : (
         <div style={{ padding: '20px 16px', textAlign: 'center', color: 'var(--text-3)', fontSize: 11.5 }}>

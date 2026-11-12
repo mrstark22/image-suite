@@ -87,7 +87,7 @@
 
   /* Layout: top bar and inspector from direction A */
   --header-height: 44px;
-  --tool-sidebar-width: 60px;
+  --rail-width: 184px;         /* the step rail of the workflow shell (#53) */
   --panel-width: 292px;
   --status-bar-height: 28px;
 

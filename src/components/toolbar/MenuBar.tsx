@@ -1,33 +1,20 @@
 import React, { useState, useEffect } from 'react';
-import {
-  Sparkles,
-  FolderOpen,
-  Download,
-  BookOpen,
-  Trash2,
-  Undo2,
-  Redo2,
-  Layers,
-  Columns,
-  Flame,
-  ZoomIn,
-  ZoomOut,
-  Maximize,
-  Maximize2,
-  Grid,
-  Keyboard,
-  HelpCircle,
-} from 'lucide-react';
 import { useDocumentStore } from '../../store/documentStore';
 import { useRenderStore } from '../../store/renderStore';
-import { useViewStore } from '../../store/viewStore';
-import { openImagePicker } from '../../lib/open-image';
-import { menuShortcut, ZOOM_STEP } from '../../lib/shortcuts';
-import { cropRectOf, dpiOf } from '../../lib/document-size';
-import { resetAll } from '../../lib/document';
 import { useUIStore } from '../../store/uiStore';
+import { useViewStore } from '../../store/viewStore';
+import { MENUS, itemShortcut } from '../../lib/menus';
+import { JOBS, JOB_HINT, JOB_LABEL } from '../../lib/workflows';
+import { MACHINES, MATERIALS } from '../../lib/machines';
+import { chooseMaterial } from '../../lib/job-setup';
+import { cropRectOf, dpiOf } from '../../lib/document-size';
 import styles from './MenuBar.module.css';
 
+/**
+ * The top bar: the menus, the choice of job, and the machine and material
+ * the output is for (#53). The menus come from `MENUS`, which a test runs
+ * item by item.
+ */
 export const MenuBar: React.FC = () => {
   const [openMenu, setOpenMenu] = useState<string | null>(null);
 
@@ -35,33 +22,20 @@ export const MenuBar: React.FC = () => {
   const isProcessing = useRenderStore((s) => s.isProcessing);
   const isExporting = useRenderStore((s) => s.exportProgress !== null);
   const durationMs = useRenderStore((s) => s.processingDurationMs);
-  const zoomBy = useViewStore((s) => s.zoomBy);
-  const fit = useViewStore((s) => s.fit);
-  const resetViewport = useViewStore((s) => s.resetViewport);
 
-  const undo = useDocumentStore((s) => s.undo);
-  const redo = useDocumentStore((s) => s.redo);
-  const canUndo = useDocumentStore((s) => s.past.length > 0);
-  const canRedo = useDocumentStore((s) => s.future.length > 0);
-  const edit = useDocumentStore((s) => s.edit);
-  const closeDocument = useDocumentStore((s) => s.close);
-
-  const isSplitView = useUIStore((s) => s.isSplitView);
-  const isInvertedBurn = useUIStore((s) => s.isInvertedBurn);
-  const showVectorOverlay = useUIStore((s) => s.showVectorOverlay);
-  const showRulers = useUIStore((s) => s.showRulers);
-  const toggleSplitView = useUIStore((s) => s.toggleSplitView);
-  const toggleInvertedBurn = useUIStore((s) => s.toggleInvertedBurn);
-  const toggleVectorOverlay = useUIStore((s) => s.toggleVectorOverlay);
-  const toggleRulers = useUIStore((s) => s.toggleRulers);
-  const setActiveTab = useUIStore((s) => s.setActiveTab);
-  const setPresetDialogOpen = useUIStore((s) => s.setPresetDialogOpen);
+  const job = useUIStore((s) => s.job);
+  const setJob = useUIStore((s) => s.setJob);
+  const machineId = useUIStore((s) => s.machineId);
+  const setMachineId = useUIStore((s) => s.setMachineId);
+  const materialId = useUIStore((s) => s.materialId);
   const setSizeDialogOpen = useUIStore((s) => s.setSizeDialogOpen);
-  const setTestGridDialogOpen = useUIStore((s) => s.setTestGridDialogOpen);
-  const setShortcutsDialogOpen = useUIStore((s) => s.setShortcutsDialogOpen);
 
-  const substrateMask = useViewStore((s) => s.substrateMask);
-  const setSubstrateMask = useViewStore((s) => s.setSubstrateMask);
+  // The menus read several stores when open; these make the bar redraw when they change.
+  useDocumentStore((s) => s.version);
+  useDocumentStore((s) => s.gesture);
+  useRenderStore((s) => s.vectorResult);
+  useUIStore();
+  useViewStore((s) => s.substrateMask);
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -78,355 +52,126 @@ export const MenuBar: React.FC = () => {
   const shownSize = doc ? cropRectOf(doc) : null;
   const dpi = doc ? dpiOf(doc) : null;
 
-  const handleClearWorkspace = () => {
-    closeDocument();
-    setOpenMenu(null);
-  };
-
   return (
     <div className={styles.menuBar}>
-      {/* Left: Brand & Desktop Menus */}
       <div className={styles.leftSide}>
-        <div className={styles.brand} onClick={() => setActiveTab('adjustments')}>
-          <Sparkles size={16} color="var(--text-2)" />
-          <span className={styles.brandTitle}>IMAGE SUITE</span>
-          <span className={styles.brandBadge}>PRO</span>
+        <div className={styles.brand}>
+          <span className={styles.brandTitle}>Image Suite</span>
         </div>
 
-        <div className={styles.menusList}>
-          {/* FILE MENU */}
-          <div className={styles.menuItemWrapper}>
-            <button
-              className={`${styles.menuBtn} ${openMenu === 'file' ? styles.menuBtnActive : ''}`}
-              onClick={(e) => {
-                e.stopPropagation();
-                setOpenMenu(openMenu === 'file' ? null : 'file');
-              }}
-            >
-              File
-            </button>
-            {openMenu === 'file' && (
-              <div className={styles.dropdownMenu}>
-                <button
-                  className={styles.dropdownItem}
-                  onClick={() => {
-                    openImagePicker();
-                    setOpenMenu(null);
-                  }}
-                >
-                  <span className={styles.itemLabel}><FolderOpen size={14} /> Open Image...</span>
-                  <span className={styles.itemShortcut}>{menuShortcut('open')}</span>
-                </button>
-                <button
-                  className={styles.dropdownItem}
-                  disabled={!doc}
-                  onClick={() => {
-                    setSizeDialogOpen(true);
-                    setOpenMenu(null);
-                  }}
-                >
-                  <span className={styles.itemLabel}><Maximize size={14} /> Physical Size...</span>
-                </button>
-                <div className={styles.menuDivider} />
-                <button
-                  className={styles.dropdownItem}
-                  disabled={!doc}
-                  onClick={() => {
-                    setActiveTab('export');
-                    setOpenMenu(null);
-                  }}
-                >
-                  <span className={styles.itemLabel}><Download size={14} /> Export Output...</span>
-                  <span className={styles.itemShortcut}>{menuShortcut('export')}</span>
-                </button>
-                <button
-                  className={styles.dropdownItem}
-                  onClick={() => {
-                    setPresetDialogOpen(true);
-                    setOpenMenu(null);
-                  }}
-                >
-                  <span className={styles.itemLabel}><BookOpen size={14} /> Material Presets...</span>
-                </button>
-                <button
-                  className={styles.dropdownItem}
-                  onClick={() => {
-                    setTestGridDialogOpen(true);
-                    setOpenMenu(null);
-                  }}
-                >
-                  <span className={styles.itemLabel}><Grid size={14} /> Generate Material Test Grid...</span>
-                </button>
-                <div className={styles.menuDivider} />
-                <button
-                  className={styles.dropdownItem}
-                  disabled={!doc}
-                  style={{ color: 'var(--danger)' }}
-                  onClick={handleClearWorkspace}
-                >
-                  <span className={styles.itemLabel}><Trash2 size={14} /> Clear Workspace</span>
-                </button>
-              </div>
-            )}
-          </div>
+        <nav className={styles.menusList}>
+          {MENUS.map((menu) => (
+            <div key={menu.id} className={styles.menuItemWrapper}>
+              <button
+                className={`${styles.menuBtn} ${openMenu === menu.id ? styles.menuBtnActive : ''}`}
+                aria-haspopup="menu"
+                aria-expanded={openMenu === menu.id}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setOpenMenu(openMenu === menu.id ? null : menu.id);
+                }}
+              >
+                {menu.label}
+              </button>
+              {openMenu === menu.id && (
+                <div className={styles.dropdownMenu} role="menu">
+                  {menu.groups.map((group, g) => (
+                    <React.Fragment key={g}>
+                      {g > 0 && <div className={styles.menuDivider} />}
+                      {group.map((item) => {
+                        const enabled = item.enabled();
+                        const checked = item.checked?.();
+                        return (
+                          <button
+                            key={item.id}
+                            role={item.checked ? 'menuitemcheckbox' : 'menuitem'}
+                            aria-checked={item.checked ? checked : undefined}
+                            className={`${styles.dropdownItem} ${item.danger ? styles.dropdownItemDanger : ''}`}
+                            disabled={!enabled}
+                            title={!enabled ? item.disabledReason : undefined}
+                            onClick={() => {
+                              item.run();
+                              setOpenMenu(null);
+                            }}
+                          >
+                            <span className={styles.itemLabel}>
+                              <span className={styles.itemCheck}>{checked ? '✓' : ''}</span>
+                              {item.label}
+                            </span>
+                            <span className={styles.itemShortcut}>{itemShortcut(item)}</span>
+                          </button>
+                        );
+                      })}
+                    </React.Fragment>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+        </nav>
 
-          {/* EDIT MENU */}
-          <div className={styles.menuItemWrapper}>
+        <div className={styles.jobSwitch} role="tablist" aria-label="Job">
+          {JOBS.map((j) => (
             <button
-              className={`${styles.menuBtn} ${openMenu === 'edit' ? styles.menuBtnActive : ''}`}
-              onClick={(e) => {
-                e.stopPropagation();
-                setOpenMenu(openMenu === 'edit' ? null : 'edit');
-              }}
+              key={j}
+              role="tab"
+              aria-selected={job === j}
+              className={`${styles.jobBtn} ${job === j ? styles.jobBtnActive : ''}`}
+              title={JOB_HINT[j]}
+              onClick={() => setJob(j)}
             >
-              Edit
+              {JOB_LABEL[j]}
             </button>
-            {openMenu === 'edit' && (
-              <div className={styles.dropdownMenu}>
-                <button
-                  className={styles.dropdownItem}
-                  disabled={!canUndo}
-                  onClick={() => {
-                    undo();
-                    setOpenMenu(null);
-                  }}
-                >
-                  <span className={styles.itemLabel}><Undo2 size={14} /> Undo</span>
-                  <span className={styles.itemShortcut}>{menuShortcut('undo')}</span>
-                </button>
-                <button
-                  className={styles.dropdownItem}
-                  disabled={!canRedo}
-                  onClick={() => {
-                    redo();
-                    setOpenMenu(null);
-                  }}
-                >
-                  <span className={styles.itemLabel}><Redo2 size={14} /> Redo</span>
-                  <span className={styles.itemShortcut}>{menuShortcut('redo')}</span>
-                </button>
-                <div className={styles.menuDivider} />
-                <button
-                  className={styles.dropdownItem}
-                  disabled={!doc}
-                  onClick={() => {
-                    edit(resetAll);
-                    setOpenMenu(null);
-                  }}
-                >
-                  <span className={styles.itemLabel}>Reset All Parameters</span>
-                </button>
-              </div>
-            )}
-          </div>
-
-          {/* VIEW MENU */}
-          <div className={styles.menuItemWrapper}>
-            <button
-              className={`${styles.menuBtn} ${openMenu === 'view' ? styles.menuBtnActive : ''}`}
-              onClick={(e) => {
-                e.stopPropagation();
-                setOpenMenu(openMenu === 'view' ? null : 'view');
-              }}
-            >
-              View
-            </button>
-            {openMenu === 'view' && (
-              <div className={styles.dropdownMenu}>
-                <button
-                  className={styles.dropdownItem}
-                  onClick={() => {
-                    zoomBy(ZOOM_STEP);
-                    setOpenMenu(null);
-                  }}
-                >
-                  <span className={styles.itemLabel}><ZoomIn size={14} /> Zoom In</span>
-                  <span className={styles.itemShortcut}>{menuShortcut('zoomIn')}</span>
-                </button>
-                <button
-                  className={styles.dropdownItem}
-                  onClick={() => {
-                    zoomBy(1 / ZOOM_STEP);
-                    setOpenMenu(null);
-                  }}
-                >
-                  <span className={styles.itemLabel}><ZoomOut size={14} /> Zoom Out</span>
-                  <span className={styles.itemShortcut}>{menuShortcut('zoomOut')}</span>
-                </button>
-                <button
-                  className={styles.dropdownItem}
-                  onClick={() => {
-                    fit();
-                    setOpenMenu(null);
-                  }}
-                >
-                  <span className={styles.itemLabel}><Maximize size={14} /> Fit to Screen</span>
-                  <span className={styles.itemShortcut}>{menuShortcut('fit')}</span>
-                </button>
-                <button
-                  className={styles.dropdownItem}
-                  onClick={() => {
-                    resetViewport();
-                    setOpenMenu(null);
-                  }}
-                >
-                  <span className={styles.itemLabel}><Maximize2 size={14} /> Actual Size (100%)</span>
-                  <span className={styles.itemShortcut}>{menuShortcut('actualSize')}</span>
-                </button>
-                <div className={styles.menuDivider} />
-                <button
-                  className={styles.dropdownItem}
-                  onClick={() => {
-                    toggleSplitView();
-                    setOpenMenu(null);
-                  }}
-                >
-                  <span className={styles.itemLabel}><Columns size={14} /> Split View</span>
-                  <span className={styles.itemShortcut}>{isSplitView ? '✓' : ''}</span>
-                </button>
-                <button
-                  className={styles.dropdownItem}
-                  onClick={() => {
-                    toggleInvertedBurn();
-                    setOpenMenu(null);
-                  }}
-                >
-                  <span className={styles.itemLabel}><Flame size={14} /> Burn View Simulation</span>
-                  <span className={styles.itemShortcut}>{isInvertedBurn ? '✓' : ''}</span>
-                </button>
-                <button
-                  className={styles.dropdownItem}
-                  onClick={() => {
-                    toggleVectorOverlay();
-                    setOpenMenu(null);
-                  }}
-                >
-                  <span className={styles.itemLabel}><Layers size={14} /> Vector Overlay</span>
-                  <span className={styles.itemShortcut}>{showVectorOverlay ? '✓' : ''}</span>
-                </button>
-                <button
-                  className={styles.dropdownItem}
-                  onClick={() => {
-                    toggleRulers();
-                    setOpenMenu(null);
-                  }}
-                >
-                  <span className={styles.itemLabel}>Physical Rulers</span>
-                  <span className={styles.itemShortcut}>{showRulers ? '✓' : ''}</span>
-                </button>
-                <div className={styles.menuDivider} />
-                <button
-                  className={styles.dropdownItem}
-                  onClick={() => {
-                    setSubstrateMask(substrateMask === 'circle' ? 'none' : 'circle');
-                    setOpenMenu(null);
-                  }}
-                >
-                  <span className={styles.itemLabel}>Coaster Circle Guide</span>
-                  <span className={styles.itemShortcut}>{substrateMask === 'circle' ? '✓' : ''}</span>
-                </button>
-                <button
-                  className={styles.dropdownItem}
-                  disabled={dpi === null}
-                  title={dpi === null ? 'Set the size to use this: its corners are in mm' : undefined}
-                  onClick={() => {
-                    setSubstrateMask(substrateMask === 'rounded-rect' ? 'none' : 'rounded-rect');
-                    setOpenMenu(null);
-                  }}
-                >
-                  <span className={styles.itemLabel}>Rounded Rect Guide</span>
-                  <span className={styles.itemShortcut}>{substrateMask === 'rounded-rect' ? '✓' : ''}</span>
-                </button>
-                <button
-                  className={styles.dropdownItem}
-                  onClick={() => {
-                    setSubstrateMask(substrateMask === 'oval' ? 'none' : 'oval');
-                    setOpenMenu(null);
-                  }}
-                >
-                  <span className={styles.itemLabel}>Oval Medallion Guide</span>
-                  <span className={styles.itemShortcut}>{substrateMask === 'oval' ? '✓' : ''}</span>
-                </button>
-              </div>
-            )}
-          </div>
-
-          {/* HELP MENU */}
-          <div className={styles.menuItemWrapper}>
-            <button
-              className={`${styles.menuBtn} ${openMenu === 'help' ? styles.menuBtnActive : ''}`}
-              onClick={(e) => {
-                e.stopPropagation();
-                setOpenMenu(openMenu === 'help' ? null : 'help');
-              }}
-            >
-              Help
-            </button>
-            {openMenu === 'help' && (
-              <div className={styles.dropdown}>
-                <button
-                  className={styles.dropdownItem}
-                  onClick={() => {
-                    setShortcutsDialogOpen(true);
-                    setOpenMenu(null);
-                  }}
-                >
-                  <span className={styles.itemLabel}><Keyboard size={14} /> Keyboard Shortcuts</span>
-                  <span className={styles.itemShortcut}>{menuShortcut('showShortcuts')}</span>
-                </button>
-                <button
-                  className={styles.dropdownItem}
-                  onClick={() => {
-                    setTestGridDialogOpen(true);
-                    setOpenMenu(null);
-                  }}
-                >
-                  <span className={styles.itemLabel}><HelpCircle size={14} /> Material Calibration Guide</span>
-                </button>
-              </div>
-            )}
-          </div>
+          ))}
         </div>
       </div>
 
-      {/* Right: Telemetry, Presets & Export */}
       <div className={styles.rightSide}>
+        <label className={styles.setupField}>
+          <span className={styles.setupLabel}>Machine</span>
+          <select className={styles.setupSelect} value={machineId} onChange={(e) => setMachineId(e.target.value)}>
+            {MACHINES.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label
+          className={styles.setupField}
+          title="Choosing a material applies its starting point (uncalibrated) to the photo settings. Undo takes it back."
+        >
+          <span className={styles.setupLabel}>Material</span>
+          <select
+            className={styles.setupSelect}
+            value={materialId ?? ''}
+            onChange={(e) => chooseMaterial(e.target.value === '' ? null : e.target.value)}
+          >
+            <option value="">Not chosen</option>
+            {MATERIALS.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.name}
+              </option>
+            ))}
+          </select>
+        </label>
+
         {doc && shownSize && (
-          <div
+          <button
             className={styles.telemetry}
             onClick={() => setSizeDialogOpen(true)}
-            title="Click to set the physical size"
-            style={{ cursor: 'pointer' }}
+            title="Set the physical size"
           >
             <span className={`${styles.pulseDot} ${isProcessing ? styles.processingDot : ''}`} />
-            <span style={{ textDecoration: 'underline dotted', textUnderlineOffset: 3 }}>
+            <span className={styles.telemetrySize}>
               {shownSize.width}×{shownSize.height}px
             </span>
-            <span style={{ color: 'var(--text-3)' }}>•</span>
+            <span className={styles.telemetrySep}>•</span>
             <span>{dpi === null ? 'Size not set' : `${Number(dpi.toFixed(1))} DPI`}</span>
-            <span style={{ color: 'var(--text-3)' }}>•</span>
-            <span style={{ color: 'var(--text)' }}>
+            <span className={styles.telemetrySep}>•</span>
+            <span className={styles.telemetryTime}>
               {isExporting ? 'Paused while exporting' : isProcessing ? '...' : `${durationMs.toFixed(1)}ms`}
             </span>
-          </div>
-        )}
-
-        <button
-          className={styles.quickActionBtn}
-          onClick={() => setPresetDialogOpen(true)}
-          title="Material Substrate Presets"
-        >
-          <BookOpen size={13} />
-          Presets
-        </button>
-
-        {doc && (
-          <button
-            className={styles.exportBtn}
-            onClick={() => setActiveTab('export')}
-          >
-            <Download size={13} />
-            Export
           </button>
         )}
       </div>
