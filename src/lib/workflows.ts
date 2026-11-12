@@ -87,6 +87,16 @@ export function canvasImage(job: Job): 'processed' | 'source' | 'relief' {
   return 'processed';
 }
 
+/**
+ * True when the canvas shows the 3D orbit view instead of the flat image.
+ * That view draws only the relief mesh: no crop box, rulers, guides, zoom,
+ * split or inversion. While the crop tool is on, the flat relief is shown
+ * instead, so the Crop step works in every view.
+ */
+export function showsOrbitView(job: Job, viewMode: string | undefined, canvasTool: string): boolean {
+  return canvasImage(job) === 'relief' && viewMode === '3d-interactive' && canvasTool !== 'crop';
+}
+
 /** True when the canvas shows the relief, so the relief renders instead of the preview. */
 export function showsRelief(job: Job): boolean {
   return canvasImage(job) === 'relief';

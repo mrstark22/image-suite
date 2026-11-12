@@ -4,12 +4,12 @@
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { MENUS, itemShortcut, type MenuItem } from '../../src/lib/menus';
-import { commandFor } from '../../src/lib/shortcuts';
+import { commandFor, runCommand } from '../../src/lib/shortcuts';
 import { useDocumentStore } from '../../src/store/documentStore';
 import { useRenderStore } from '../../src/store/renderStore';
 import { firstSteps, currentStep, useUIStore } from '../../src/store/uiStore';
 import { useViewStore } from '../../src/store/viewStore';
-import { setScale, setTonal } from '../../src/lib/document';
+import { setDepth, setScale, setTonal } from '../../src/lib/document';
 import { openImagePicker } from '../../src/lib/open-image';
 import type { VectorResult } from '../../src/types/vector';
 import { decodedImage, resetStores } from '../helpers/documents';
@@ -86,7 +86,7 @@ describe('menus', () => {
   beforeEach(() => {
     resetStores();
     useRenderStore.setState({ vectorResult: null });
-    useViewStore.setState({ zoom: 1, pan: { x: 0, y: 0 }, container: null, image: null, fitted: false, substrateMask: 'none' });
+    useViewStore.setState({ zoom: 1, pan: { x: 0, y: 0 }, container: null, image: null, fitted: false, substrateMask: 'none', canvasTool: 'pan' });
     useUIStore.setState({
       job: 'photo',
       stepByJob: firstSteps(),
@@ -162,5 +162,34 @@ describe('menus', () => {
     expect(rulers.checked?.()).toBe(true);
     rulers.run();
     expect(rulers.checked?.()).toBe(false);
+  });
+
+  // The view items that the relief's 3D orbit view does not draw (review of #77).
+  const FLAT_ONLY = ['zoom-in', 'zoom-out', 'fit', 'actual-size', 'split', 'invert', 'rulers', 'guide-circle', 'guide-rounded', 'guide-oval'];
+
+  it('in the 3D orbit view, the view items it does not draw are disabled, and their shortcuts do nothing', () => {
+    docs().open(decodedImage(900, 600));
+    docs().edit(setScale(0.1));
+    ui().setJob('relief');
+    const flat = () => items.filter((i) => FLAT_ONLY.includes(i.id) && i.enabled()).map((i) => i.id).sort();
+    expect(flat()).toEqual([...FLAT_ONLY].sort());
+    docs().edit(setDepth({ viewMode: '3d-interactive' }));
+    expect(flat()).toEqual([]);
+    expect(runCommand('toggleRulers')).toBe(false);
+    expect(runCommand('zoomIn')).toBe(false);
+    expect(ui().showRulers).toBe(true);
+    // The other jobs never show it, whatever the relief's view mode.
+    ui().setJob('photo');
+    expect(flat()).toEqual([...FLAT_ONLY].sort());
+  });
+
+  it('with the crop tool on, the orbit view gives way to the flat relief, and the view items work again', () => {
+    docs().open(decodedImage(900, 600));
+    ui().setJob('relief');
+    docs().edit(setDepth({ viewMode: '3d-interactive' }));
+    view().setCanvasTool('crop');
+    expect(items.find((i) => i.id === 'rulers')!.enabled()).toBe(true);
+    view().setCanvasTool('pan');
+    expect(items.find((i) => i.id === 'rulers')!.enabled()).toBe(false);
   });
 });

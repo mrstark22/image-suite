@@ -6,7 +6,7 @@
  * output").
  */
 import { describe, it, expect, beforeEach } from 'vitest';
-import { FLOWS, JOBS, SHARED_STEPS, STEPS, canvasImage, nextStep, previousStep, showsRelief, traces, type Job } from '../../src/lib/workflows';
+import { FLOWS, JOBS, SHARED_STEPS, STEPS, canvasImage, nextStep, previousStep, showsOrbitView, showsRelief, traces, type Job } from '../../src/lib/workflows';
 import { currentStep, firstSteps, useUIStore } from '../../src/store/uiStore';
 import { runCommand } from '../../src/lib/shortcuts';
 import { openPhoto, resetStores } from '../helpers/documents';
@@ -90,5 +90,14 @@ describe('flows', () => {
     expect(JOBS.map(canvasImage)).toEqual(['source', 'processed', 'relief']);
     expect(JOBS.filter(showsRelief)).toEqual(['relief']);
     expect(JOBS.filter(traces)).toEqual(['vector']);
+  });
+
+  it('the 3D orbit view is shown only in the relief job, and never while cropping (review of #77)', () => {
+    expect(showsOrbitView('relief', '3d-interactive', 'pan')).toBe(true);
+    // The crop box is drawn on the flat relief, so the Crop step works in this view too.
+    expect(showsOrbitView('relief', '3d-interactive', 'crop')).toBe(false);
+    expect(showsOrbitView('relief', '3d-shaded', 'pan')).toBe(false);
+    expect(showsOrbitView('photo', '3d-interactive', 'pan')).toBe(false);
+    expect(showsOrbitView('vector', '3d-interactive', 'pan')).toBe(false);
   });
 });

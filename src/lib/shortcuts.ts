@@ -8,6 +8,7 @@ import { useDocumentStore } from '../store/documentStore';
 import { useUIStore } from '../store/uiStore';
 import { useViewStore } from '../store/viewStore';
 import { openImagePicker } from './open-image';
+import { showsOrbitView } from './workflows';
 
 export type ShortcutCommand =
   | 'undo'
@@ -154,6 +155,16 @@ export function shortcutToRun(press: KeyPress, focused: FocusedElement | null): 
 }
 
 /**
+ * True when the canvas shows the flat image, which the view commands act on.
+ * The 3D orbit view of the relief ignores zoom, rulers, split, inversion and
+ * guides, so those are unavailable while it is shown (#53).
+ */
+export function canvasIsFlat(): boolean {
+  const doc = useDocumentStore.getState().doc;
+  return !showsOrbitView(useUIStore.getState().job, doc?.depth.viewMode, useViewStore.getState().canvasTool);
+}
+
+/**
  * False when `command` does not apply now: nothing to undo or redo, no image
  * to export, no dialog to close. The key then keeps its default action.
  */
@@ -171,7 +182,14 @@ export function isAvailable(command: ShortcutCommand): boolean {
       return docs.doc !== null;
     // The vector job's canvas shows the image the trace reads: there is no before and after.
     case 'toggleSplit':
-      return ui.job !== 'vector';
+      return ui.job !== 'vector' && canvasIsFlat();
+    case 'zoomIn':
+    case 'zoomOut':
+    case 'fit':
+    case 'actualSize':
+    case 'toggleRulers':
+    case 'toggleInvertedView':
+      return canvasIsFlat();
     // Escape in the crop tool is handled by the crop overlay.
     case 'closeDialog':
       return ui.isShortcutsDialogOpen || ui.isSizeDialogOpen || ui.isTestGridDialogOpen;

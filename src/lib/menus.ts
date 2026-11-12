@@ -3,14 +3,15 @@
  * that it does something. An item is enabled only when it would: Zoom with no
  * image, Split View in the vector job (whose canvas shows the image the trace
  * reads, so there is no before and after) and Trace Overlay with no trace are
- * disabled rather than doing nothing.
+ * disabled rather than doing nothing. So are the view items while the relief's
+ * 3D orbit view is shown, since it draws none of them.
  */
 import { useDocumentStore } from '../store/documentStore';
 import { useRenderStore } from '../store/renderStore';
 import { useUIStore } from '../store/uiStore';
 import { useViewStore, type SubstrateMask } from '../store/viewStore';
 import { resetAll } from './document';
-import { isAvailable, menuShortcut, runCommand, type ShortcutCommand } from './shortcuts';
+import { canvasIsFlat, isAvailable, menuShortcut, runCommand, type ShortcutCommand } from './shortcuts';
 
 export interface MenuItem {
   id: string;
@@ -47,7 +48,7 @@ function guideItem(id: string, label: string, mask: SubstrateMask, needsSize = f
   return {
     id,
     label,
-    enabled: () => hasDoc() && (!needsSize || docs().doc?.mmPerPx != null),
+    enabled: () => hasDoc() && canvasIsFlat() && (!needsSize || docs().doc?.mmPerPx != null),
     checked: () => view().substrateMask === mask,
     run: () => view().setSubstrateMask(view().substrateMask === mask ? 'none' : mask),
     disabledReason: needsSize ? 'Set the size to use this: its corners are in mm' : undefined,

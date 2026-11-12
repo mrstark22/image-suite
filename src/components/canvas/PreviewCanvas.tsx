@@ -8,7 +8,7 @@ import { fitsDimensions } from '../../lib/crop';
 import { fromCentre } from '../../lib/viewport';
 import { isTypingTarget } from '../../lib/shortcuts';
 import { useUIStore } from '../../store/uiStore';
-import { canvasImage } from '../../lib/workflows';
+import { canvasImage, showsOrbitView } from '../../lib/workflows';
 import { DropZone } from '../shared/DropZone';
 import { DepthViewer3D } from './DepthViewer3D';
 import { CanvasRulers } from './CanvasRulers';
@@ -24,7 +24,8 @@ export const PreviewCanvas: React.FC = () => {
   const source = useRenderStore((s) => s.source);
   const previewBuffer = source?.buffer ?? null;
   // What the job's output is made from: in the vector job, the image the trace reads.
-  const shows = useUIStore((s) => canvasImage(s.job));
+  const job = useUIStore((s) => s.job);
+  const shows = canvasImage(job);
   const processedRender = useRenderStore((s) => s.processed);
   const processedBuffer = shows === 'source' ? previewBuffer : processedRender;
   const depthHeightMapBuffer = useRenderStore((s) => s.depthHeightMap);
@@ -289,7 +290,8 @@ export const PreviewCanvas: React.FC = () => {
   }
 
   // Interactive 3D orbit view of the relief
-  if (shows === 'relief' && depthConfig.viewMode === '3d-interactive') {
+  // (not while cropping: the crop box is drawn on the flat relief).
+  if (showsOrbitView(job, depthConfig.viewMode, canvasTool)) {
     return (
       <div className={styles.canvasContainer}>
         <DepthViewer3D
