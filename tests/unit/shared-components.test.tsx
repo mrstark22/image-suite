@@ -356,6 +356,15 @@ describe('DocumentSlider: one undo step per change', () => {
     press('Delete', {}, range);
     expect(currentDoc().steps.tonal.brightness).toBe(0);
     expect(useDocumentStore.getState().past).toHaveLength(2);
+    // The drag is over for the slider too: a value typed next is an edit of its
+    // own, not a change to the dead drag that the store would ignore.
+    const field = one<HTMLInputElement>(container, 'input[type=number]');
+    field.focus();
+    setInputValue(field, '12');
+    press('Enter', {}, field);
+    expect(currentDoc().steps.tonal.brightness).toBe(12);
+    expect(useDocumentStore.getState().past).toHaveLength(3);
+    useDocumentStore.getState().undo();
     useDocumentStore.getState().undo();
     expect(currentDoc().steps.tonal.brightness).toBe(30);
   });

@@ -281,6 +281,13 @@ describe('every control in the migrated panels is reachable and named', () => {
         expect(inaccessibleControls(container), `${source} ${viewMode}`).toEqual([]);
       }
     }
+    // Each group of cards says which card is chosen: the last view mode and source set.
+    const pressed = [...container.querySelectorAll('[aria-pressed=true]')].map((b) => accessibleName(b));
+    expect(pressed).toEqual([
+      expect.stringMatching(/^Raw 2D Grayscale/),
+      expect.stringMatching(/^Vector & Logo Bevel/),
+      expect.stringMatching(/^Prismatic/),
+    ]);
     const invert = one<HTMLInputElement>(container, 'input[type=checkbox]');
     expect(accessibleName(invert)).toBe('Invert Z-Axis Height');
     expect(invert.getAttribute('aria-describedby')).toBeTruthy();
