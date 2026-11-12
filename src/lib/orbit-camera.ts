@@ -55,6 +55,41 @@ export function dollyBy(camera: OrbitCamera, factor: number): OrbitCamera {
   return { ...camera, distance: clamp(camera.distance * factor, MIN_DISTANCE, MAX_DISTANCE) };
 }
 
+/** Degrees one arrow key orbits the focused 3D view (#81); Shift orbits `ORBIT_KEY_STEP_LARGE`. */
+export const ORBIT_KEY_STEP = 15;
+export const ORBIT_KEY_STEP_LARGE = 45;
+/** The distance factor of one + or - key: + moves in by this much, - out. */
+export const DOLLY_KEY_FACTOR = 1.25;
+
+/**
+ * The camera after the key `press` on the focused 3D view (#81), or null for
+ * a key the view does not use. The arrows move the camera: Left and Right
+ * around the surface (Right takes it to the right, as a drag to the left
+ * does), Up towards the top view and Down towards a side view. + and = move
+ * in, - and _ move out, as the wheel does.
+ */
+export function cameraForKey(camera: OrbitCamera, press: { key: string; shiftKey: boolean }): OrbitCamera | null {
+  const step = (press.shiftKey ? ORBIT_KEY_STEP_LARGE : ORBIT_KEY_STEP) / ORBIT_DEG_PER_PX;
+  switch (press.key) {
+    case 'ArrowLeft':
+      return orbitBy(camera, step, 0);
+    case 'ArrowRight':
+      return orbitBy(camera, -step, 0);
+    case 'ArrowUp':
+      return orbitBy(camera, 0, step);
+    case 'ArrowDown':
+      return orbitBy(camera, 0, -step);
+    case '+':
+    case '=':
+      return dollyBy(camera, 1 / DOLLY_KEY_FACTOR);
+    case '-':
+    case '_':
+      return dollyBy(camera, DOLLY_KEY_FACTOR);
+    default:
+      return null;
+  }
+}
+
 /**
  * The camera after two fingers move from `start` to `now`, beginning from
  * `camera`. Spreading the fingers brings the surface closer by the same

@@ -130,3 +130,18 @@
     justify-content: center;
   }
 }
+
+/* Focused from the keyboard, the view orbits with the arrow keys (#81). */
+.viewerContainer:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+
+.visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}

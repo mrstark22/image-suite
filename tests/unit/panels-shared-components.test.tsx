@@ -678,10 +678,11 @@ describe('inline styles (#55)', () => {
       'src/components/shared/Slider.tsx <label> onDoubleClick': 'Delete on the track',
       // The backdrop closes the dialog; Escape does the same. The second stops clicks inside from reaching it.
       'src/components/shared/Dialog.tsx <div> onClick': 'Escape',
-      // Panning the canvas: no keyboard path yet (#81).
-      'src/components/canvas/PreviewCanvas.tsx <div> onPointerDown': '#81; the split divider also has arrow keys',
-      // Orbiting the 3D view: no keyboard path yet (#81).
-      'src/components/canvas/DepthViewer3D.tsx <div> onPointerDown': '#81',
+      // Panning the canvas: the canvas takes focus and the arrow keys pan it (#81).
+      'src/components/canvas/PreviewCanvas.tsx <div> onPointerDown':
+        'arrow keys on the focused canvas; the split divider has its own arrow keys',
+      // Orbiting the 3D view: the view takes focus; arrows orbit, + and - zoom (#81).
+      'src/components/canvas/DepthViewer3D.tsx <div> onPointerDown': 'arrow keys and + / - on the focused 3D view',
       // Moving and sizing the crop box: the box takes focus; arrows move it and
       // Shift+arrows size it (#79). Enter applies, Escape cancels.
       'src/components/canvas/CanvasCropOverlay.tsx <div> onPointerDown': 'arrow keys on the focused crop box',

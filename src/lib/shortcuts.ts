@@ -52,8 +52,17 @@ export const SHORTCUT_GROUPS: { category: string; items: Shortcut[] }[] = [
       { keys: 'H', desc: 'Pan Tool', command: 'panTool' },
       { keys: 'C', desc: 'Crop Tool', command: 'cropTool' },
       { keys: 'Space + Drag', desc: 'Pan While Held, With Any Tool', handledBy: 'PreviewCanvas' },
-      { keys: 'Arrows', desc: 'Move the Crop Box (While It Has Focus)', handledBy: 'CanvasCropOverlay' },
-      { keys: 'Shift + Arrows', desc: 'Size the Crop Box From Its Bottom-Right Corner', handledBy: 'CanvasCropOverlay' },
+      // The arrows act on whichever of these has focus (Tab to it, or click it).
+      {
+        keys: 'Arrows',
+        desc: 'Pan the Canvas / Move the Crop Box / Orbit the 3D View (Whichever Has Focus)',
+        handledBy: 'PreviewCanvas, CanvasCropOverlay, DepthViewer3D',
+      },
+      {
+        keys: 'Shift + Arrows',
+        desc: 'Pan Further / Size the Crop Box From Its Bottom-Right Corner / Orbit Further',
+        handledBy: 'PreviewCanvas, CanvasCropOverlay, DepthViewer3D',
+      },
       { keys: 'Alt + Arrows', desc: 'Move or Size the Crop Box by 1 px', handledBy: 'CanvasCropOverlay' },
       { keys: 'Enter', desc: 'Apply Crop', handledBy: 'CanvasCropOverlay' },
       { keys: 'Esc', desc: 'Cancel Crop / Close Dialog', command: 'closeDialog', handledBy: 'CanvasCropOverlay' },
@@ -64,6 +73,7 @@ export const SHORTCUT_GROUPS: { category: string; items: Shortcut[] }[] = [
     items: [
       { keys: 'Ctrl + +', desc: 'Zoom In', command: 'zoomIn' },
       { keys: 'Ctrl + -', desc: 'Zoom Out', command: 'zoomOut' },
+      { keys: '+ / -', desc: 'Zoom the Focused 3D View In / Out', handledBy: 'DepthViewer3D' },
       { keys: 'Ctrl + 0', desc: 'Fit to Screen', command: 'fit' },
       { keys: 'Ctrl + 1', desc: 'Actual Size (100%)', command: 'actualSize' },
       { keys: 'Ctrl + R', desc: 'Toggle Physical Rulers', command: 'toggleRulers' },
