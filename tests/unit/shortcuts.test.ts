@@ -6,7 +6,10 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   SHORTCUT_GROUPS,
   commandFor,
+  isTypingTarget,
   menuShortcut,
+  shortcutToRun,
+  type FocusedElement,
   runCommand,
   type KeyPress,
   type ShortcutCommand,
@@ -130,5 +133,44 @@ describe('shortcuts', () => {
   it('Go to Export and Close Dialog do nothing, and keep the key, when they do not apply', () => {
     expect(runCommand('export')).toBe(false);
     expect(runCommand('closeDialog')).toBe(false);
+  });
+
+  /** A focused element as the handler sees it. */
+  function focused(tagName: string, type?: string): FocusedElement {
+    return { tagName, getAttribute: (name) => (name === 'type' ? (type ?? null) : null) };
+  }
+
+  // A slider keeps focus after it is dragged, the most common state of the
+  // app; a checkbox or button keeps focus after a click (review of #75).
+  const notTyping = [focused('INPUT', 'range'), focused('INPUT', 'checkbox'), focused('BUTTON'), focused('BODY')];
+
+  it('with a slider, checkbox or button focused, every listed shortcut still runs', () => {
+    for (const el of notTyping) {
+      expect(isTypingTarget(el), `${el.tagName} ${el.getAttribute('type')}`).toBe(false);
+      for (const item of listed.filter((i) => i.command)) {
+        expect(shortcutToRun(pressOf(item.keys), el), `${item.keys} with ${el.getAttribute('type') ?? el.tagName} focused`).toBe(
+          item.command
+        );
+      }
+    }
+  });
+
+  it('in a text or number field, Ctrl shortcuts and Esc run but the single keys are left to the field', () => {
+    for (const el of [focused('INPUT', 'number'), focused('INPUT'), focused('INPUT', 'text'), focused('TEXTAREA')]) {
+      expect(isTypingTarget(el)).toBe(true);
+      for (const item of listed.filter((i) => i.command)) {
+        const press = pressOf(item.keys);
+        const expected = press.mod || press.key === 'Escape' ? item.command : null;
+        expect(shortcutToRun(press, el), `${item.keys} in ${el.tagName} ${el.getAttribute('type')}`).toBe(expected);
+      }
+    }
+  });
+
+  it('Esc in the size dialog’s number field closes the dialog', () => {
+    useUIStore.getState().setSizeDialogOpen(true);
+    const command = shortcutToRun({ key: 'Escape', mod: false, shift: false }, focused('INPUT', 'number'));
+    expect(command).toBe('closeDialog');
+    expect(runCommand(command!)).toBe(true);
+    expect(useUIStore.getState().isSizeDialogOpen).toBe(false);
   });
 });

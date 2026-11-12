@@ -112,16 +112,45 @@ export function commandFor(press: KeyPress): ShortcutCommand | null {
   return null;
 }
 
-/** Commands that also apply while typing in a field. */
+/**
+ * Commands that also apply while a text field has focus: everything with
+ * Ctrl or Cmd, which typing does not produce, and Escape. The single keys
+ * (H, C, ?) would be typed text, so they leave a text field alone.
+ */
 export function appliesWhileTyping(command: ShortcutCommand): boolean {
-  return command === 'undo' || command === 'redo';
+  return command !== 'panTool' && command !== 'cropTool' && command !== 'showShortcuts';
 }
 
-/** True when `el` takes typed text, so single-key shortcuts and Space must leave it alone. */
-export function isTypingTarget(el: Element | null): boolean {
+/** Input types that take typed text. Others (range, checkbox, button, colour, file) do not. */
+const TEXT_INPUT_TYPES = new Set([
+  'text', 'search', 'email', 'url', 'tel', 'password', 'number',
+  'date', 'datetime-local', 'month', 'week', 'time',
+]);
+
+/** The parts of a focused element that `isTypingTarget` reads. */
+export interface FocusedElement {
+  tagName: string;
+  getAttribute(name: string): string | null;
+}
+
+/**
+ * True when `el` takes typed text, so single-key shortcuts and Space must
+ * leave it alone. A slider or a checkbox keeps focus after it is used, and
+ * does not count: the shortcuts work as if nothing had focus.
+ */
+export function isTypingTarget(el: FocusedElement | null): boolean {
   if (!el) return false;
-  const tag = el.tagName;
-  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el.getAttribute('contenteditable') === 'true';
+  const tag = el.tagName.toUpperCase();
+  if (tag === 'INPUT') return TEXT_INPUT_TYPES.has((el.getAttribute('type') ?? 'text').toLowerCase());
+  return tag === 'TEXTAREA' || tag === 'SELECT' || el.getAttribute('contenteditable') === 'true';
+}
+
+/** The command a key press runs with `focused` holding focus, or null if it is left alone. */
+export function shortcutToRun(press: KeyPress, focused: FocusedElement | null): ShortcutCommand | null {
+  const command = commandFor(press);
+  if (!command) return null;
+  if (isTypingTarget(focused) && !appliesWhileTyping(command)) return null;
+  return command;
 }
 
 /**
