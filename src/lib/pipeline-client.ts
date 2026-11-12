@@ -10,6 +10,8 @@ export type Pipeline = Pick<
   | 'renderPreview'
   | 'renderRelief'
   | 'traceDocument'
+  | 'exportRaster'
+  | 'cancelExport'
   | 'processDepth'
   | 'processBgRemoval'
 >;

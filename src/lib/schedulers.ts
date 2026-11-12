@@ -21,6 +21,9 @@ const SPINNER_DELAY_MS = 100;
 
 const render = () => useRenderStore.getState();
 
+/** False while a raster export runs: renders wait for it (design section 5), and run when it ends. */
+const notExporting = () => render().exportProgress === null;
+
 /** Background removal's pixels, when they belong to the render `doc` would use now. */
 function removalFor(doc: ImageDocument): ArrayBuffer | undefined {
   const removal = render().backgroundRemoval;
@@ -64,7 +67,7 @@ export function createSchedulers(pipeline: () => Pipeline): Schedulers {
   const preview = new RenderScheduler({
     select: (doc: ImageDocument) => [doc.source, doc.mmPerPx, doc.steps, render().backgroundRemoval] as const,
     // On the 3D tab the relief is shown instead.
-    enabled: () => ui().activeTab !== 'depth',
+    enabled: () => ui().activeTab !== 'depth' && notExporting(),
     buildRequest: renderRequest,
     run: withSpinner((req: DocumentRenderRequest) => pipeline().renderPreview(req)),
     commit: (res: PreviewRenderResult) => {
@@ -84,7 +87,8 @@ export function createSchedulers(pipeline: () => Pipeline): Schedulers {
     select: (doc: ImageDocument) =>
       [doc.source, doc.steps.crop, doc.vector, render().traceRequest, render().backgroundRemoval] as const,
     // Waits for a gesture to end, so a slider drag does not trace every step.
-    enabled: () => ui().activeTab === 'vector' && render().autoTrace && useDocumentStore.getState().gesture === null,
+    enabled: () =>
+      ui().activeTab === 'vector' && render().autoTrace && useDocumentStore.getState().gesture === null && notExporting(),
     buildRequest: (doc: ImageDocument): TraceRequest => ({
       doc,
       target: previewTarget(doc),
@@ -97,7 +101,7 @@ export function createSchedulers(pipeline: () => Pipeline): Schedulers {
 
   const relief = new RenderScheduler({
     select: (doc: ImageDocument) => [doc.source, doc.steps.crop, doc.depth, render().backgroundRemoval] as const,
-    enabled: () => ui().activeTab === 'depth',
+    enabled: () => ui().activeTab === 'depth' && notExporting(),
     buildRequest: renderRequest,
     run: withSpinner((req: DocumentRenderRequest) => pipeline().renderRelief(req)),
     commit: (res: ReliefRenderResult) => {
@@ -142,7 +146,8 @@ export function connectSchedulers(schedulers: Schedulers, pipeline: () => Pipeli
       const changed =
         state.backgroundRemoval !== prev.backgroundRemoval ||
         state.traceRequest !== prev.traceRequest ||
-        state.autoTrace !== prev.autoTrace;
+        state.autoTrace !== prev.autoTrace ||
+        (state.exportProgress === null) !== (prev.exportProgress === null);
       if (changed) for (const s of all) s.refresh();
     }),
     useUIStore.subscribe((state, prev) => {

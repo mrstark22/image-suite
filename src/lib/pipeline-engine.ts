@@ -186,6 +186,39 @@ export class PipelineEngine {
     }
   }
 
+  /**
+   * Renders `doc` at `target`, up to `stage`, and hands the pixels to
+   * `consume` without copying them out of WASM memory: export encodes them
+   * from there (design section 5). Nothing is cached. `consume` gets a
+   * function returning a fresh view, to be called again after anything that
+   * can grow memory. The render is freed when `consume` settles.
+   *
+   * `boundary` is awaited before preparing the source and before steps 4 to
+   * 6, the points where a long render can report progress or be stopped (by
+   * throwing).
+   */
+  async renderInPlace<T>(
+    doc: ImageDocument,
+    target: RenderTarget,
+    stage: Stage,
+    consume: (pixels: () => Uint8Array, pxPerMm: number | null) => Promise<T>,
+    boundary: (step: 'preparing' | 'processing') => Promise<void> = async () => undefined
+  ): Promise<T> {
+    const pxPerMm = pxPerMmOf(doc, target);
+    const bytes = target.widthPx * target.heightPx * 4;
+    await boundary('preparing');
+    const ptr = this.prepare(doc, target);
+    try {
+      if (stage !== 'source') {
+        await boundary('processing');
+        this.core.processInPlace(ptr, toRunParams(doc.steps, pxPerMm, target, stage));
+      }
+      return await consume(() => new Uint8Array(this.core.wasm.memory.buffer, ptr, bytes), pxPerMm);
+    } finally {
+      this.core.wasm.deallocate(ptr, bytes);
+    }
+  }
+
   /** The cached `source`-stage render of `doc` at `target`, computing it if needed. */
   private cachedSourceStage(doc: ImageDocument, target: RenderTarget): Held & { key: string } {
     const key = sourceStageKey(doc, target);

@@ -21,7 +21,7 @@ import {
 } from '../../src/lib/document';
 import { cropRectOf, dpiOf, exportResolution, mmPerPxForLength, physicalSize } from '../../src/lib/document-size';
 import { previewBoxToSource, type PreviewSource } from '../../src/lib/crop';
-import { previewTarget, pxPerMmOf } from '../../src/lib/render-target';
+import { exportPlan, previewTarget, pxPerMmOf } from '../../src/lib/render-target';
 import { nearestOddAtLeast3, toRunParams } from '../../src/lib/run-params';
 import { currentDoc, labelledImage, openPhoto, PHOTO, previewMismatches, resetStores } from '../helpers/documents';
 import { loadPixels, startTestPipeline, type TestPipeline } from '../helpers/pipeline';
@@ -270,8 +270,14 @@ describe('size not set', () => {
 
   it('export refuses while the size is not set, and works once it is set', () => {
     expect(() => exportResolution(currentDoc(), 2048)).toThrow(/Set the size/);
+    expect(() => exportPlan(currentDoc())).toThrow(/Set the size/);
     store().edit(setScale(25.4 / 300));
-    // The preview-sized file carries the DPI that keeps the document's 508 mm width.
+    // The export is the 6000 px original at 300 DPI: the document's 508 mm width (#17).
+    const plan = exportPlan(currentDoc());
+    expect(plan.target).toEqual({ widthPx: 6000, heightPx: 4000 });
+    expect(plan.dpi).toBeCloseTo(300, 9);
+    expect(plan.widthMm).toBeCloseTo(508, 9);
+    // A preview-sized render (the trace and heightmap, until phase 2 and 4) carries the DPI that keeps that width.
     const { dpi } = exportResolution(currentDoc(), 2048);
     expect(dpi).toBeCloseTo(2048 / (508 / 25.4), 9);
     expect((2048 / dpi) * 25.4).toBeCloseTo(508, 9);

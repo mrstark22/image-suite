@@ -1,6 +1,6 @@
 import type { ImageDocument } from '../types/document';
 import type { RenderTarget } from '../types/render';
-import { cropRectOf, physicalSize } from './document-size';
+import { cropRectOf, exportResolution, physicalSize } from './document-size';
 
 /** Longest edge of the interactive preview, in pixels. */
 export const PREVIEW_MAX_EDGE = 2048;
@@ -24,6 +24,27 @@ export function previewTarget(doc: ImageDocument, maxEdge = PREVIEW_MAX_EDGE): R
 export function nativeTarget(doc: ImageDocument): RenderTarget {
   const crop = cropRectOf(doc);
   return { widthPx: crop.width, heightPx: crop.height };
+}
+
+/** What a raster export writes: its pixel size, its resolution and the physical size they give. */
+export interface ExportPlan {
+  target: RenderTarget;
+  pxPerMm: number;
+  dpi: number;
+  widthMm: number;
+  heightMm: number;
+}
+
+/**
+ * The raster export of `doc`: the crop at the source's full resolution, at
+ * the resolution that gives it the document's physical size. The Export panel
+ * shows this and the worker renders it, so the size shown is the size
+ * written. Throws while the size is not set.
+ */
+export function exportPlan(doc: ImageDocument): ExportPlan {
+  const target = nativeTarget(doc);
+  const { dpi, pxPerMm } = exportResolution(doc, target.widthPx);
+  return { target, pxPerMm, dpi, widthMm: target.widthPx / pxPerMm, heightMm: target.heightPx / pxPerMm };
 }
 
 /** Pixels per millimetre of a render at `target`, or `null` while the size is not set. */
