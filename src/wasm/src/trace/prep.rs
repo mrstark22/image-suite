@@ -7,8 +7,8 @@
 /// where the local variance is far above `eps`, pixels keep their value. Every
 /// step is a box filter computed with running sums, so the cost does not
 /// depend on the radius (#32: the old bilateral filter took about 22 s).
-pub fn guided_denoise(rgba: &mut [u8], w: usize, h: usize, radius: usize) {
-    if radius == 0 || w == 0 || h == 0 {
+pub fn guided_denoise(rgba: &mut [u8], w: usize, h: usize, radius: f64) {
+    if radius <= 0.0 || w == 0 || h == 0 {
         return;
     }
     // Variance (in 8-bit levels squared) below which a window counts as flat: about 50 levels of noise.
@@ -21,22 +21,23 @@ pub fn guided_denoise(rgba: &mut [u8], w: usize, h: usize, radius: usize) {
     let mut a = vec![0.0f32; n];
     let mut b = vec![0.0f32; n];
     let mut tmp = vec![0.0f32; n];
+    let mut tmp2 = vec![0.0f32; n];
     for c in 0..3 {
         for k in 0..n {
             let v = rgba[k * 4 + c] as f32;
             i_ch[k] = v;
             ii[k] = v * v;
         }
-        box_filter(&i_ch, &mut mean_i, &mut tmp, w, h, radius);
-        box_filter(&ii, &mut mean_ii, &mut tmp, w, h, radius);
+        box_mean(&i_ch, &mut mean_i, &mut tmp, &mut tmp2, w, h, radius);
+        box_mean(&ii, &mut mean_ii, &mut tmp, &mut tmp2, w, h, radius);
         for k in 0..n {
             let var = (mean_ii[k] - mean_i[k] * mean_i[k]).max(0.0);
             a[k] = var / (var + eps);
             b[k] = mean_i[k] - a[k] * mean_i[k];
         }
         // Average the coefficients over the window, reusing the mean buffers.
-        box_filter(&a, &mut mean_i, &mut tmp, w, h, radius);
-        box_filter(&b, &mut mean_ii, &mut tmp, w, h, radius);
+        box_mean(&a, &mut mean_i, &mut tmp, &mut tmp2, w, h, radius);
+        box_mean(&b, &mut mean_ii, &mut tmp, &mut tmp2, w, h, radius);
         for k in 0..n {
             let q = mean_i[k] * i_ch[k] + mean_ii[k];
             rgba[k * 4 + c] = q.round().clamp(0.0, 255.0) as u8;
@@ -69,6 +70,36 @@ pub fn median3(rgba: &mut [u8], w: usize, h: usize) {
                 rgba[(y * w + x) * 4 + c] = win[4];
             }
         }
+    }
+}
+
+/// Mean of `src` over a window of fractional radius `r`: the means over the
+/// whole-pixel radii either side, mixed by the fraction. So the smoothing
+/// grows smoothly with the radius, and a radius under a pixel (a small
+/// setting at preview resolution) still does something (review of #84).
+fn box_mean(
+    src: &[f32],
+    dst: &mut [f32],
+    tmp: &mut [f32],
+    lower: &mut [f32],
+    w: usize,
+    h: usize,
+    r: f64,
+) {
+    let k = r.floor() as usize;
+    let f = (r - k as f64) as f32;
+    if k == 0 {
+        lower.copy_from_slice(src);
+    } else {
+        box_filter(src, lower, tmp, w, h, k);
+    }
+    if f == 0.0 {
+        dst.copy_from_slice(lower);
+        return;
+    }
+    box_filter(src, dst, tmp, w, h, k + 1);
+    for (d, l) in dst.iter_mut().zip(lower.iter()) {
+        *d = *l * (1.0 - f) + *d * f;
     }
 }
 

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Download, CheckCircle, FileCode, Box } from 'lucide-react';
 import { useDocumentStore } from '../../store/documentStore';
-import { useRenderStore } from '../../store/renderStore';
+import { traceIsCurrent, useRenderStore } from '../../store/renderStore';
 import { useUIStore } from '../../store/uiStore';
 import { encodePngGrayscale16 } from '../../lib/png-encoder';
 import { traceForExport, vectorExportSource, vectorFile, type VectorFormat } from '../../lib/vector-file-export';
@@ -58,7 +58,9 @@ export const ExportPanel: React.FC = () => {
   const processedBuffer = useRenderStore((s) => s.processed);
   const depthHeightMapBuffer = useRenderStore((s) => s.depthHeightMap);
   const vectorResult = useRenderStore((s) => s.vectorResult);
-  const tracedVector = useRenderStore((s) => s.tracedVector);
+  const tracedInputs = useRenderStore((s) => s.tracedInputs);
+  const isVectorStale = useRenderStore((s) => s.isVectorStale);
+  const isTracing = useRenderStore((s) => s.isTracing);
   const backgroundRemoval = useRenderStore((s) => s.backgroundRemoval);
   const progress = useRenderStore((s) => s.exportProgress);
   const job = useUIStore((s) => s.job);
@@ -121,11 +123,15 @@ export const ExportPanel: React.FC = () => {
   };
 
   const vectorSource = vectorResult
-    ? vectorExportSource(vectorResult, tracedVector !== null, backgroundRemoval !== null)
+    ? vectorExportSource(vectorResult, tracedInputs !== null, backgroundRemoval !== null)
     : null;
 
+  // The file must be what is on screen: no export of a trace older than the document (review of #84).
+  const traceCurrent = vectorResult !== null && !isVectorStale && !isTracing && traceIsCurrent();
+  const canExportVector = vectorResult !== null && vectorResult.pxPerMm !== null && traceCurrent && vectorBusy === null;
+
   const handleVectorExport = async (fmt: VectorFormat) => {
-    if (!vectorResult || !vectorSource || vectorBusy) return;
+    if (!vectorResult || !vectorSource || !canExportVector) return;
     setVectorBusy(fmt);
     setVectorError(null);
     try {
@@ -233,19 +239,26 @@ export const ExportPanel: React.FC = () => {
           <div className={styles.buttonRow}>
             <Button
               icon={<Download size={14} />}
-              disabled={!vectorResult || vectorResult.pxPerMm === null || vectorBusy !== null}
+              disabled={!canExportVector}
               onClick={() => void handleVectorExport('svg')}
             >
               SVG
             </Button>
             <Button
               icon={<FileCode size={14} />}
-              disabled={!vectorResult || vectorResult.pxPerMm === null || vectorBusy !== null}
+              disabled={!canExportVector}
               onClick={() => void handleVectorExport('dxf')}
             >
               DXF
             </Button>
           </div>
+          {vectorResult && !traceCurrent && (
+            <StatusMessage tone="warning" className={styles.stackGap}>
+              {isTracing
+                ? 'Tracing… the files can be saved when it finishes.'
+                : 'The image or settings changed since the last trace: go back to the Trace step and trace again.'}
+            </StatusMessage>
+          )}
           {vectorBusy && (
             <Progress className={styles.stackGap} label="Tracing at full resolution" fraction={null} />
           )}

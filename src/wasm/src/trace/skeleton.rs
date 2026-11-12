@@ -26,62 +26,110 @@ use std::collections::{HashMap, HashSet};
 
 /// Thins `mask` (true for stroke pixels) in place to a one-pixel skeleton,
 /// only within `bbox` = (x0, y0, x1, y1) inclusive.
+///
+/// Only a pixel on the border of the shape can be removed, so each pass looks
+/// at the current border alone: the border pixels kept from the last pass and
+/// the neighbours of the pixels it removed. The work is proportional to the
+/// pixels removed, not to the area times the number of passes (a solid
+/// 2048 px square took 41.6 s when every pass rescanned the box; #27, review
+/// of #84).
 pub fn thin(mask: &mut [bool], w: usize, h: usize, bbox: (usize, usize, usize, usize)) {
     let (x0, y0, x1, y1) = bbox;
+    if x0 > x1 || y0 > y1 {
+        return;
+    }
     let get = |m: &[bool], x: isize, y: isize| -> bool {
         x >= 0 && y >= 0 && (x as usize) < w && (y as usize) < h && m[y as usize * w + x as usize]
     };
+    let ring = |m: &[bool], i: usize| -> [bool; 8] {
+        let (xi, yi) = ((i % w) as isize, (i / w) as isize);
+        // P2..P9 clockwise from north.
+        [
+            get(m, xi, yi - 1),
+            get(m, xi + 1, yi - 1),
+            get(m, xi + 1, yi),
+            get(m, xi + 1, yi + 1),
+            get(m, xi, yi + 1),
+            get(m, xi - 1, yi + 1),
+            get(m, xi - 1, yi),
+            get(m, xi - 1, yi - 1),
+        ]
+    };
+    let in_box = |i: usize| {
+        let (x, y) = (i % w, i / w);
+        x >= x0 && x <= x1 && y >= y0 && y <= y1
+    };
+    // The border: pixels of the shape with a background pixel among their 8 neighbours.
+    let mut listed = vec![false; w * h];
+    let mut border: Vec<usize> = Vec::new();
+    for y in y0..=y1 {
+        for x in x0..=x1 {
+            let i = y * w + x;
+            if mask[i] && ring(mask, i).iter().any(|&v| !v) {
+                listed[i] = true;
+                border.push(i);
+            }
+        }
+    }
     let mut to_clear: Vec<usize> = Vec::new();
-    loop {
-        let mut changed = false;
-        for pass in 0..2 {
-            to_clear.clear();
-            for y in y0..=y1 {
-                for x in x0..=x1 {
-                    if !mask[y * w + x] {
+    let mut quiet_passes = 0;
+    let mut pass = 0usize;
+    while quiet_passes < 2 {
+        to_clear.clear();
+        for &i in &border {
+            let n = ring(mask, i);
+            let b = n.iter().filter(|&&v| v).count();
+            if !(2..=6).contains(&b) {
+                continue;
+            }
+            let a = (0..8).filter(|&k| !n[k] && n[(k + 1) % 8]).count();
+            if a != 1 {
+                continue;
+            }
+            let (p2, p4, p6, p8) = (n[0], n[2], n[4], n[6]);
+            let ok = if pass % 2 == 0 {
+                !(p2 && p4 && p6) && !(p4 && p6 && p8)
+            } else {
+                !(p2 && p4 && p8) && !(p2 && p6 && p8)
+            };
+            if ok {
+                to_clear.push(i);
+            }
+        }
+        if to_clear.is_empty() {
+            quiet_passes += 1;
+        } else {
+            quiet_passes = 0;
+            for &i in &to_clear {
+                mask[i] = false;
+            }
+            // The next border: what is left of this one, and the shape pixels next to what was removed.
+            let mut next: Vec<usize> = Vec::with_capacity(border.len() + to_clear.len());
+            for &i in &border {
+                listed[i] = false;
+            }
+            for &i in &border {
+                if mask[i] && !listed[i] {
+                    listed[i] = true;
+                    next.push(i);
+                }
+            }
+            for &i in &to_clear {
+                for (dx, dy) in RING {
+                    let (nx, ny) = ((i % w) as isize + dx, (i / w) as isize + dy);
+                    if nx < 0 || ny < 0 || nx as usize >= w || ny as usize >= h {
                         continue;
                     }
-                    let (xi, yi) = (x as isize, y as isize);
-                    // P2..P9 clockwise from north.
-                    let n = [
-                        get(mask, xi, yi - 1),
-                        get(mask, xi + 1, yi - 1),
-                        get(mask, xi + 1, yi),
-                        get(mask, xi + 1, yi + 1),
-                        get(mask, xi, yi + 1),
-                        get(mask, xi - 1, yi + 1),
-                        get(mask, xi - 1, yi),
-                        get(mask, xi - 1, yi - 1),
-                    ];
-                    let b = n.iter().filter(|&&v| v).count();
-                    if !(2..=6).contains(&b) {
-                        continue;
-                    }
-                    let a = (0..8).filter(|&i| !n[i] && n[(i + 1) % 8]).count();
-                    if a != 1 {
-                        continue;
-                    }
-                    let (p2, p4, p6, p8) = (n[0], n[2], n[4], n[6]);
-                    let ok = if pass == 0 {
-                        !(p2 && p4 && p6) && !(p4 && p6 && p8)
-                    } else {
-                        !(p2 && p4 && p8) && !(p2 && p6 && p8)
-                    };
-                    if ok {
-                        to_clear.push(y * w + x);
+                    let j = ny as usize * w + nx as usize;
+                    if mask[j] && !listed[j] && in_box(j) {
+                        listed[j] = true;
+                        next.push(j);
                     }
                 }
             }
-            if !to_clear.is_empty() {
-                changed = true;
-                for &i in &to_clear {
-                    mask[i] = false;
-                }
-            }
+            border = next;
         }
-        if !changed {
-            break;
-        }
+        pass += 1;
     }
 }
 
@@ -617,6 +665,99 @@ fn centre_chain(ch: &mut Chain, w: usize, h: usize, dt: &[f32], field: &Field) {
                 (d - hw - 0.5).max(0.0)
             };
             ch.pts[i] = p.add(dir.scale(reach));
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Plain Zhang-Suen, rescanning every pixel on every pass: the reference.
+    fn thin_reference(mask: &mut [bool], w: usize, h: usize) {
+        let get = |m: &[bool], x: isize, y: isize| -> bool {
+            x >= 0
+                && y >= 0
+                && (x as usize) < w
+                && (y as usize) < h
+                && m[y as usize * w + x as usize]
+        };
+        loop {
+            let mut changed = false;
+            for pass in 0..2 {
+                let mut clear = Vec::new();
+                for y in 0..h as isize {
+                    for x in 0..w as isize {
+                        if !get(mask, x, y) {
+                            continue;
+                        }
+                        let n = [
+                            get(mask, x, y - 1),
+                            get(mask, x + 1, y - 1),
+                            get(mask, x + 1, y),
+                            get(mask, x + 1, y + 1),
+                            get(mask, x, y + 1),
+                            get(mask, x - 1, y + 1),
+                            get(mask, x - 1, y),
+                            get(mask, x - 1, y - 1),
+                        ];
+                        let b = n.iter().filter(|&&v| v).count();
+                        let a = (0..8).filter(|&k| !n[k] && n[(k + 1) % 8]).count();
+                        let ok = if pass == 0 {
+                            !(n[0] && n[2] && n[4]) && !(n[2] && n[4] && n[6])
+                        } else {
+                            !(n[0] && n[2] && n[6]) && !(n[0] && n[4] && n[6])
+                        };
+                        if (2..=6).contains(&b) && a == 1 && ok {
+                            clear.push(y as usize * w + x as usize);
+                        }
+                    }
+                }
+                changed |= !clear.is_empty();
+                for i in clear {
+                    mask[i] = false;
+                }
+            }
+            if !changed {
+                break;
+            }
+        }
+    }
+
+    #[test]
+    fn border_thinning_matches_plain_zhang_suen() {
+        let mut seed = 12345u64;
+        let mut rnd = || {
+            seed = seed
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            (seed >> 33) as usize
+        };
+        for _ in 0..40 {
+            let (w, h) = (20 + rnd() % 40, 20 + rnd() % 40);
+            let mut mask = vec![false; w * h];
+            // A few overlapping rectangles and discs.
+            for _ in 0..1 + rnd() % 5 {
+                let (cx, cy, r) = (rnd() % w, rnd() % h, 2 + rnd() % 10);
+                let disc = rnd() % 2 == 0;
+                for y in 0..h {
+                    for x in 0..w {
+                        let (dx, dy) = (x as isize - cx as isize, y as isize - cy as isize);
+                        let inside = if disc {
+                            dx * dx + dy * dy <= (r * r) as isize
+                        } else {
+                            dx.abs() <= r as isize && dy.abs() <= (r / 2) as isize
+                        };
+                        if inside {
+                            mask[y * w + x] = true;
+                        }
+                    }
+                }
+            }
+            let mut expected = mask.clone();
+            thin_reference(&mut expected, w, h);
+            thin(&mut mask, w, h, (0, 0, w - 1, h - 1));
+            assert_eq!(mask, expected);
         }
     }
 }

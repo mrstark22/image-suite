@@ -62,12 +62,16 @@ export type CropHandle = 'move' | 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | '
 /** The crop box's smallest side, in preview pixels. */
 export const MIN_CROP_SIDE = 30;
 
+/** Width over height of each fixed crop aspect, or null for a free box. */
+const ASPECT_RATIO: Record<CropAspect, number | null> = { free: null, '1:1': 1, '4:3': 4 / 3, '16:9': 16 / 9, '3:2': 3 / 2 };
+
 /**
  * The box `box` becomes when `handle` is moved by (dx, dy) preview pixels in
  * an image of `dims`: the body moves the box, kept inside the image; an edge
  * or corner resizes it, no smaller than `MIN_CROP_SIDE` and no larger than
- * the image, then `ratio` sets the height from the width. Pointer drags and
- * the arrow keys both go through here (#79).
+ * the image. With a fixed `ratio`, the side the handle moved more sets the
+ * other, and the box shrinks as a whole to stay inside the image. Pointer
+ * drags and the arrow keys both go through here (#79).
  */
 export function adjustCropBox(
   box: CropRect,
@@ -96,16 +100,23 @@ export function adjustCropBox(
       y = Math.max(0, box.y + dy);
       h = box.height + (box.y - y);
     }
-    if (ratio === '1:1') {
-      const side = Math.min(w, h);
-      w = side;
-      h = side;
-    } else if (ratio === '4:3') {
-      h = Math.round(w * (3 / 4));
-    } else if (ratio === '16:9') {
-      h = Math.round(w * (9 / 16));
-    } else if (ratio === '3:2') {
-      h = Math.round(w * (2 / 3));
+    const aspect = ASPECT_RATIO[ratio];
+    if (aspect !== null) {
+      // The side the handle moved more drives the other, so every resize key
+      // and drag direction has an effect (review of #84).
+      const byHeight =
+        (handle.includes('n') || handle.includes('s')) &&
+        (!(handle.includes('e') || handle.includes('w')) || Math.abs(dy) > Math.abs(dx));
+      if (byHeight) w = h * aspect;
+      else h = w / aspect;
+      // Keep the box inside the image, shrinking both sides together.
+      const maxW = handle.includes('w') ? box.x + box.width : dims.width - x;
+      const maxH = handle.includes('n') ? box.y + box.height : dims.height - y;
+      const fit = Math.min(1, maxW / w, maxH / h);
+      w *= fit;
+      h *= fit;
+      if (handle.includes('w')) x = box.x + box.width - w;
+      if (handle.includes('n')) y = box.y + box.height - h;
     }
   }
 

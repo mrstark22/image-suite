@@ -214,13 +214,22 @@ describe('results in renderStore', () => {
     expect(render().replaceSourcePixels(result, from)).toBe(true);
   });
 
-  it('Reset All or a recipe that leaves the tracing settings equal does not mark the trace stale (review finding 8)', () => {
+  it('Reset All or a recipe that leaves what the trace reads equal does not mark the trace stale (review finding 8)', () => {
     render().setAutoTrace(false);
-    store().edit(setTonal({ contrast: 20 }));
     store().edit(resetAll);
     store().edit(applyRecipe({ version: RECIPE_VERSION, name: 'r', createdAt: 0, updatedAt: 0, steps: [] }));
     expect(render().isVectorStale).toBe(false);
     store().edit(setVector({ threshold: 60 }));
+    expect(render().isVectorStale).toBe(true);
+  });
+
+  it('an adjustment or a new size marks the trace stale too: the trace reads them (review of #84)', () => {
+    render().setAutoTrace(false);
+    store().edit(setTonal({ contrast: 20 }));
+    expect(render().isVectorStale).toBe(true);
+    render().setVectorResult(TRACE);
+    expect(render().isVectorStale).toBe(false);
+    store().edit(setScale(0.5));
     expect(render().isVectorStale).toBe(true);
   });
 

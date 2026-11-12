@@ -115,12 +115,17 @@ pub fn trace(rgba: &[u8], w: usize, h: usize, cfg: &TraceConfig) -> TraceResult 
         },
     };
 
-    let denoise_px = (cfg.denoise_mm * ppm).round() as usize;
+    let denoise_px = cfg.denoise_mm * ppm;
     let denoised;
-    let img: &[u8] = if denoise_px > 0 {
+    let img: &[u8] = if denoise_px > 0.0 {
         let mut copy = rgba[..w * h * 4].to_vec();
         prep::guided_denoise(&mut copy, w, h, denoise_px);
-        prep::median3(&mut copy, w, h);
+        // The median removes single pixels of grain, so it runs once the
+        // radius reaches a pixel: below that, a pixel is smaller than the
+        // setting asks to smooth.
+        if denoise_px >= 1.0 {
+            prep::median3(&mut copy, w, h);
+        }
         denoised = copy;
         &denoised
     } else {
@@ -129,12 +134,13 @@ pub fn trace(rgba: &[u8], w: usize, h: usize, cfg: &TraceConfig) -> TraceResult 
 
     let mut layers = Vec::new();
     let mut palette = Vec::new();
-    // The largest field value of any traced layer: positive inside any traced shape.
-    let mut union: Vec<f32> = vec![f32::MIN; w * h];
+    // For a cutline: the largest field value of any traced layer, positive
+    // inside any traced shape. Not held when there is no cutline.
+    let mut union: Option<Vec<f32>> = (cfg.cutline_mm > 0.0).then(|| vec![f32::MIN; w * h]);
     if !cfg.colour {
         let mut field = prep::mono_field(img, w, h, cfg.threshold, cfg.invert);
-        let paths = trace_layer(&mut field, w, h, &params);
-        union.copy_from_slice(&field);
+        let paths = trace_layer(&mut field, w, h, &params, union.as_deref_mut());
+        drop(field);
         layers.push(TracedLayer {
             name: "Ink".into(),
             rgb: [0, 0, 0],
@@ -159,6 +165,10 @@ pub fn trace(rgba: &[u8], w: usize, h: usize, cfg: &TraceConfig) -> TraceResult 
                 .map(|e| e.target.filter(|&t| t < n))
                 .collect()
         };
+        // The background: the layer covering most of the image's edge, when it
+        // covers more than half of it. A cutline goes around the artwork, not
+        // around the paper it is printed on (review of #84).
+        let background = background_colour(&seg, w, h);
         // Layers in order of size for an automatic palette, in palette order for a fixed one.
         let mut outputs: Vec<usize> = (0..n).filter(|&c| target[c] == Some(c)).collect();
         if cfg.palette.is_empty() {
@@ -174,10 +184,13 @@ pub fn trace(rgba: &[u8], w: usize, h: usize, cfg: &TraceConfig) -> TraceResult 
                 continue;
             }
             let mut field = colour::membership_field(&seg, &selected);
-            let paths = trace_layer(&mut field, w, h, &params);
-            for (u, v) in union.iter_mut().zip(&field) {
-                *u = u.max(*v);
-            }
+            let is_background = background.is_some_and(|b| target[b] == Some(out));
+            let into_union = if is_background {
+                None
+            } else {
+                union.as_deref_mut()
+            };
+            let paths = trace_layer(&mut field, w, h, &params, into_union);
             let rgb = cfg.palette.get(out).map(|e| e.rgb).unwrap_or(palette[out]);
             layers.push(TracedLayer {
                 name: format!("Colour {}", out + 1),
@@ -188,7 +201,7 @@ pub fn trace(rgba: &[u8], w: usize, h: usize, cfg: &TraceConfig) -> TraceResult 
         }
     }
 
-    if cfg.cutline_mm > 0.0 {
+    if let Some(union) = union {
         let paths = cutline(&union, w, h, cfg.cutline_mm * ppm, &params.fit);
         layers.push(TracedLayer {
             name: "Cutline".into(),
@@ -203,6 +216,64 @@ pub fn trace(rgba: &[u8], w: usize, h: usize, cfg: &TraceConfig) -> TraceResult 
         height: h,
         layers,
         palette,
+    }
+}
+
+/// The palette colour that is the main colour of most pixels along the image's
+/// edge, when it is more than half of them: the paper the artwork sits on.
+fn background_colour(seg: &colour::Segmentation, w: usize, h: usize) -> Option<usize> {
+    let mut counts = vec![0usize; seg.centres.len()];
+    let mut total = 0usize;
+    let mut count = |i: usize| {
+        let m = seg.mix[i];
+        counts[(if m.t < 0.5 { m.a } else { m.b }) as usize] += 1;
+        total += 1;
+    };
+    for x in 0..w {
+        count(x);
+        count((h - 1) * w + x);
+    }
+    for y in 1..h.saturating_sub(1) {
+        count(y * w);
+        count(y * w + w - 1);
+    }
+    let (best, n) = counts.iter().enumerate().max_by_key(|(_, &n)| n)?;
+    (2 * *n > total).then_some(best)
+}
+
+/// Bytes the tracer may need at once for a `w` x `h` image with `cfg`, used to
+/// refuse an image the device cannot hold instead of running out of memory
+/// part way (review of #84).
+pub fn memory_estimate(w: usize, h: usize, cfg: &TraceConfig) -> usize {
+    let n = w * h;
+    // A layer: its field, the inside mask, component labels, the distance
+    // transform, the skeleton mask and the thinning list, and the background
+    // labels when specks are removed.
+    let mut per_px = 4 + 1 + 4 + 4 + 1 + 1 + 4;
+    if cfg.denoise_mm > 0.0 {
+        per_px += 4 + 7 * 4; // the denoised copy and the guided filter's buffers
+    }
+    if cfg.colour {
+        per_px += 12 + 8 + 1; // Lab, the mixture and the fringe flag of every pixel
+    }
+    let mut bytes = n * per_px;
+    if cfg.cutline_mm > 0.0 {
+        let s = cutline_scale(w, h);
+        let margin = (cfg.cutline_mm * cfg.px_per_mm).ceil() as usize + 2;
+        let grid = (w * s + 2 * margin * s) * (h * s + 2 * margin * s);
+        bytes += 4 * n + grid * (1 + 4); // the union field, and the seed and distance grids
+    }
+    bytes
+}
+
+/// The cutline's distance transform runs at twice the resolution on images
+/// up to 4 MP, for accuracy, and at the image's own resolution above that,
+/// where a pixel is already small and memory is the limit.
+fn cutline_scale(w: usize, h: usize) -> usize {
+    if w * h <= 4_000_000 {
+        2
+    } else {
+        1
     }
 }
 
@@ -246,7 +317,13 @@ fn components(mask: &[bool], w: usize, h: usize, eight: bool) -> (Vec<u32>, Vec<
 
 /// Traces one layer's field. Specks and pinholes below the minimum area are
 /// removed from `field` first, so it ends as the field that was traced.
-fn trace_layer(field: &mut [f32], w: usize, h: usize, p: &LayerParams) -> Vec<TracedPath> {
+fn trace_layer(
+    field: &mut [f32],
+    w: usize,
+    h: usize,
+    p: &LayerParams,
+    union: Option<&mut [f32]>,
+) -> Vec<TracedPath> {
     let mut inside: Vec<bool> = field.iter().map(|&v| v > 0.0).collect();
 
     if p.min_area_px > 0.0 {
@@ -279,8 +356,13 @@ fn trace_layer(field: &mut [f32], w: usize, h: usize, p: &LayerParams) -> Vec<Tr
         }
     }
 
+    if let Some(u) = union {
+        for (u, v) in u.iter_mut().zip(field.iter()) {
+            *u = u.max(*v);
+        }
+    }
+
     let mut out = Vec::new();
-    let mut fill_field: Vec<f32> = field.to_vec();
     if p.shapes != Shapes::Outline {
         let (labels, areas) = components(&inside, w, h, true);
         let nc = areas.len();
@@ -356,9 +438,10 @@ fn trace_layer(field: &mut [f32], w: usize, h: usize, p: &LayerParams) -> Vec<Tr
                     chains_by[l] = chains;
                 }
             }
+            // The outlines are traced from the field with the strokes taken out.
             for i in 0..w * h {
                 if is_stroke[labels[i] as usize] {
-                    fill_field[i] = -fill_field[i].abs().max(1e-3);
+                    field[i] = -field[i].abs().max(1e-3);
                 }
             }
             for chains in chains_by {
@@ -374,11 +457,7 @@ fn trace_layer(field: &mut [f32], w: usize, h: usize, p: &LayerParams) -> Vec<Tr
         }
     }
 
-    let f = Field {
-        w,
-        h,
-        v: &fill_field,
-    };
+    let f = Field { w, h, v: field };
     let mut fills: Vec<TracedPath> = marching_squares(&f)
         .into_iter()
         .filter_map(|lp| fit_path(&lp.pts, &[], true, &p.fit))
@@ -397,24 +476,24 @@ fn trace_layer(field: &mut [f32], w: usize, h: usize, p: &LayerParams) -> Vec<Tr
 /// twice the resolution from the anti-aliased field, so the offset is accurate
 /// to about a third of a pixel. Holes are not cut.
 fn cutline(union: &[f32], w: usize, h: usize, offset_px: f64, fit: &FitOptions) -> Vec<TracedPath> {
-    const S: usize = 2;
-    let margin = (offset_px.ceil() as usize + 2) * S;
-    let (pw, ph) = (w * S + 2 * margin, h * S + 2 * margin);
+    let sc = cutline_scale(w, h);
+    let margin = (offset_px.ceil() as usize + 2) * sc;
+    let (pw, ph) = (w * sc + 2 * margin, h * sc + 2 * margin);
     let field = Field { w, h, v: union };
     let mut seed = vec![false; pw * ph];
-    for sy in 0..h * S {
-        for sx in 0..w * S {
-            let p = geom::P::new((sx as f64 + 0.5) / S as f64, (sy as f64 + 0.5) / S as f64);
+    for sy in 0..h * sc {
+        for sx in 0..w * sc {
+            let p = geom::P::new((sx as f64 + 0.5) / sc as f64, (sy as f64 + 0.5) / sc as f64);
             seed[(sy + margin) * pw + sx + margin] = field.sample(p) > 0.0;
         }
     }
-    let dist = distance::distance_to_seed(&seed, pw, ph);
+    let mut grown = distance::distance_to_seed(&seed, pw, ph);
+    drop(seed);
     // The boundary lies half a sample beyond the centres of the outermost samples.
-    let level = (offset_px * S as f64 + 0.5) as f32;
-    let grown: Vec<f32> = dist
-        .iter()
-        .map(|&d| if d == level { -1e-6 } else { level - d })
-        .collect();
+    let level = (offset_px * sc as f64 + 0.5) as f32;
+    grown
+        .iter_mut()
+        .for_each(|d| *d = if *d == level { -1e-6 } else { level - *d });
     let loops = marching_squares(&Field {
         w: pw,
         h: ph,
@@ -422,7 +501,7 @@ fn cutline(union: &[f32], w: usize, h: usize, offset_px: f64, fit: &FitOptions) 
     });
     let shift = margin as f64;
     let scaled_fit = FitOptions {
-        tolerance: fit.tolerance * S as f64,
+        tolerance: fit.tolerance * sc as f64,
         corner_angle: fit.corner_angle,
     };
     loops
@@ -431,7 +510,7 @@ fn cutline(union: &[f32], w: usize, h: usize, offset_px: f64, fit: &FitOptions) 
         .filter_map(|lp| fit_path(&lp.pts, &[], true, &scaled_fit))
         .map(|path| TracedPath {
             kind: Kind::Cut,
-            path: scale_path(&path, 1.0 / S as f64, -shift),
+            path: scale_path(&path, 1.0 / sc as f64, -shift),
         })
         .collect()
 }

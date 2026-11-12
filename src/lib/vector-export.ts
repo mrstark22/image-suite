@@ -41,6 +41,31 @@ function requireScale(result: VectorResult): number {
   return result.pxPerMm;
 }
 
+/**
+ * The page of an export, in millimetres: the image, grown to take in any
+ * path that lies outside it (a cutline around artwork that reaches the edge
+ * of the image). `x` and `y` are negative when the page starts left of or
+ * above the image (review of #84).
+ */
+export function tracePageMm(result: VectorResult): { x: number; y: number; widthMm: number; heightMm: number } {
+  const ppm = requireScale(result);
+  let [x0, y0, x1, y1] = [0, 0, result.dimensions.width, result.dimensions.height];
+  for (const layer of shown(result)) {
+    for (const p of layer.paths) {
+      for (const c of parsePathData(p.d)) {
+        const pts = c.op === 'C' ? [c.c1, c.c2, c.p] : c.op === 'Z' ? [] : [c.p];
+        for (const q of pts) {
+          x0 = Math.min(x0, q.x);
+          y0 = Math.min(y0, q.y);
+          x1 = Math.max(x1, q.x);
+          y1 = Math.max(y1, q.y);
+        }
+      }
+    }
+  }
+  return { x: x0 / ppm, y: y0 / ppm, widthMm: (x1 - x0) / ppm, heightMm: (y1 - y0) / ppm };
+}
+
 /** The trace's width and height in millimetres. */
 export function traceSizeMm(result: VectorResult): { widthMm: number; heightMm: number } {
   const ppm = requireScale(result);
@@ -83,11 +108,12 @@ const SVG_STROKE_MM = 0.1;
  */
 export function traceToSvg(result: VectorResult): string {
   const ppm = requireScale(result);
-  const { widthMm, heightMm } = traceSizeMm(result);
+  const page = tracePageMm(result);
   const s = 1 / ppm;
+  // The viewBox keeps the image's own coordinates, so the image's top left stays at 0, 0.
   const lines = [
     '<?xml version="1.0" encoding="UTF-8" standalone="no"?>',
-    `<svg xmlns="http://www.w3.org/2000/svg" xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape" version="1.1" width="${fmt(widthMm)}mm" height="${fmt(heightMm)}mm" viewBox="0 0 ${fmt(widthMm)} ${fmt(heightMm)}">`,
+    `<svg xmlns="http://www.w3.org/2000/svg" xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape" version="1.1" width="${fmt(page.widthMm)}mm" height="${fmt(page.heightMm)}mm" viewBox="${fmt(page.x)} ${fmt(page.y)} ${fmt(page.widthMm)} ${fmt(page.heightMm)}">`,
   ];
   for (const layer of shown(result)) {
     lines.push(
@@ -156,36 +182,71 @@ export function pathPolylines(d: string, mmPerPx: number): Array<{ pts: Pt[]; cl
   return out;
 }
 
-/** AutoCAD colour indexes 1 to 7 and 8, 9, with their colours. */
-const ACI: Array<[number, [number, number, number]]> = [
-  [1, [255, 0, 0]],
-  [2, [255, 255, 0]],
-  [3, [0, 255, 0]],
-  [4, [0, 255, 255]],
-  [5, [0, 0, 255]],
-  [6, [255, 0, 255]],
-  [7, [0, 0, 0]],
-  [8, [128, 128, 128]],
-  [9, [192, 192, 192]],
-];
+/**
+ * The AutoCAD Colour Index (ACI) colours 1 to 255: 1 to 9 are the standard
+ * colours; 10 to 249 are 24 hues 15° apart, each in five shades at full and
+ * half saturation; 250 to 255 are greys.
+ */
+function aciTable(): Array<[number, [number, number, number]]> {
+  const table: Array<[number, [number, number, number]]> = [
+    [1, [255, 0, 0]],
+    [2, [255, 255, 0]],
+    [3, [0, 255, 0]],
+    [4, [0, 255, 255]],
+    [5, [0, 0, 255]],
+    [6, [255, 0, 255]],
+    [7, [0, 0, 0]],
+    [8, [128, 128, 128]],
+    [9, [192, 192, 192]],
+  ];
+  const values = [1, 0.8, 0.6, 0.5, 0.3];
+  for (let i = 10; i <= 249; i++) {
+    const hue = Math.floor((i - 10) / 10) * 15;
+    const shade = (i % 10) >> 1;
+    const sat = i % 2 === 0 ? 1 : 0.5;
+    table.push([i, hsvToRgb(hue, sat, values[shade])]);
+  }
+  [51, 91, 132, 173, 214, 255].forEach((g, k) => table.push([250 + k, [g, g, g]]));
+  return table;
+}
+
+function hsvToRgb(h: number, s: number, v: number): [number, number, number] {
+  const f = (n: number) => {
+    const k = (n + h / 60) % 6;
+    return Math.round(255 * (v - v * s * Math.max(0, Math.min(k, 4 - k, 1))));
+  };
+  return [f(5), f(3), f(1)];
+}
+
+const ACI = aciTable();
 
 /**
- * A colour index for each layer: the nearest standard colour not already
- * taken by another layer, so layers stay distinct in the laser software.
+ * A colour index for each layer: the nearest ACI colour not already taken by
+ * another layer, so every layer stays distinct in the laser software (up to
+ * 255 layers). Layers listed in `first` choose before the others, so the
+ * cutline keeps red even after a red artwork layer (review of #84).
  */
-export function layerColourIndexes(colors: string[]): number[] {
+export function layerColourIndexes(colors: string[], first: number[] = []): number[] {
   const used = new Set<number>();
-  return colors.map((hex) => {
-    const m = /^#?([0-9a-f]{6})$/i.exec(hex)?.[1] ?? '000000';
+  const out = new Array<number>(colors.length);
+  const order = [...first, ...colors.map((_, i) => i).filter((i) => !first.includes(i))];
+  for (const i of order) {
+    const m = /^#?([0-9a-f]{6})$/i.exec(colors[i])?.[1] ?? '000000';
     const rgb = [0, 2, 4].map((k) => parseInt(m.slice(k, k + 2), 16));
-    const ranked = [...ACI].sort(
-      (a, b) =>
-        a[1].reduce((s, v, k) => s + (v - rgb[k]) ** 2, 0) - b[1].reduce((s, v, k) => s + (v - rgb[k]) ** 2, 0)
-    );
-    const pick = ranked.find(([i]) => !used.has(i)) ?? ranked[0];
-    used.add(pick[0]);
-    return pick[0];
-  });
+    let best = 0;
+    let bestD = Infinity;
+    for (const [aci, c] of ACI) {
+      if (used.has(aci)) continue;
+      const d = c.reduce((s, v, k) => s + (v - rgb[k]) ** 2, 0);
+      if (d < bestD) {
+        bestD = d;
+        best = aci;
+      }
+    }
+    used.add(best);
+    out[i] = best;
+  }
+  return out;
 }
 
 const dxfName = (s: string) => s.replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 31) || 'LAYER';
@@ -199,10 +260,12 @@ const dxfName = (s: string) => s.replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 31) ||
  */
 export function traceToDxf(result: VectorResult): string {
   const ppm = requireScale(result);
-  const { widthMm, heightMm } = traceSizeMm(result);
+  const { heightMm } = traceSizeMm(result);
+  const page = tracePageMm(result);
   const layers = shown(result);
   const names = layers.map((l, i) => `${dxfName(l.name)}${layers.findIndex((m) => dxfName(m.name) === dxfName(l.name)) === i ? '' : `_${i + 1}`}`);
-  const colours = layerColourIndexes(layers.map((l) => l.color));
+  const cutFirst = layers.flatMap((l, i) => (l.paths.some((p) => p.kind === 'cut') ? [i] : []));
+  const colours = layerColourIndexes(layers.map((l) => l.color), cutFirst);
   const o: string[] = [];
   const g = (code: number, value: string | number) => o.push(String(code), typeof value === 'number' ? fmt(value) : value);
 
@@ -214,12 +277,13 @@ export function traceToDxf(result: VectorResult): string {
   g(70, 4);
   g(9, '$MEASUREMENT');
   g(70, 1);
+  // Extents of everything drawn, with y up: the image's bottom edge is at y = 0.
   g(9, '$EXTMIN');
-  g(10, 0);
-  g(20, 0);
+  g(10, page.x);
+  g(20, heightMm - (page.y + page.heightMm));
   g(9, '$EXTMAX');
-  g(10, widthMm);
-  g(20, heightMm);
+  g(10, page.x + page.widthMm);
+  g(20, heightMm - page.y);
   g(0, 'ENDSEC');
 
   g(0, 'SECTION');

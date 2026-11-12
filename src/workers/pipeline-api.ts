@@ -17,7 +17,7 @@ import type { VectorResult } from '../types/vector';
 import type { DepthResult } from '../types/depth';
 import { removeBackground } from '../lib/bg-removal';
 import { PipelineEngine } from '../lib/pipeline-engine';
-import { exportPlan, sourceStageKey } from '../lib/render-target';
+import { exportPlan, previewTarget, sameTarget, sourceStageKey } from '../lib/render-target';
 import { cropRectOf } from '../lib/document-size';
 import { encodeRaster } from '../lib/raster-encode';
 import type { ImageDocument } from '../types/document';
@@ -175,12 +175,16 @@ export class PipelineWorkerApi {
     await this.exportIdle;
     const engine = await this.engine();
     const core = await this.core();
-    const prepared = engine.render(req.doc, req.target, 'prepared', {
-      cache: true,
+    // The preview's target shares the cached source stage; a full-resolution
+    // export trace renders its own and frees it, leaving the cache alone.
+    const options = {
+      cache: sameTarget(req.target, previewTarget(req.doc)),
       sourceStagePixels: req.sourceStagePixels,
+    };
+    return engine.renderWith(req.doc, req.target, 'prepared', options, (ptr, pxPerMm) => {
+      if (pxPerMm === null) throw new Error('Set the size of the image before tracing.');
+      return core.traceAt(ptr, req.target.widthPx, req.target.heightPx, pxPerMm, req.doc.vector);
     });
-    if (prepared.pxPerMm === null) throw new Error('Set the size of the image before tracing.');
-    return core.trace(prepared.pixels, req.target.widthPx, req.target.heightPx, prepared.pxPerMm, req.doc.vector);
   }
 
   /**

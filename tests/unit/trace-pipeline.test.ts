@@ -86,7 +86,7 @@ describe('export traces at full resolution (#23)', () => {
     const shown = render().vectorResult!;
     expect(pathCount(shown)).toBe(0);
 
-    const source = vectorExportSource(shown, render().tracedVector !== null, false);
+    const source = vectorExportSource(shown, render().tracedInputs !== null, false);
     expect(source).toBe('full-resolution');
     const full = await traceForExport(pipeline.api, store().doc!, shown, source, null);
     expect(full.dimensions.width).toBe(4000);

@@ -41,8 +41,15 @@ interface RenderState {
   autoTrace: boolean;
   /** True when the tracing settings changed while auto-trace was off. */
   isVectorStale: boolean;
-  /** The tracing settings `vectorResult` was traced with, or null when it was not traced (a test grid overlay). */
-  tracedVector: ImageDocument['vector'] | null;
+  /**
+   * Everything in the document that `vectorResult` was traced from, or null
+   * when it was not traced (a test grid overlay). The trace is stale when any
+   * of it changes: the trace reads the adjustments and the size as well as
+   * the tracing settings (#23, review of #84).
+   */
+  tracedInputs: TraceInputs | null;
+  /** Ids of the layers hidden on screen, kept across traces so a re-trace does not show them again. */
+  hiddenLayers: string[];
   /**
    * Increases when the user asks for a trace, so one runs even if nothing
    * changed, and when the user cancels one. The trace scheduler reads it, so
@@ -99,6 +106,31 @@ interface RenderState {
   setExportProgress: (progress: ExportProgress | null) => void;
 }
 
+/** What a trace reads from the document. */
+export interface TraceInputs {
+  source: ImageDocument['source'];
+  mmPerPx: ImageDocument['mmPerPx'];
+  steps: Pick<ImageDocument['steps'], 'crop' | 'tonal' | 'color' | 'detail'>;
+  vector: ImageDocument['vector'];
+}
+
+export function traceInputsOf(doc: ImageDocument): TraceInputs {
+  const { crop, tonal, color, detail } = doc.steps;
+  return { source: doc.source, mmPerPx: doc.mmPerPx, steps: { crop, tonal, color, detail }, vector: doc.vector };
+}
+
+/**
+ * True when the trace shown was made from the document as it is now (or is
+ * not a trace at all, like a test grid), so exporting it writes what is on
+ * screen. False while a newer trace is due or the settings changed.
+ */
+export function traceIsCurrent(): boolean {
+  const { vectorResult, tracedInputs } = useRenderStore.getState();
+  const doc = useDocumentStore.getState().doc;
+  if (!vectorResult || !doc) return false;
+  return tracedInputs === null || sameValue(tracedInputs, traceInputsOf(doc));
+}
+
 /**
  * Pixels per millimetre of `source` (a render of `source.crop`) for `doc`, or
  * `null` while the size is not set. Measured from the render shown, so guides
@@ -132,7 +164,8 @@ const EMPTY_RESULTS = {
   vectorResult: null,
   autoTrace: true,
   isVectorStale: false,
-  tracedVector: null,
+  tracedInputs: null,
+  hiddenLayers: [] as string[],
   isProcessing: false,
   processingDurationMs: 0,
 };
@@ -199,8 +232,18 @@ export const useRenderStore = create<RenderState>((set, get) => ({
 
   // Called with a trace's result only while nothing it read has changed, so the
   // document's tracing settings are the ones it was traced with.
-  setVectorResult: (vectorResult) =>
-    set({ vectorResult, isVectorStale: false, tracedVector: useDocumentStore.getState().doc?.vector ?? null }),
+  setVectorResult: (vectorResult) => {
+    const doc = useDocumentStore.getState().doc;
+    const hidden = new Set(get().hiddenLayers);
+    set({
+      vectorResult: vectorResult && {
+        ...vectorResult,
+        layers: vectorResult.layers.map((l) => ({ ...l, visible: !hidden.has(l.id) })),
+      },
+      isVectorStale: false,
+      tracedInputs: doc ? traceInputsOf(doc) : null,
+    });
+  },
 
   setAutoTrace: (autoTrace) => set({ autoTrace }),
 
@@ -209,8 +252,9 @@ export const useRenderStore = create<RenderState>((set, get) => ({
   // The paths left on screen are stale if the cancelled trace was for changed settings.
   cancelTrace: () =>
     set((s) => {
-      const vector = useDocumentStore.getState().doc?.vector;
-      const changed = s.vectorResult !== null && s.tracedVector !== null && !sameValue(vector, s.tracedVector);
+      const doc = useDocumentStore.getState().doc;
+      const changed =
+        s.vectorResult !== null && s.tracedInputs !== null && (!doc || !sameValue(traceInputsOf(doc), s.tracedInputs));
       return { autoTrace: false, traceRequest: s.traceRequest + 1, isTracing: false, isVectorStale: s.isVectorStale || changed };
     }),
 
@@ -222,7 +266,7 @@ export const useRenderStore = create<RenderState>((set, get) => ({
     const layers = [layer];
     set({
       // Not a trace, so not traced with any settings.
-      tracedVector: null,
+      tracedInputs: null,
       autoTrace: false,
       vectorResult: {
         layers,
@@ -234,15 +278,18 @@ export const useRenderStore = create<RenderState>((set, get) => ({
     });
   },
 
-  clearVectors: () => set({ vectorResult: null, autoTrace: false, isVectorStale: false, tracedVector: null }),
+  clearVectors: () => set({ vectorResult: null, autoTrace: false, isVectorStale: false, tracedInputs: null }),
 
   toggleVectorLayer: (layerId) => {
     const vr = get().vectorResult;
     if (!vr) return;
+    const hidden = get().hiddenLayers;
+    const hiddenLayers = hidden.includes(layerId) ? hidden.filter((id) => id !== layerId) : [...hidden, layerId];
     set({
+      hiddenLayers,
       vectorResult: {
         ...vr,
-        layers: vr.layers.map((l) => (l.id === layerId ? { ...l, visible: !l.visible } : l)),
+        layers: vr.layers.map((l) => ({ ...l, visible: !hiddenLayers.includes(l.id) })),
       },
     });
   },
@@ -256,7 +303,7 @@ export const useRenderStore = create<RenderState>((set, get) => ({
 
 // Keep the derived results in step with the document. A new document starts
 // with no results (the schedulers render it); a new crop drops the relief;
-// changing the tracing settings while auto-trace is off marks the trace stale.
+// changing what the trace reads while auto-trace is off marks the trace stale.
 useDocumentStore.subscribe((state, prev) => {
   const doc = state.doc;
   const before = prev.doc;
@@ -271,8 +318,10 @@ useDocumentStore.subscribe((state, prev) => {
     useRenderStore.setState({ depthHeightMap: null });
   }
 
-  // By value: Reset All and recipes build a new vector object even when nothing in it changes.
-  if (!sameValue(doc.vector, before.vector) && !useRenderStore.getState().autoTrace) {
+  // By value: Reset All and recipes build new objects even when nothing in them changes.
+  // Any input of the trace counts: adjustments and the size as well as the tracing settings.
+  const render = useRenderStore.getState();
+  if (!render.autoTrace && !sameValue(traceInputsOf(doc), traceInputsOf(before))) {
     useRenderStore.setState({ isVectorStale: true });
   }
 });

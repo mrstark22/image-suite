@@ -258,7 +258,6 @@ pub extern "C" fn process_trace(
     if ptr.is_null() || width == 0 || height == 0 || !(px_per_mm > 0.0) {
         return std::ptr::null();
     }
-    let pixels = unsafe { std::slice::from_raw_parts(ptr, width * height * 4) };
     let palette = if palette.is_null() || palette_len == 0 {
         Vec::new()
     } else {
@@ -294,7 +293,17 @@ pub extern "C" fn process_trace(
         denoise_mm,
         cutline_mm,
     };
-    let json = trace::to_json(&trace::trace(pixels, width, height, &cfg));
+    // Refuse an image this device cannot hold before starting, rather than
+    // running out of memory part way, which would trap the module.
+    let need = trace::memory_estimate(width, height, &cfg);
+    let mut probe: Vec<u8> = Vec::new();
+    let json = if probe.try_reserve_exact(need).is_err() {
+        format!("{{\"error\":\"memory\",\"bytes\":{need}}}")
+    } else {
+        drop(probe);
+        let pixels = unsafe { std::slice::from_raw_parts(ptr, width * height * 4) };
+        trace::to_json(&trace::trace(pixels, width, height, &cfg))
+    };
 
     #[allow(static_mut_refs)]
     unsafe {
