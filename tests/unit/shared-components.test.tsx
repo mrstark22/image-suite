@@ -338,6 +338,32 @@ describe('BottomSheet', () => {
     );
   }
 
+  /** Drags the handle by `dy` pixels with pointer events, then fires the click that ends a real drag. */
+  function dragHandle(handle: HTMLElement, dy: number): void {
+    const pointer = (type: string, clientY: number) =>
+      act(() => {
+        handle.dispatchEvent(new MouseEvent(type, { bubbles: true, clientY }));
+      });
+    pointer('pointerdown', 300);
+    pointer('pointerup', 300 + dy);
+    click(handle);
+  }
+
+  it('dragging the handle up opens the sheet, down closes it, and a short drag acts as a tap', () => {
+    const { container } = render(<Harness />);
+    const handle = button(container, /Controls/);
+    dragHandle(handle, -SHEET_DRAG_THRESHOLD);
+    expect(handle.getAttribute('aria-expanded')).toBe('true');
+    // The click that ends the drag must not toggle it back.
+    dragHandle(handle, -2 * SHEET_DRAG_THRESHOLD);
+    expect(handle.getAttribute('aria-expanded')).toBe('true');
+    dragHandle(handle, SHEET_DRAG_THRESHOLD);
+    expect(handle.getAttribute('aria-expanded')).toBe('false');
+    // Under the threshold the pointer did not drag: its click is a tap, which toggles.
+    dragHandle(handle, 5);
+    expect(handle.getAttribute('aria-expanded')).toBe('true');
+  });
+
   it('the handle is a button that says whether the sheet is open, and opens and closes it', () => {
     const { container } = render(<Harness />);
     const handle = button(container, /Controls/);
