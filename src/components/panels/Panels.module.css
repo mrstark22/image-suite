@@ -73,22 +73,6 @@
   cursor: pointer;
 }
 
-.select {
-  width: 100%;
-  padding: 6px 10px;
-  background: var(--field);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  color: var(--text);
-  font-size: 12px;
-  margin-bottom: var(--space-3);
-  outline: none;
-}
-
-.select:focus {
-  border-color: var(--focus);
-}
-
 .gridCards {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
@@ -375,16 +359,6 @@
   margin-top: var(--space-2);
 }
 
-.errorText {
-  color: var(--danger);
-}
-
-.titleWithIcon {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
 .readoutValue {
   text-align: right;
 }
@@ -398,7 +372,57 @@
   align-items: center;
 }
 
-.primaryActionBtn + .primaryActionBtn,
-.select + .primaryActionBtn {
+.primaryActionBtn + .primaryActionBtn {
   margin-top: var(--space-2);
+}
+
+/* Shared components (#55): what the panels still lay out themselves. */
+.cardTitleRow {
+  display: flex;
+  justify-content: space-between;
+  width: 100%;
+}
+
+.cardBadge {
+  font-size: 8px;
+  font-weight: 700;
+  color: var(--text-2);
+  background: var(--surface-2);
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+
+.infoCard {
+  background: var(--surface-2);
+  padding: 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  margin-bottom: 12px;
+}
+
+.infoCardTitle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.infoCardTitle strong {
+  color: var(--text);
+}
+
+.infoCardText {
+  font-size: 11px;
+  color: var(--text-2);
+  line-height: 1.4;
+}
+
+.actionGap {
+  margin-top: var(--space-4);
+}
+
+.statusGap {
+  margin-top: var(--space-3);
 }

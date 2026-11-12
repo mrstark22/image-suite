@@ -1,6 +1,9 @@
 import React from 'react';
 import { useDocumentStore } from '../../store/documentStore';
 import { DocumentSlider } from '../shared/Slider';
+import { Button } from '../shared/Button';
+import { Section } from '../shared/Section';
+import { Toggle } from '../shared/Toggle';
 import { DEFAULT_DITHER, resetDither, setDither } from '../../lib/document';
 import type { DitherAlgorithm } from '../../types/dither';
 import styles from './Panels.module.css';
@@ -31,51 +34,38 @@ export const DitheringPanel: React.FC = () => {
     <div className={styles.panel}>
       <div className={styles.panelHeader}>
         <span className={styles.panelTitle}>Dithering</span>
-        <button className={styles.resetButton} onClick={() => edit(resetDither)}>
+        <Button variant="link" onClick={() => edit(resetDither)}>
           Reset
-        </button>
+        </Button>
       </div>
 
       {/* Algorithm Card Selector */}
-      <div className={styles.section}>
-        <div className={styles.sectionTitle}>Algorithm</div>
+      <Section title="Algorithm">
         <div className={styles.gridCards}>
           {DITHER_OPTIONS.map((opt) => {
             const isActive = dither.algorithm === opt.id;
             return (
               <button
                 key={opt.id}
+                type="button"
                 className={`${styles.cardButton} ${isActive ? styles.cardButtonActive : ''}`}
+                aria-pressed={isActive}
                 onClick={() => edit(setDither({ algorithm: opt.id }))}
               >
-                <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%' }}>
+                <span className={styles.cardTitleRow}>
                   <span className={styles.cardTitle}>{opt.title}</span>
-                  {opt.badge && (
-                    <span
-                      style={{
-                        fontSize: 8,
-                        fontWeight: 700,
-                        color: 'var(--text-2)',
-                        background: 'var(--surface-2)',
-                        padding: '1px 4px',
-                        borderRadius: 3,
-                      }}
-                    >
-                      {opt.badge}
-                    </span>
-                  )}
-                </div>
+                  {opt.badge && <span className={styles.cardBadge}>{opt.badge}</span>}
+                </span>
                 <span className={styles.cardDesc}>{opt.desc}</span>
               </button>
             );
           })}
         </div>
-      </div>
+      </Section>
 
       {/* Dither Parameters */}
       {dither.algorithm !== 'none' && (
-        <div className={styles.section}>
-          <div className={styles.sectionTitle}>Parameters</div>
+        <Section title="Parameters">
           <DocumentSlider
             label="Threshold / Density Cutoff"
             value={dither.threshold}
@@ -88,15 +78,11 @@ export const DitheringPanel: React.FC = () => {
           {(dither.algorithm === 'floyd-steinberg' ||
             dither.algorithm === 'atkinson' ||
             dither.algorithm === 'jarvis') && (
-            <div className={styles.toggleRow}>
-              <span className={styles.toggleLabel}>Serpentine Traversal</span>
-              <input
-                type="checkbox"
-                className={styles.checkbox}
-                checked={dither.serpentine}
-                onChange={(e) => edit(setDither({ serpentine: e.target.checked }))}
-              />
-            </div>
+            <Toggle
+              label="Serpentine Traversal"
+              checked={dither.serpentine}
+              onChange={(checked) => edit(setDither({ serpentine: checked }))}
+            />
           )}
 
           {(dither.algorithm === 'bayer-2' ||
@@ -111,7 +97,7 @@ export const DitheringPanel: React.FC = () => {
               update={(v) => setDither({ matrixScale: v })}
             />
           )}
-        </div>
+        </Section>
       )}
     </div>
   );
