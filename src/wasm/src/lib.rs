@@ -11,6 +11,7 @@
 mod clahe;
 mod depth;
 mod dither;
+mod resample;
 mod sharpen;
 mod threshold;
 mod tonal;
@@ -22,6 +23,7 @@ mod tests;
 use clahe::apply_clahe;
 use depth::{generate_depth_map_wasm, DepthParams};
 use dither::{apply_dithering, DitherAlgo, DitherParams};
+use resample::{prepare, Crop};
 use sharpen::apply_unsharp_mask;
 use threshold::apply_adaptive_threshold;
 use tonal::{apply_tonal_and_color, ColorParams, TonalParams};
@@ -40,6 +42,65 @@ pub extern "C" fn allocate(size: usize) -> *mut u8 {
     let ptr = buffer.as_mut_ptr();
     std::mem::forget(buffer);
     ptr
+}
+
+/// Reserves `size` bytes, or returns null when the memory cannot be had.
+/// Unlike `allocate`, running out of memory does not trap, so the caller can
+/// report it and keep using the module. Free with `deallocate`.
+#[no_mangle]
+pub extern "C" fn try_allocate(size: usize) -> *mut u8 {
+    let mut buffer: Vec<u8> = Vec::new();
+    if size == 0 || buffer.try_reserve_exact(size).is_err() {
+        return std::ptr::null_mut();
+    }
+    let ptr = buffer.as_mut_ptr();
+    std::mem::forget(buffer);
+    ptr
+}
+
+/// Steps 1 to 3 of the pipeline: crops the RGBA8 source to the rectangle
+/// (`crop_x`, `crop_y`, `crop_w`, `crop_h`), flattens it onto white and
+/// resamples it to `dst_w` x `dst_h` in linear light. Returns a new opaque
+/// RGBA8 buffer of `dst_w * dst_h * 4` bytes that the caller frees with
+/// `deallocate`, or null when the arguments are invalid or the memory cannot
+/// be had.
+#[no_mangle]
+pub extern "C" fn prepare_source(
+    src: *const u8,
+    src_w: usize,
+    src_h: usize,
+    crop_x: usize,
+    crop_y: usize,
+    crop_w: usize,
+    crop_h: usize,
+    dst_w: usize,
+    dst_h: usize,
+) -> *mut u8 {
+    let valid = !src.is_null()
+        && crop_w > 0
+        && crop_h > 0
+        && dst_w > 0
+        && dst_h > 0
+        && crop_x + crop_w <= src_w
+        && crop_y + crop_h <= src_h;
+    if !valid {
+        return std::ptr::null_mut();
+    }
+    let out_len = dst_w * dst_h * 4;
+    let out_ptr = try_allocate(out_len);
+    if out_ptr.is_null() {
+        return out_ptr;
+    }
+    let source = unsafe { std::slice::from_raw_parts(src, src_w * src_h * 4) };
+    let out = unsafe { std::slice::from_raw_parts_mut(out_ptr, out_len) };
+    let crop = Crop {
+        x: crop_x,
+        y: crop_y,
+        width: crop_w,
+        height: crop_h,
+    };
+    prepare(source, src_w, crop, dst_w, dst_h, out);
+    out_ptr
 }
 
 /// Deallocates linear memory buffer
@@ -133,14 +194,14 @@ pub extern "C" fn process_pipeline(
         apply_clahe(pixels, width, height, clahe_clip, clahe_grid);
     }
 
-    // 3. Adaptive Thresholding
-    if enable_adaptive != 0 {
-        apply_adaptive_threshold(pixels, width, height, adaptive_block, adaptive_c);
-    }
-
-    // 4. Sharpening
+    // 3. Sharpening, before the threshold so it can change what is thresholded.
     if sharpen_amount > 0.0 {
         apply_unsharp_mask(pixels, width, height, sharpen_amount, sharpen_radius);
+    }
+
+    // 4. Adaptive Thresholding
+    if enable_adaptive != 0 {
+        apply_adaptive_threshold(pixels, width, height, adaptive_block, adaptive_c);
     }
 
     // 5. Dithering

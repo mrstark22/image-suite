@@ -1,9 +1,9 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { useDocumentStore } from '../../store/documentStore';
-import { useRenderStore } from '../../store/renderStore';
+import { pxPerMmOfSource, useRenderStore } from '../../store/renderStore';
 import { useViewStore } from '../../store/viewStore';
 import { useUIStore } from '../../store/uiStore';
-import { MM_PER_INCH, pxPerMmAt } from '../../lib/document-size';
+import { MM_PER_INCH } from '../../lib/document-size';
 import styles from './CanvasRulers.module.css';
 
 export const CanvasRulers: React.FC = () => {
@@ -13,7 +13,7 @@ export const CanvasRulers: React.FC = () => {
   const zoom = useViewStore((s) => s.zoom);
   const pan = useViewStore((s) => s.pan);
   // Preview pixels per mm; null while the size is not set, when only pixels can be shown.
-  const pxPerMm = useDocumentStore((s) => (s.doc && source ? pxPerMmAt(s.doc, source.width) : null));
+  const pxPerMm = useDocumentStore((s) => (s.doc && source ? pxPerMmOfSource(s.doc, source) : null));
 
   const topCanvasRef = useRef<HTMLCanvasElement>(null);
   const leftCanvasRef = useRef<HTMLCanvasElement>(null);

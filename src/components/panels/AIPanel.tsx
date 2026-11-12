@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Sparkles, Cpu, CheckCircle2, RefreshCw, Undo } from 'lucide-react';
 import { useRenderStore } from '../../store/renderStore';
-import { getComlinkWorker } from '../../lib/comlink-setup';
+import { getPipeline } from '../../lib/pipeline-client';
 import { Slider } from '../shared/Slider';
 import styles from './Panels.module.css';
 
@@ -23,7 +23,7 @@ export const AIPanel: React.FC = () => {
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   // The source the removal was applied to; Restore is offered while it is shown.
   const [removedFrom, setRemovedFrom] = useState<typeof source>(null);
-  const canRestore = removedFrom !== null && source !== null && source.sourceId === removedFrom.sourceId && source.crop === removedFrom.crop;
+  const canRestore = removedFrom !== null && source !== null && source.key === removedFrom.key;
 
   const handleRemoveBackground = async () => {
     if (!source) return;
@@ -34,7 +34,7 @@ export const AIPanel: React.FC = () => {
       setIsProcessing(true);
       setStatusMessage(null);
 
-      const worker = getComlinkWorker();
+      const worker = getPipeline();
       const result = await worker.processBgRemoval({
         buffer: from.buffer.slice(0),
         width: from.width,

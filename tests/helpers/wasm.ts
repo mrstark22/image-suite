@@ -86,7 +86,9 @@ export interface TraceResult {
 interface WasmExports {
   memory: WebAssembly.Memory;
   allocate(size: number): number;
+  try_allocate(size: number): number;
   deallocate(ptr: number, size: number): void;
+  prepare_source(...args: number[]): number;
   process_pipeline(...args: number[]): void;
   process_vector(...args: number[]): number;
   get_vector_json_len(): number;
@@ -100,13 +102,18 @@ export interface Wasm {
 
 let cached: Promise<Wasm> | null = null;
 
-/** Loads and instantiates the committed WASM binary once per test process. */
-export function loadWasm(): Promise<Wasm> {
-  if (!cached) {
-    cached = WebAssembly.instantiate(fs.readFileSync(WASM_PATH), { env: {} }).then((m) => ({
+/**
+ * Loads and instantiates the committed WASM binary, once per test process.
+ * With `fresh`, a new instance with its own memory, for tests that hold
+ * state in the module (the pipeline's source and cache).
+ */
+export function loadWasm(options: { fresh?: boolean } = {}): Promise<Wasm> {
+  const instantiate = () =>
+    WebAssembly.instantiate(fs.readFileSync(WASM_PATH), { env: {} }).then((m) => ({
       exports: m.instance.exports as unknown as WasmExports,
     }));
-  }
+  if (options.fresh) return instantiate();
+  cached ??= instantiate();
   return cached;
 }
 
@@ -275,4 +282,44 @@ export function signedArea(pts: Pt[]): number {
     a += p.x * q.y - q.x * p.y;
   }
   return a / 2;
+}
+
+/** A rectangle of the source, in source pixels. */
+export interface Rect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/**
+ * Runs `prepare_source` (crop, flatten onto white, resample in linear light)
+ * on a copy of `rgba` and returns the `dstW` x `dstH` result. Throws when the
+ * module returns null.
+ */
+export function prepareSource(
+  wasm: Wasm,
+  rgba: Uint8Array,
+  width: number,
+  height: number,
+  crop: Rect,
+  dstW: number,
+  dstH: number
+): Uint8Array {
+  const e = wasm.exports;
+  const size = width * height * 4;
+  const src = e.allocate(size);
+  try {
+    new Uint8Array(e.memory.buffer, src, size).set(rgba);
+    const out = e.prepare_source(src, width, height, crop.x, crop.y, crop.width, crop.height, dstW, dstH);
+    if (out === 0) throw new Error('prepare_source returned null');
+    const outLen = dstW * dstH * 4;
+    try {
+      return new Uint8Array(e.memory.buffer, out, outLen).slice();
+    } finally {
+      e.deallocate(out, outLen);
+    }
+  } finally {
+    e.deallocate(src, size);
+  }
 }

@@ -1,13 +1,14 @@
 /**
  * Tests for the tonal stage and the detail filters, run through the real
- * WebAssembly pipeline and compared with the TypeScript fast path.
+ * WebAssembly pipeline and compared with an independent TypeScript reference
+ * (`tests/helpers/tonal-reference.ts`).
  *
  * Tests marked `it.fails` record defects that are known and tracked. They pass
  * while the defect exists. When a defect is fixed the test starts failing:
  * change `it.fails` to `it` in the same commit as the fix.
  */
 import { describe, it, expect, beforeAll } from 'vitest';
-import { buildTonalLUT } from '../../src/lib/fast-tonal';
+import { buildTonalLUT } from '../helpers/tonal-reference';
 import { DEFAULT_TONAL } from '../../src/lib/document';
 import type { TonalAdjustments } from '../../src/types/image';
 import { grayImage, loadWasm, redChannel, runPipeline, type PipelineOptions, type Wasm } from '../helpers/wasm';
@@ -45,14 +46,14 @@ const SLIDERS: Array<{ name: keyof TonalAdjustments & keyof PipelineOptions; val
 ];
 
 describe('tonal lookup table', () => {
-  it('is the identity at default settings, in both implementations', () => {
+  it('is the identity at default settings, in Rust and in the reference', () => {
     const identity = Array.from({ length: 256 }, (_, i) => i);
     expect(Array.from(tsLut({}))).toEqual(identity);
     expect(Array.from(wasmLut({}))).toEqual(identity);
   });
 
   for (const { name, values } of SLIDERS) {
-    it(`${name}: TypeScript and Rust agree within one level`, () => {
+    it(`${name}: the reference and Rust agree within one level`, () => {
       for (const value of values) {
         const ts = tsLut({ [name]: value });
         const rust = wasmLut({ [name]: value });
@@ -72,7 +73,7 @@ describe('tonal lookup table', () => {
     });
   }
 
-  it('combined settings: TypeScript and Rust agree within one level', () => {
+  it('combined settings: the reference and Rust agree within one level', () => {
     const combo = { exposure: 0.5, contrast: 30, shadows: 40, highlights: -30, gamma: 1.4, blackPoint: 12, whitePoint: 240 };
     const ts = tsLut(combo);
     const rust = wasmLut(combo);
@@ -97,6 +98,11 @@ describe('tonal lookup table', () => {
   it('positive contrast steepens the midtones and negative contrast flattens them', () => {
     expect(midtoneSlope(wasmLut({ contrast: 60 }))).toBeGreaterThan(1.1);
     expect(midtoneSlope(wasmLut({ contrast: -60 }))).toBeLessThan(0.9);
+  });
+
+  it('raising the midtones lightens mid-grey', () => {
+    expect(wasmLut({ midtones: 50 })[128]).toBeGreaterThan(128);
+    expect(wasmLut({ midtones: -50 })[128]).toBeLessThan(128);
   });
 
   it('exposure and brightness move mid-grey in the direction of their sign', () => {
@@ -152,26 +158,51 @@ describe('unsharp mask', () => {
     expect(out.every((v) => v === 137)).toBe(true);
   });
 
-  it('overshoots on both sides of an edge by the amount the formula predicts', () => {
-    // Vertical edge: 100 on the left, 200 on the right. Radius 1 gives a 3-tap Gaussian.
-    const W = 16;
-    const img = grayImage(W, 8, (x) => (x < 8 ? 100 : 200));
-    const amount = 1;
-    const out = redChannel(runPipeline(wasm, img, W, 8, { sharpen: { amount, radius: 1 } }));
+  /**
+   * Reference unsharp mask of one row of a vertical edge (every row is the
+   * same, so the vertical pass leaves it unchanged): a Gaussian of sigma
+   * `0.8 * radius` reaching ceil(3 * sigma) pixels each side,
+   * renormalised at the borders.
+   */
+  function referenceRow(row: number[], amount: number, radius: number): number[] {
+    const sigma = 0.8 * radius;
+    const extent = Math.max(1, Math.ceil(3 * sigma));
+    return row.map((orig, x) => {
+      let sum = 0;
+      let weights = 0;
+      for (let d = -extent; d <= extent; d++) {
+        const nx = x + d;
+        if (nx < 0 || nx >= row.length) continue;
+        const w = Math.exp(-(d * d) / (2 * sigma * sigma));
+        sum += row[nx] * w;
+        weights += w;
+      }
+      return Math.max(0, Math.min(255, Math.round(orig + (orig - sum / weights) * amount)));
+    });
+  }
 
-    const sigma = 1 * 0.6 + 0.3;
-    const w = Math.exp(-1 / (2 * sigma * sigma));
-    const blurredDarkSide = (100 * (1 + w) + 200 * w) / (1 + 2 * w);
-    const blurredBrightSide = (200 * (1 + w) + 100 * w) / (1 + 2 * w);
-    const row = 4 * W;
+  it('matches the formula across an edge, with the kernel reaching ceil(3 sigma)', () => {
+    const W = 64;
+    const edge = (x: number) => (x < 32 ? 100 : 200);
+    for (const radius of [1, 2.5, 8, 15]) {
+      const img = grayImage(W, 6, edge);
+      const out = redChannel(runPipeline(wasm, img, W, 6, { sharpen: { amount: 1, radius } }));
+      const expected = referenceRow(Array.from({ length: W }, (_, x) => edge(x)), 1, radius);
+      const row = Array.from(out.subarray(3 * W, 4 * W));
+      const worst = Math.max(...row.map((v, x) => Math.abs(v - expected[x])));
+      expect(worst, `radius ${radius}`).toBeLessThanOrEqual(1);
+      expect(row[31]).toBeLessThan(100);
+      expect(row[32]).toBeGreaterThan(200);
+    }
+  });
 
-    expect(out[row + 7]).toBe(Math.round(100 + (100 - blurredDarkSide) * amount));
-    expect(out[row + 8]).toBe(Math.round(200 + (200 - blurredBrightSide) * amount));
-    expect(out[row + 7]).toBeLessThan(100);
-    expect(out[row + 8]).toBeGreaterThan(200);
-    // Two or more pixels from the edge nothing changes.
-    expect(out[row + 5]).toBe(100);
-    expect(out[row + 10]).toBe(200);
+  it('a radius over 5 px reaches further than 5 px from an edge (no clamp; #16)', () => {
+    const W = 64;
+    const img = grayImage(W, 6, (x) => (x < 32 ? 100 : 200));
+    const out = redChannel(runPipeline(wasm, img, W, 6, { sharpen: { amount: 1, radius: 12 } }));
+    // 10 px from the edge: a kernel clamped at 5 px would leave these unchanged.
+    expect(out[3 * W + 22]).toBeLessThan(100);
+    expect(out[3 * W + 42]).toBeGreaterThan(200);
   });
 
   it('a larger amount gives a larger overshoot', () => {

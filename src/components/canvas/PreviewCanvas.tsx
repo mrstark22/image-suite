@@ -1,9 +1,8 @@
 import React, { useRef, useEffect, useState, useCallback, useMemo } from 'react';
 import { useDocumentStore } from '../../store/documentStore';
-import { useRenderStore } from '../../store/renderStore';
+import { pxPerMmOfSource, useRenderStore } from '../../store/renderStore';
 import { useViewStore } from '../../store/viewStore';
 import { openImageFiles, confirmReplaceInBrowser } from '../../lib/open-image';
-import { pxPerMmAt } from '../../lib/document-size';
 import { DEFAULT_DEPTH } from '../../lib/document';
 import { fitsDimensions } from '../../lib/crop';
 import { useUIStore } from '../../store/uiStore';
@@ -25,7 +24,7 @@ export const PreviewCanvas: React.FC = () => {
   const previewVersion = useRenderStore((s) => s.previewVersion);
   const docId = useDocumentStore((s) => s.doc?.id ?? null);
   // Preview pixels per mm, for guides measured in mm; null while the size is not set.
-  const pxPerMm = useDocumentStore((s) => (s.doc && source ? pxPerMmAt(s.doc, source.width) : null));
+  const pxPerMm = useDocumentStore((s) => (s.doc && source ? pxPerMmOfSource(s.doc, source) : null));
   const canvasTool = useViewStore((s) => s.canvasTool);
   const substrateMask = useViewStore((s) => s.substrateMask);
   const substrateCornerRadius = useViewStore((s) => s.substrateCornerRadius);

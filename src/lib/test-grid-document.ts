@@ -1,29 +1,14 @@
+import * as Comlink from 'comlink';
 import { generateTestGridRaster, testGridSizePx, type TestGridOptions } from './test-grid-generator';
 import { mmPerPxFromDpi } from './document-size';
-import { previewOfBitmap, type DecodedImage } from './image-loader';
-import { useDocumentStore } from '../store/documentStore';
+import { newSourceId, useDocumentStore } from '../store/documentStore';
+import { getPipeline, type Pipeline } from './pipeline-client';
 
 /** Default resolution of a raster test grid. */
 export const DEFAULT_TEST_GRID_DPI = 300;
 
 /** Largest raster test grid generated, in pixels: 50 MP is a 200 MB RGBA buffer. */
 export const MAX_TEST_GRID_PIXELS = 50_000_000;
-
-/** Makes the preview of a generated RGBA grid. In the browser, through the same canvas path as a loaded file. */
-export type GridPreviewMaker = (
-  rgba: ArrayBuffer,
-  width: number,
-  height: number
-) => Promise<Pick<DecodedImage, 'preview' | 'previewWidth' | 'previewHeight'>>;
-
-const browserPreview: GridPreviewMaker = async (rgba, width, height) => {
-  const bitmap = await createImageBitmap(new ImageData(new Uint8ClampedArray(rgba), width, height));
-  try {
-    return previewOfBitmap(bitmap);
-  } finally {
-    bitmap.close();
-  }
-};
 
 /**
  * Generates a raster test grid at `options.dpi` (the grid's own resolution,
@@ -35,7 +20,7 @@ const browserPreview: GridPreviewMaker = async (rgba, width, height) => {
 export async function openTestGridRaster(
   options: TestGridOptions,
   name: string,
-  makePreview: GridPreviewMaker = browserPreview
+  pipeline: Pipeline = getPipeline()
 ): Promise<void> {
   const size = testGridSizePx(options);
   if (size.width * size.height > MAX_TEST_GRID_PIXELS) {
@@ -44,9 +29,11 @@ export async function openTestGridRaster(
     );
   }
   const { buffer, width, height } = generateTestGridRaster(options);
-  const preview = await makePreview(buffer, width, height);
+  const sourceId = newSourceId();
+  // The pixels move to the worker, which holds every source; none stay here.
+  const info = await pipeline.putSource(sourceId, Comlink.transfer(buffer, [buffer]), width, height);
   useDocumentStore.getState().open(
-    { file: null, name, widthPx: width, heightPx: height, hasAlpha: false, fileDpi: null, ...preview },
+    { sourceId, file: null, name, ...info, fileDpi: null },
     mmPerPxFromDpi(options.dpi)
   );
 }

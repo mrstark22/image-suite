@@ -26,22 +26,6 @@ export interface ColorAdjustments {
   tint: number;         // -100 to +100 (0 default)
 }
 
-/**
- * Detail filter parameters as the worker runs them, with lengths in pixels of
- * the image being processed. The document stores lengths in millimetres
- * (`DetailSettings`); `detailRunParams` converts them.
- */
-export interface DetailRunParams {
-  clahe: boolean;
-  claheClipLimit: number;
-  claheGridSize: number;
-  unsharpStrength: number; // 0 to 200 %
-  unsharpRadiusPx: number;
-  adaptiveThreshold: boolean;
-  adaptiveBlockPx: number; // odd, at least 3
-  adaptiveConstant: number;
-}
-
 /** A rectangle in whole pixels. The document's crop is in pixels of the source image. */
 export interface CropRect {
   x: number;

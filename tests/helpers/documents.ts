@@ -1,7 +1,8 @@
 /**
  * Helpers for tests that open images in the document store without a browser.
  */
-import type { DecodedImage } from '../../src/lib/image-loader';
+import type { LoadedSource } from '../../src/lib/image-loader';
+import { newSourceId } from '../../src/store/documentStore';
 import { useDocumentStore } from '../../src/store/documentStore';
 import { useRenderStore } from '../../src/store/renderStore';
 import { useUIStore } from '../../src/store/uiStore';
@@ -28,39 +29,20 @@ export function labelledImage(width: number, height: number): ArrayBuffer {
 }
 
 /**
- * A decoded `widthPx` x `heightPx` image whose preview is
- * `previewWidth` x `previewHeight` (the source itself when not given), with
- * every preview pixel labelled.
+ * A `widthPx` x `heightPx` source with a new id, as `open` takes it. Its pixels
+ * are not loaded anywhere: enough for tests of the document and its history.
+ * Tests that render load pixels with `loadPixels` (tests/helpers/pipeline.ts).
  */
-export function decodedImage(
-  widthPx: number,
-  heightPx: number,
-  previewWidth = widthPx,
-  previewHeight = heightPx,
-  fileDpi: number | null = null,
-  name = 'test.png'
-): DecodedImage {
-  return {
-    file: null,
-    name,
-    widthPx,
-    heightPx,
-    hasAlpha: false,
-    fileDpi,
-    preview: labelledImage(previewWidth, previewHeight),
-    previewWidth,
-    previewHeight,
-  };
+export function decodedImage(widthPx: number, heightPx: number, fileDpi: number | null = null, name = 'test.png'): LoadedSource {
+  return { sourceId: newSourceId(), file: null, name, widthPx, heightPx, hasAlpha: false, fileDpi };
 }
 
-/** A 6000x4000 photo with the 2048x1365 preview `image-loader.ts` makes for it. */
+/** A 6000x4000 photo; its preview target is 2048x1365. */
 export const PHOTO = { widthPx: 6000, heightPx: 4000, previewWidth: 2048, previewHeight: 1365 };
 
-/** Opens the 6000x4000 photo. */
+/** Opens the 6000x4000 photo (metadata only). */
 export function openPhoto(fileDpi: number | null = null): void {
-  useDocumentStore
-    .getState()
-    .open(decodedImage(PHOTO.widthPx, PHOTO.heightPx, PHOTO.previewWidth, PHOTO.previewHeight, fileDpi, 'photo.jpg'));
+  useDocumentStore.getState().open(decodedImage(PHOTO.widthPx, PHOTO.heightPx, fileDpi, 'photo.jpg'));
 }
 
 /** Closes any document and resets the stores between tests. */
@@ -77,7 +59,11 @@ export function currentDoc() {
   return doc;
 }
 
-/** Checks that the preview source is exactly the preview pixels from (`ox`, `oy`) over `width` x `height`. */
+/**
+ * How many pixels of the preview's `source` render differ from the labelled
+ * image's pixels from (`ox`, `oy`) over `width` x `height`; infinite when the
+ * render is not that size. Exact only for renders at 1:1 (no resampling).
+ */
 export function previewMismatches(ox: number, oy: number, width: number, height: number): number {
   const source = useRenderStore.getState().source;
   if (!source || source.width !== width || source.height !== height) return Number.POSITIVE_INFINITY;
