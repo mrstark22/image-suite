@@ -55,8 +55,8 @@ export const DitheringPanel: React.FC = () => {
                       style={{
                         fontSize: 8,
                         fontWeight: 700,
-                        color: 'var(--accent-primary)',
-                        background: 'rgba(56,189,248,0.15)',
+                        color: 'var(--text-2)',
+                        background: 'var(--surface-2)',
                         padding: '1px 4px',
                         borderRadius: 3,
                       }}

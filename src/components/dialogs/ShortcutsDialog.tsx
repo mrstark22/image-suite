@@ -16,7 +16,7 @@ export const ShortcutsDialog: React.FC<Props> = ({ isOpen, onClose }) => {
       <div className={styles.modal} style={{ width: 560 }} onClick={(e) => e.stopPropagation()}>
         <div className={styles.header}>
           <div className={styles.title}>
-            <Keyboard size={16} color="var(--accent-primary)" />
+            <Keyboard size={16} color="var(--text-2)" />
             <span>Keyboard Shortcuts & Workflow Cheatsheet</span>
           </div>
           <button className={styles.closeBtn} onClick={onClose}>
@@ -31,7 +31,7 @@ export const ShortcutsDialog: React.FC<Props> = ({ isOpen, onClose }) => {
                 style={{
                   fontSize: 11,
                   fontWeight: 700,
-                  color: 'var(--accent-primary)',
+                  color: 'var(--text-3)',
                   textTransform: 'uppercase',
                   letterSpacing: '0.05em',
                   marginBottom: 6,
@@ -48,22 +48,20 @@ export const ShortcutsDialog: React.FC<Props> = ({ isOpen, onClose }) => {
                       justifyContent: 'space-between',
                       alignItems: 'center',
                       padding: '4px 8px',
-                      background: 'var(--bg-surface, #0d1117)',
+                      background: 'var(--surface)',
                       borderRadius: 4,
                       fontSize: 12,
                     }}
                   >
-                    <span style={{ color: 'var(--text-secondary)' }}>{item.desc}</span>
+                    <span style={{ color: 'var(--text-2)' }}>{item.desc}</span>
                     <kbd
                       style={{
-                        background: 'var(--bg-surface-raised, #21262d)',
-                        border: '1px solid var(--border-medium, #30363d)',
+                        background: 'var(--surface-2)',
+                        border: '1px solid var(--control-border)',
                         borderRadius: 3,
                         padding: '2px 6px',
-                        fontFamily: 'var(--font-mono, monospace)',
                         fontSize: 11,
-                        color: 'var(--text-primary)',
-                        boxShadow: '0 1px 2px rgba(0,0,0,0.4)',
+                        color: 'var(--text)',
                       }}
                     >
                       {item.keys}

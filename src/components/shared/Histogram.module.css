@@ -1,6 +1,6 @@
 .histogramCard {
-  background: var(--bg-tertiary, #1a1a24);
-  border: 1px solid var(--border-color, #2d2d3d);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
   border-radius: 8px;
   padding: 10px 12px;
   margin-bottom: 12px;
@@ -17,7 +17,7 @@
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  color: var(--text-secondary, #94a3b8);
+  color: var(--text-2);
 }
 
 .channelBadges {
@@ -30,7 +30,12 @@
 .badgeR { color: #f87171; }
 .badgeG { color: #4ade80; }
 .badgeB { color: #60a5fa; }
-.badgeL { color: #e2e8f0; }
+.badgeL { color: var(--text); }
+
+/* Channel colours dark enough to read as text on the light theme's surfaces (4.5:1). */
+:global([data-theme="light"]) .badgeR { color: #b42318; }
+:global([data-theme="light"]) .badgeG { color: #1a6e35; }
+:global([data-theme="light"]) .badgeB { color: #1d4ed8; }
 
 .canvasWrapper {
   position: relative;
@@ -52,7 +57,6 @@
   display: flex;
   justify-content: space-between;
   font-size: 9px;
-  font-family: var(--font-mono, monospace);
-  color: var(--text-tertiary, #64748b);
+  color: var(--text-3);
   padding: 0 2px;
 }

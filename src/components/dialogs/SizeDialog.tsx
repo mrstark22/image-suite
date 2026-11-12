@@ -76,7 +76,7 @@ export const SizeDialog: React.FC = () => {
       >
         <div className={styles.header}>
           <div className={styles.title} id="size-dialog-title">
-            <Maximize size={16} color="var(--accent-primary)" />
+            <Maximize size={16} color="var(--text-2)" />
             Physical size
           </div>
           <button className={styles.closeBtn} onClick={close} aria-label="Close">

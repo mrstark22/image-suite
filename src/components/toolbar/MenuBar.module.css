@@ -3,8 +3,8 @@
   align-items: center;
   justify-content: space-between;
   height: 38px;
-  background: var(--bg-surface);
-  border-bottom: 1px solid var(--border-subtle);
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
   padding: 0 12px;
   user-select: none;
   z-index: 100;
@@ -21,28 +21,13 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  cursor: pointer;
   padding-right: 8px;
 }
 
 .brandTitle {
-  font-weight: 700;
+  font-weight: var(--weight-strong);
   font-size: 13px;
-  letter-spacing: 0.06em;
-  background: linear-gradient(135deg, var(--accent-primary) 0%, #38bdf8 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-}
-
-.brandBadge {
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  background: var(--bg-surface-active);
-  color: var(--accent-primary);
-  padding: 1px 4px;
-  border-radius: 3px;
-  border: 1px solid rgba(56, 189, 248, 0.2);
+  color: var(--text);
 }
 
 .menusList {
@@ -58,7 +43,7 @@
 .menuBtn {
   background: transparent;
   border: none;
-  color: var(--text-secondary);
+  color: var(--text-2);
   font-size: 12px;
   font-weight: 500;
   padding: 4px 8px;
@@ -69,19 +54,19 @@
 
 .menuBtn:hover,
 .menuBtnActive {
-  background: var(--bg-surface-hover);
-  color: var(--text-primary);
+  background: var(--surface-hover);
+  color: var(--text);
 }
 
 .dropdownMenu {
   position: absolute;
   top: calc(100% + 4px);
   left: 0;
-  background: var(--bg-surface);
-  border: 1px solid var(--border-medium);
+  background: var(--surface);
+  border: 1px solid var(--control-border);
   border-radius: var(--radius-md);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
-  min-width: 220px;
+  box-shadow: var(--shadow-md);
+  min-width: 270px;
   padding: 4px 0;
   z-index: 1000;
   display: flex;
@@ -92,9 +77,10 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: var(--space-6);
   padding: 6px 12px;
   font-size: 12px;
-  color: var(--text-primary);
+  color: var(--text);
   background: transparent;
   border: none;
   width: 100%;
@@ -104,8 +90,8 @@
 }
 
 .dropdownItem:hover:not(:disabled) {
-  background: var(--accent-primary);
-  color: #000;
+  background: var(--sel-bg);
+  color: var(--on-sel);
 }
 
 .dropdownItem:disabled {
@@ -119,19 +105,27 @@
   gap: 8px;
 }
 
+.itemCheck {
+  width: 12px;
+  color: inherit;
+}
+
+.dropdownItemDanger {
+  color: var(--danger);
+}
+
 .itemShortcut {
   font-size: 10px;
-  color: var(--text-tertiary);
-  font-family: var(--font-mono);
+  color: var(--text-3);
 }
 
 .dropdownItem:hover:not(:disabled) .itemShortcut {
-  color: rgba(0, 0, 0, 0.7);
+  color: var(--on-sel);
 }
 
 .menuDivider {
   height: 1px;
-  background: var(--border-subtle);
+  background: var(--border);
   margin: 4px 0;
 }
 
@@ -142,26 +136,28 @@
 }
 
 .telemetry {
+  font: inherit;
+  cursor: pointer;
   display: flex;
   align-items: center;
   gap: 6px;
   font-size: 11px;
-  color: var(--text-secondary);
-  background: var(--bg-canvas);
+  color: var(--text-2);
+  background: var(--surface-2);
   padding: 3px 8px;
   border-radius: var(--radius-sm);
-  border: 1px solid var(--border-subtle);
+  border: 1px solid var(--border);
 }
 
 .pulseDot {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: var(--accent-success);
+  background: var(--success);
 }
 
 .processingDot {
-  background: var(--accent-warning);
+  background: var(--warning);
   animation: pulse 1s infinite;
 }
 
@@ -170,40 +166,76 @@
   50% { opacity: 0.3; }
 }
 
-.quickActionBtn {
-  background: var(--bg-surface);
-  border: 1px solid var(--border-subtle);
-  color: var(--text-primary);
-  font-size: 12px;
-  padding: 4px 10px;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
+.telemetry:hover {
+  border-color: var(--control-border);
+}
+
+.telemetrySize {
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+}
+
+.telemetrySep {
+  color: var(--text-3);
+}
+
+.telemetryTime {
+  color: var(--text);
+}
+
+/* The choice of job: a segmented control, selected in the inverted grey of A. */
+.jobSwitch {
+  display: flex;
+  margin-left: var(--space-3);
+  border: 1px solid var(--control-border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.jobBtn {
+  font-size: var(--text-md);
+  font-weight: var(--weight-medium);
+  color: var(--text-2);
+  padding: 4px 14px;
+  transition: background var(--transition-fast);
+}
+
+.jobBtn + .jobBtn {
+  border-left: 1px solid var(--control-border);
+}
+
+.jobBtn:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.jobBtnActive,
+.jobBtnActive:hover {
+  background: var(--sel-bg);
+  color: var(--on-sel);
+}
+
+/* Machine and material: they change the photo and relief output, so they stay in view. */
+.setupField {
   display: flex;
   align-items: center;
   gap: 6px;
-  transition: all var(--transition-fast);
 }
 
-.quickActionBtn:hover {
-  background: var(--bg-surface-hover);
-  border-color: var(--border-medium);
+.setupLabel {
+  font-size: var(--text-xs);
+  font-weight: var(--weight-strong);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-label);
+  color: var(--text-3);
 }
 
-.exportBtn {
-  background: var(--accent-primary);
-  color: #000;
-  font-weight: 600;
-  border: none;
-  font-size: 12px;
-  padding: 4px 12px;
+.setupSelect {
+  font-size: var(--text-md);
+  color: var(--text);
+  background: var(--field);
+  border: 1px solid var(--control-border);
   border-radius: var(--radius-sm);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  transition: opacity var(--transition-fast);
-}
-
-.exportBtn:hover {
-  opacity: 0.9;
+  padding: 3px 6px;
+  max-width: 190px;
 }

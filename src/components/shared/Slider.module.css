@@ -14,7 +14,7 @@
 .label {
   font-size: 11px;
   font-weight: 500;
-  color: var(--text-secondary);
+  color: var(--text-2);
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
@@ -29,18 +29,16 @@
   width: 48px;
   padding: 2px 4px;
   font-size: 11px;
-  font-family: var(--font-mono);
   text-align: right;
-  background: var(--bg-input);
-  border: 1px solid var(--border-subtle);
+  background: var(--field);
+  border: 1px solid var(--control-border);
   border-radius: var(--radius-sm);
-  color: var(--accent-primary);
+  color: var(--text);
 }
 
 .unit {
   font-size: 10px;
-  color: var(--text-tertiary);
-  font-family: var(--font-mono);
+  color: var(--text-3);
 }
 
 .sliderRow {
@@ -55,7 +53,7 @@
   width: 100%;
   height: 4px;
   border-radius: var(--radius-full);
-  background: var(--bg-surface-active);
+  background: var(--track);
   outline: none;
   cursor: pointer;
   transition: background var(--transition-fast);
@@ -67,16 +65,16 @@
   width: 14px;
   height: 14px;
   border-radius: 50%;
-  background: var(--accent-primary);
-  border: 2px solid var(--bg-surface);
-  box-shadow: 0 0 6px var(--accent-primary-glow);
+  background: var(--surface);
+  border: 1.5px solid var(--control-border);
   cursor: grab;
   transition: transform var(--transition-fast), background var(--transition-fast);
 }
 
 .inputRange::-webkit-slider-thumb:hover {
   transform: scale(1.2);
-  background: #7dd3fc;
+  background: var(--surface);
+  border-color: var(--text);
 }
 
 .inputRange::-webkit-slider-thumb:active {
@@ -98,5 +96,5 @@
 
 .note {
   font-size: 10px;
-  color: var(--text-tertiary);
+  color: var(--text-3);
 }

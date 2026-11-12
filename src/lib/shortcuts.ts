@@ -8,6 +8,7 @@ import { useDocumentStore } from '../store/documentStore';
 import { useUIStore } from '../store/uiStore';
 import { useViewStore } from '../store/viewStore';
 import { openImagePicker } from './open-image';
+import { showsOrbitView } from './workflows';
 
 export type ShortcutCommand =
   | 'undo'
@@ -20,7 +21,7 @@ export type ShortcutCommand =
   | 'fit'
   | 'toggleRulers'
   | 'toggleSplit'
-  | 'toggleBurn'
+  | 'toggleInvertedView'
   | 'panTool'
   | 'cropTool'
   | 'showShortcuts'
@@ -64,7 +65,7 @@ export const SHORTCUT_GROUPS: { category: string; items: Shortcut[] }[] = [
       { keys: 'Ctrl + 1', desc: 'Actual Size (100%)', command: 'actualSize' },
       { keys: 'Ctrl + R', desc: 'Toggle Physical Rulers', command: 'toggleRulers' },
       { keys: 'Ctrl + \\', desc: 'Toggle Split View (Before / After)', command: 'toggleSplit' },
-      { keys: 'Ctrl + B', desc: 'Toggle Burn View Simulation', command: 'toggleBurn' },
+      { keys: 'Ctrl + B', desc: 'Toggle Inverted View', command: 'toggleInvertedView' },
     ],
   },
   {
@@ -73,7 +74,7 @@ export const SHORTCUT_GROUPS: { category: string; items: Shortcut[] }[] = [
       { keys: 'Ctrl + Z', desc: 'Undo', command: 'undo' },
       { keys: 'Ctrl + Y', desc: 'Redo', command: 'redo' },
       { keys: 'Ctrl + O', desc: 'Open Image', command: 'open' },
-      { keys: 'Ctrl + E', desc: 'Go to Export', command: 'export' },
+      { keys: 'Ctrl + E', desc: 'Go to the Export Step', command: 'export' },
       { keys: '?', desc: 'Show Keyboard Shortcuts', command: 'showShortcuts' },
     ],
   },
@@ -102,7 +103,7 @@ export function commandFor(press: KeyPress): ShortcutCommand | null {
     if (key === '1') return 'actualSize';
     if (key === 'r') return 'toggleRulers';
     if (key === '\\') return 'toggleSplit';
-    if (key === 'b') return 'toggleBurn';
+    if (key === 'b') return 'toggleInvertedView';
     return null;
   }
   if (key === 'h') return 'panTool';
@@ -154,6 +155,16 @@ export function shortcutToRun(press: KeyPress, focused: FocusedElement | null): 
 }
 
 /**
+ * True when the canvas shows the flat image, which the view commands act on.
+ * The 3D orbit view of the relief ignores zoom, rulers, split, inversion and
+ * guides, so those are unavailable while it is shown (#53).
+ */
+export function canvasIsFlat(): boolean {
+  const doc = useDocumentStore.getState().doc;
+  return !showsOrbitView(useUIStore.getState().job, doc?.depth.viewMode, useViewStore.getState().canvasTool);
+}
+
+/**
  * False when `command` does not apply now: nothing to undo or redo, no image
  * to export, no dialog to close. The key then keeps its default action.
  */
@@ -169,9 +180,19 @@ export function isAvailable(command: ShortcutCommand): boolean {
       return docs.gesture !== null || docs.future.length > 0;
     case 'export':
       return docs.doc !== null;
+    // The vector job's canvas shows the image the trace reads: there is no before and after.
+    case 'toggleSplit':
+      return ui.job !== 'vector' && canvasIsFlat();
+    case 'zoomIn':
+    case 'zoomOut':
+    case 'fit':
+    case 'actualSize':
+    case 'toggleRulers':
+    case 'toggleInvertedView':
+      return canvasIsFlat();
     // Escape in the crop tool is handled by the crop overlay.
     case 'closeDialog':
-      return ui.isShortcutsDialogOpen || ui.isSizeDialogOpen || ui.isPresetDialogOpen || ui.isTestGridDialogOpen;
+      return ui.isShortcutsDialogOpen || ui.isSizeDialogOpen || ui.isTestGridDialogOpen;
     default:
       return true;
   }
@@ -193,7 +214,7 @@ export function runCommand(command: ShortcutCommand): boolean {
       openImagePicker();
       break;
     case 'export':
-      ui.setActiveTab('export');
+      ui.goToStep('export');
       break;
     case 'zoomIn':
       view.zoomBy(ZOOM_STEP);
@@ -213,8 +234,8 @@ export function runCommand(command: ShortcutCommand): boolean {
     case 'toggleSplit':
       ui.toggleSplitView();
       break;
-    case 'toggleBurn':
-      ui.toggleInvertedBurn();
+    case 'toggleInvertedView':
+      ui.toggleInvertedView();
       break;
     case 'panTool':
       view.setCanvasTool('pan');
@@ -228,7 +249,6 @@ export function runCommand(command: ShortcutCommand): boolean {
     case 'closeDialog':
       ui.setShortcutsDialogOpen(false);
       ui.setSizeDialogOpen(false);
-      ui.setPresetDialogOpen(false);
       ui.setTestGridDialogOpen(false);
       break;
   }

@@ -1,80 +1,103 @@
 import { create } from 'zustand';
-
-export type ToolTab =
-  | 'adjustments'
-  | 'dither'
-  | 'vector'
-  | 'depth'
-  | 'ai'
-  | 'export';
+import { FLOWS, nextStep, previousStep, type Job, type StepId } from '../lib/workflows';
+import { DEFAULT_MACHINE_ID } from '../lib/machines';
 
 interface UIState {
-  activeTab: ToolTab;
+  /** The job being done: its flow of steps is shown, and the canvas shows its output (#53). */
+  job: Job;
+  /** The current step of each job, so switching jobs and back returns to where the user was. */
+  stepByJob: Record<Job, StepId>;
+  /** The machine and material the output is for; chosen in the shell. */
+  machineId: string;
+  materialId: string | null;
+
   isSplitView: boolean;
-  isInvertedBurn: boolean;
+  isInvertedView: boolean;
   showRulers: boolean;
   showVectorOverlay: boolean;
   theme: 'dark' | 'light';
 
   // Modal Dialogs
-  isPresetDialogOpen: boolean;
-  isExportDialogOpen: boolean;
-  isSettingsDialogOpen: boolean;
   isSizeDialogOpen: boolean;
   isTestGridDialogOpen: boolean;
   isShortcutsDialogOpen: boolean;
 
   // Actions
-  setActiveTab: (tab: ToolTab) => void;
+  setJob: (job: Job) => void;
+  /** Goes to `step` of the current job. A step that is not in its flow is ignored. */
+  goToStep: (step: StepId) => void;
+  goToNextStep: () => void;
+  goToPreviousStep: () => void;
+  setMachineId: (id: string) => void;
+  setMaterialId: (id: string | null) => void;
   toggleSplitView: () => void;
-  toggleInvertedBurn: () => void;
+  toggleInvertedView: () => void;
   toggleRulers: () => void;
   toggleVectorOverlay: () => void;
   setTheme: (theme: 'dark' | 'light') => void;
   toggleTheme: () => void;
 
-  setPresetDialogOpen: (open: boolean) => void;
-  setExportDialogOpen: (open: boolean) => void;
-  setSettingsDialogOpen: (open: boolean) => void;
   setSizeDialogOpen: (open: boolean) => void;
   setTestGridDialogOpen: (open: boolean) => void;
   setShortcutsDialogOpen: (open: boolean) => void;
 }
 
-export const useUIStore = create<UIState>((set) => ({
-  activeTab: 'adjustments',
+/** Sets the theme on the page; there is no page when the store runs in tests. */
+function applyTheme(theme: 'dark' | 'light'): void {
+  if (typeof document !== 'undefined') document.documentElement.setAttribute('data-theme', theme);
+}
+
+/** Every job at its first step. */
+export function firstSteps(): Record<Job, StepId> {
+  return { vector: FLOWS.vector[0], photo: FLOWS.photo[0], relief: FLOWS.relief[0] };
+}
+
+/** The current step of the current job. */
+export function currentStep(state: Pick<UIState, 'job' | 'stepByJob'>): StepId {
+  return state.stepByJob[state.job];
+}
+
+export const useUIStore = create<UIState>((set, get) => ({
+  job: 'photo',
+  stepByJob: firstSteps(),
+  machineId: DEFAULT_MACHINE_ID,
+  materialId: null,
   isSplitView: false,
-  isInvertedBurn: false,
+  isInvertedView: false,
   showRulers: true,
   showVectorOverlay: true,
   theme: 'dark',
 
-  isPresetDialogOpen: false,
-  isExportDialogOpen: false,
-  isSettingsDialogOpen: false,
   isSizeDialogOpen: false,
   isTestGridDialogOpen: false,
   isShortcutsDialogOpen: false,
 
-  setActiveTab: (activeTab) => set({ activeTab }),
+  setJob: (job) => set({ job }),
+  goToStep: (step) => {
+    const { job, stepByJob } = get();
+    if (!FLOWS[job].includes(step)) return;
+    set({ stepByJob: { ...stepByJob, [job]: step } });
+  },
+  goToNextStep: () => {
+    const next = nextStep(get().job, currentStep(get()));
+    if (next) get().goToStep(next);
+  },
+  goToPreviousStep: () => {
+    const prev = previousStep(get().job, currentStep(get()));
+    if (prev) get().goToStep(prev);
+  },
+  setMachineId: (machineId) => set({ machineId }),
+  setMaterialId: (materialId) => set({ materialId }),
   toggleSplitView: () => set((state) => ({ isSplitView: !state.isSplitView })),
-  toggleInvertedBurn: () => set((state) => ({ isInvertedBurn: !state.isInvertedBurn })),
+  toggleInvertedView: () => set((state) => ({ isInvertedView: !state.isInvertedView })),
   toggleRulers: () => set((state) => ({ showRulers: !state.showRulers })),
   toggleVectorOverlay: () => set((state) => ({ showVectorOverlay: !state.showVectorOverlay })),
   setTheme: (theme) => {
-    document.documentElement.setAttribute('data-theme', theme);
+    applyTheme(theme);
     set({ theme });
   },
-  toggleTheme: () =>
-    set((state) => {
-      const nextTheme = state.theme === 'dark' ? 'light' : 'dark';
-      document.documentElement.setAttribute('data-theme', nextTheme);
-      return { theme: nextTheme };
-    }),
+  toggleTheme: () => get().setTheme(get().theme === 'dark' ? 'light' : 'dark'),
 
-  setPresetDialogOpen: (isPresetDialogOpen) => set({ isPresetDialogOpen }),
-  setExportDialogOpen: (isExportDialogOpen) => set({ isExportDialogOpen }),
-  setSettingsDialogOpen: (isSettingsDialogOpen) => set({ isSettingsDialogOpen }),
   setSizeDialogOpen: (isSizeDialogOpen) => set({ isSizeDialogOpen }),
   setTestGridDialogOpen: (isTestGridDialogOpen) => set({ isTestGridDialogOpen }),
   setShortcutsDialogOpen: (isShortcutsDialogOpen) => set({ isShortcutsDialogOpen }),

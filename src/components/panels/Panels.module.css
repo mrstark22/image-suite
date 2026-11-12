@@ -1,8 +1,8 @@
 .panel {
   width: var(--panel-width);
   height: 100%;
-  background: var(--bg-surface);
-  border-left: 1px solid var(--border-subtle);
+  background: var(--surface);
+  border-left: 1px solid var(--border);
   display: flex;
   flex-direction: column;
   overflow-y: auto;
@@ -14,37 +14,37 @@
   justify-content: space-between;
   align-items: center;
   padding: var(--space-4);
-  border-bottom: 1px solid var(--border-subtle);
-  background: var(--bg-surface-raised);
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
 }
 
 .panelTitle {
   font-size: 13px;
   font-weight: 700;
-  color: var(--text-primary);
+  color: var(--text);
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
 
 .resetButton {
   font-size: 11px;
-  color: var(--text-tertiary);
+  color: var(--text-3);
   transition: color var(--transition-fast);
 }
 
 .resetButton:hover {
-  color: var(--accent-primary);
+  color: var(--text);
 }
 
 .section {
   padding: var(--space-4);
-  border-bottom: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--border);
 }
 
 .sectionTitle {
   font-size: 11px;
   font-weight: 600;
-  color: var(--text-tertiary);
+  color: var(--text-3);
   text-transform: uppercase;
   letter-spacing: 0.04em;
   margin-bottom: var(--space-3);
@@ -63,30 +63,30 @@
 .toggleLabel {
   font-size: 12px;
   font-weight: 500;
-  color: var(--text-secondary);
+  color: var(--text-2);
 }
 
 .checkbox {
   width: 16px;
   height: 16px;
-  accent-color: var(--accent-primary);
+  accent-color: var(--text);
   cursor: pointer;
 }
 
 .select {
   width: 100%;
   padding: 6px 10px;
-  background: var(--bg-input);
-  border: 1px solid var(--border-subtle);
+  background: var(--field);
+  border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  color: var(--text-primary);
+  color: var(--text);
   font-size: 12px;
   margin-bottom: var(--space-3);
   outline: none;
 }
 
 .select:focus {
-  border-color: var(--border-focus);
+  border-color: var(--focus);
 }
 
 .gridCards {
@@ -101,69 +101,61 @@
   flex-direction: column;
   align-items: flex-start;
   padding: var(--space-2) var(--space-3);
-  background: var(--bg-surface-raised);
-  border: 1px solid var(--border-subtle);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
   border-radius: var(--radius-md);
   text-align: left;
   transition: all var(--transition-fast);
 }
 
 .cardButton:hover {
-  background: var(--bg-surface-hover);
-  border-color: var(--border-medium);
+  background: var(--surface-hover);
+  border-color: var(--control-border);
 }
 
 .cardButtonActive {
-  background: rgba(56, 189, 248, 0.12);
-  border-color: var(--accent-primary);
+  background: var(--surface-hover);
+  border-color: var(--text);
 }
 
 .cardTitle {
   font-size: 11px;
   font-weight: 600;
-  color: var(--text-primary);
+  color: var(--text);
   margin-bottom: 2px;
 }
 
 .cardDesc {
   font-size: 9px;
-  color: var(--text-tertiary);
+  color: var(--text-3);
   line-height: 1.2;
-}
-
-.exportActionBlock {
-  padding: var(--space-4);
-  margin-top: auto;
 }
 
 .primaryActionBtn {
   width: 100%;
   height: 34px;
   padding: 0 12px;
-  background: var(--accent-primary, #38bdf8);
-  color: #041019;
-  font-weight: 700;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-weight: 600;
   font-size: 12px;
   border: none;
-  border-radius: var(--radius-sm, 6px);
+  border-radius: var(--radius-sm);
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: var(--space-2, 6px);
+  gap: var(--space-2);
   cursor: pointer;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
-  transition: all var(--transition-fast, 0.15s ease);
+  transition: all var(--transition-fast);
 }
 
 .primaryActionBtn:hover {
-  background: #7dd3fc;
-  box-shadow: 0 0 12px rgba(56, 189, 248, 0.35);
-  transform: translateY(-0.5px);
+  background: var(--accent-hover);
 }
 
 /* Accordion & Modern Uncluttered Tonal Styles */
 .accordionSection {
-  border-bottom: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--border);
 }
 
 .accordionHeader {
@@ -180,7 +172,7 @@
 }
 
 .accordionHeader:hover {
-  background: var(--bg-surface-hover);
+  background: var(--surface-hover);
 }
 
 .accordionLeft {
@@ -190,7 +182,7 @@
 }
 
 .accordionIcon {
-  color: var(--accent-primary);
+  color: var(--text-2);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -199,7 +191,7 @@
 .accordionTitle {
   font-size: 11px;
   font-weight: 700;
-  color: var(--text-primary);
+  color: var(--text);
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
@@ -208,8 +200,7 @@
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: var(--accent-primary);
-  box-shadow: 0 0 8px var(--accent-primary-glow);
+  background: var(--text);
 }
 
 .accordionRight {
@@ -228,8 +219,8 @@
 /* Quick Presets Bar */
 .presetsContainer {
   padding: 10px 16px;
-  border-bottom: 1px solid var(--border-subtle);
-  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
 }
 
 .presetsTitle {
@@ -237,7 +228,7 @@
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  color: var(--text-tertiary);
+  color: var(--text-3);
   margin-bottom: 8px;
 }
 
@@ -249,10 +240,10 @@
 
 .presetChip {
   padding: 4px 10px;
-  background: var(--bg-surface-raised);
-  border: 1px solid var(--border-subtle);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  color: var(--text-secondary);
+  color: var(--text-2);
   font-size: 11px;
   font-weight: 500;
   cursor: pointer;
@@ -263,9 +254,9 @@
 }
 
 .presetChip:hover:not(:disabled) {
-  background: var(--bg-surface-hover);
-  border-color: var(--accent-primary);
-  color: var(--text-primary);
+  background: var(--surface-hover);
+  border-color: var(--text);
+  color: var(--text);
 }
 
 .presetChip:disabled {
@@ -274,17 +265,17 @@
 }
 
 .presetChipActive {
-  background: rgba(56, 189, 248, 0.15);
-  border-color: var(--accent-primary);
-  color: var(--accent-primary);
+  background: var(--surface-hover);
+  border-color: var(--text);
+  color: var(--text);
   font-weight: 600;
 }
 
 /* Segmented Control */
 .segmentedGroup {
   display: flex;
-  background: var(--bg-input, #0e0e17);
-  border: 1px solid var(--border-subtle);
+  background: var(--field);
+  border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   padding: 2px;
   gap: 2px;
@@ -296,7 +287,7 @@
   padding: 5px 8px;
   font-size: 10px;
   font-weight: 600;
-  color: var(--text-tertiary);
+  color: var(--text-3);
   background: transparent;
   border: none;
   border-radius: 3px;
@@ -307,29 +298,28 @@
 }
 
 .segmentedItem:hover {
-  color: var(--text-primary);
-  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+  background: var(--surface-hover);
 }
 
 .segmentedItemActive {
-  background: var(--bg-surface-raised, #1e1e2d);
-  color: var(--accent-primary, #38bdf8);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  background: var(--sel-bg);
+  color: var(--on-sel);
 }
 
 
 .controlNote {
   font-size: 10px;
-  color: var(--text-tertiary);
+  color: var(--text-3);
   margin-top: -4px;
   margin-bottom: var(--space-2);
 }
 
 .readoutBox {
-  background: var(--bg-input);
+  background: var(--field);
   padding: 10px;
   border-radius: var(--radius-sm);
-  border: 1px solid var(--border-subtle);
+  border: 1px solid var(--border);
   font-size: 11px;
   display: flex;
   flex-direction: column;
@@ -341,10 +331,74 @@
   justify-content: space-between;
   align-items: center;
   gap: var(--space-2);
-  color: var(--text-tertiary);
+  color: var(--text-3);
 }
 
 .readoutRow strong {
-  color: var(--text-primary);
-  font-family: var(--font-mono);
+  color: var(--text);
+}
+
+/* Export step (#53) */
+.secondaryActionBtn {
+  width: 100%;
+  height: 32px;
+  padding: 0 12px;
+  background: var(--surface-hover);
+  color: var(--text);
+  font-weight: var(--weight-medium);
+  font-size: var(--text-md);
+  border: 1px solid var(--control-border);
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  transition: background var(--transition-fast);
+}
+
+.secondaryActionBtn:hover:not(:disabled) {
+  background: var(--surface-2);
+}
+
+.secondaryActionBtn:disabled,
+.primaryActionBtn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.buttonRow {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.stackGap {
+  margin-top: var(--space-2);
+}
+
+.errorText {
+  color: var(--danger);
+}
+
+.titleWithIcon {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.readoutValue {
+  text-align: right;
+}
+
+.emptyNote {
+  padding: var(--space-6);
+  text-align: center;
+  color: var(--text-3);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.primaryActionBtn + .primaryActionBtn,
+.select + .primaryActionBtn {
+  margin-top: var(--space-2);
 }

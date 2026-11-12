@@ -7,7 +7,8 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { useDocumentStore } from '../../src/store/documentStore';
 import { useRenderStore } from '../../src/store/renderStore';
 import { useUIStore } from '../../src/store/uiStore';
-import { setCrop, setDither, setTonal, setVector } from '../../src/lib/document';
+import { setColor, setCrop, setDepth, setDetail, setDither, setTonal, setVector } from '../../src/lib/document';
+import { FLOWS } from '../../src/lib/workflows';
 import type { Pipeline } from '../../src/lib/pipeline-client';
 import { previewTarget } from '../../src/lib/render-target';
 import { currentDoc, labelledImage, previewMismatches, resetStores } from '../helpers/documents';
@@ -92,7 +93,7 @@ beforeEach(async () => {
   const leftover = held;
   held = [];
   for (const call of leftover) await call.release();
-  useUIStore.setState({ activeTab: 'adjustments' });
+  useUIStore.setState({ job: 'photo' });
   render().setAutoTrace(true);
   store().open(await loadPixels(pipeline.api, labelledImage(40, 30), 40, 30));
   await pipeline.settled();
@@ -166,22 +167,22 @@ describe('preview', () => {
 });
 
 describe('preview and relief share the canvas (finding D on #68)', () => {
-  it('a relief that finishes after leaving the 3D tab is not shown', async () => {
-    useUIStore.getState().setActiveTab('depth');
+  it('a relief that finishes after leaving the relief job is not shown', async () => {
+    useUIStore.getState().setJob('relief');
     expect(pending('relief')).toHaveLength(1);
-    useUIStore.getState().setActiveTab('adjustments');
+    useUIStore.getState().setJob('photo');
     await pending('relief')[0].release();
     expect(commits).toEqual([]);
-    // The preview renders again for the tab now shown.
+    // The preview renders again for the job now shown.
     expect(pending('preview')).toHaveLength(1);
     await pending('preview')[0].release();
     expect(commits).toHaveLength(1);
     expect(render().depthHeightMap).toBeNull();
   });
 
-  it('a preview that finishes after entering the 3D tab is not shown; the relief is', async () => {
+  it('a preview that finishes after entering the relief job is not shown; the relief is', async () => {
     store().edit(setTonal({ brightness: 9 }));
-    useUIStore.getState().setActiveTab('depth');
+    useUIStore.getState().setJob('relief');
     await pending('preview')[0].release();
     expect(commits).toEqual([]);
     await pending('relief')[0].release();
@@ -192,10 +193,10 @@ describe('preview and relief share the canvas (finding D on #68)', () => {
 
 describe('trace', () => {
   beforeEach(() => {
-    useUIStore.getState().setActiveTab('vector');
+    useUIStore.getState().setJob('vector');
   });
 
-  it('runs on the vector tab; a dither change does not trace again, a tracing change does', async () => {
+  it('runs in the vector job; a dither change does not trace again, a tracing change does', async () => {
     expect(pending('trace')).toHaveLength(1);
     await pending('trace')[0].release();
     expect(render().vectorResult).not.toBeNull();
@@ -225,3 +226,65 @@ describe('trace', () => {
     expect(previewTarget(currentDoc())).toEqual({ widthPx: 20, heightPx: 20 });
   });
 });
+
+describe('each flow has the steps that reach its output (#53)', () => {
+  // The photo steps: what the Adjust and Dither panels change.
+  const photoEdits = [
+    setTonal({ contrast: 25 }),
+    setColor({ saturation: -40 }),
+    setDetail({ unsharpStrength: 60 }),
+    setDither({ algorithm: 'floyd-steinberg' }),
+  ];
+
+  it('the vector job: Adjust and Dither change nothing it traces, so they are not its steps', async () => {
+    useUIStore.getState().setJob('vector');
+    await pending('trace')[0].release();
+    for (const update of photoEdits) store().edit(update);
+    expect(pending('trace')).toHaveLength(1);
+    expect(FLOWS.vector).not.toContain('adjust');
+    expect(FLOWS.vector).not.toContain('dither');
+    // Its own step, Trace, does.
+    store().edit(setVector({ threshold: 90 }));
+    expect(pending('trace')).toHaveLength(2);
+    expect(FLOWS.vector).toContain('trace');
+  });
+
+  it('the relief job: Adjust and Dither change nothing in the relief, so they are not its steps', async () => {
+    useUIStore.getState().setJob('relief');
+    await pending('relief')[0].release();
+    for (const update of photoEdits) store().edit(update);
+    expect(pending('relief')).toHaveLength(1);
+    expect(FLOWS.relief).not.toContain('adjust');
+    expect(FLOWS.relief).not.toContain('dither');
+    store().edit(setDepth({ smoothingRadius: 5 }));
+    expect(pending('relief')).toHaveLength(2);
+    expect(FLOWS.relief).toContain('relief');
+  });
+
+  it('the photo job: each of Adjust and Dither changes the preview, so both are its steps', async () => {
+    for (const update of photoEdits) {
+      const before = pending('preview').length;
+      store().edit(update);
+      expect(pending('preview').length).toBe(before + 1);
+      await pending('preview')[before].release();
+    }
+    expect(FLOWS.photo).toEqual(expect.arrayContaining(['adjust', 'dither']));
+  });
+
+  it('no relief renders outside the relief job', () => {
+    for (const job of ['photo', 'vector'] as const) {
+      useUIStore.getState().setJob(job);
+      store().edit(setDepth({ smoothingRadius: 3 + held.length }));
+      expect(pending('relief'), job).toHaveLength(0);
+    }
+  });
+
+  it('no trace runs outside the vector job', () => {
+    for (const job of ['photo', 'relief'] as const) {
+      useUIStore.getState().setJob(job);
+      store().edit(setVector({ threshold: 60 + held.length }));
+      expect(pending('trace'), job).toHaveLength(0);
+    }
+  });
+});
+

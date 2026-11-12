@@ -1,12 +1,66 @@
-import React from 'react';
-import { X, BookOpen } from 'lucide-react';
-import { useUIStore } from '../../store/uiStore';
-import { useDocumentStore } from '../../store/documentStore';
-import { DEFAULT_TONAL, applyRecipe } from '../../lib/document';
-import { RECIPE_VERSION, type MaterialPreset } from '../../types/recipe';
-import styles from './MaterialPresetDialog.module.css';
+import type { DocumentUpdate } from '../types/document';
+import { RECIPE_VERSION, type MaterialPreset } from '../types/recipe';
+import { DEFAULT_COLOR, DEFAULT_DETAIL, DEFAULT_DITHER, DEFAULT_TONAL } from './document';
 
-const PRESETS: MaterialPreset[] = [
+/**
+ * Machines and materials, chosen in the shell (#53) because they change the
+ * photo and relief output.
+ *
+ * These are placeholders for the profiles of #33. A machine has no line
+ * interval, spot size or calibration yet (they are open questions in the
+ * plan), so it only names the settings sheet at export. A material carries
+ * an uncalibrated photo starting point, taken from the old preset list.
+ */
+
+export interface Machine {
+  id: string;
+  name: string;
+  source: 'co2' | 'diode';
+  watts: number;
+}
+
+/** The two machines in use (docs/plan.md, "Machines and calibration"). */
+export const MACHINES: readonly Machine[] = [
+  { id: 'co2-60', name: '60 W CO2', source: 'co2', watts: 60 },
+  { id: 'co2-155', name: '155 W CO2', source: 'co2', watts: 155 },
+];
+
+export const DEFAULT_MACHINE_ID = MACHINES[0].id;
+
+/** The machine with `id`, or null. */
+export function machineById(id: string | null): Machine | null {
+  return MACHINES.find((m) => m.id === id) ?? null;
+}
+
+/** The material with `id`, or null. */
+export function materialById(id: string | null): MaterialPreset | null {
+  return MATERIALS.find((m) => m.id === id) ?? null;
+}
+
+/**
+ * Applies `material`'s starting point to the photo steps: tone, colour,
+ * detail and dither each take the material's values, or their defaults where
+ * it has none. The crop, the size, the tracing and the relief settings are
+ * left alone, so choosing a material in the vector or relief job does not
+ * reset that job's work.
+ */
+export function applyMaterial(material: MaterialPreset): DocumentUpdate {
+  return (d) => {
+    const tonal = { ...DEFAULT_TONAL };
+    const color = { ...DEFAULT_COLOR };
+    const detail = { ...DEFAULT_DETAIL };
+    const dither = { ...DEFAULT_DITHER };
+    for (const step of material.recipe.steps) {
+      if (step.type === 'tonal') Object.assign(tonal, step.params);
+      if (step.type === 'color') Object.assign(color, step.params);
+      if (step.type === 'detail') Object.assign(detail, step.params);
+      if (step.type === 'dither') Object.assign(dither, step.params);
+    }
+    return { ...d, steps: { ...d.steps, tonal, color, detail, dither } };
+  };
+}
+
+export const MATERIALS: readonly MaterialPreset[] = [
   {
     id: 'white-oak',
     name: 'White Oak & Hardwood',
@@ -117,52 +171,3 @@ const PRESETS: MaterialPreset[] = [
     },
   },
 ];
-
-export const MaterialPresetDialog: React.FC = () => {
-  const isOpen = useUIStore((s) => s.isPresetDialogOpen);
-  const setOpen = useUIStore((s) => s.setPresetDialogOpen);
-  const edit = useDocumentStore((s) => s.edit);
-
-  if (!isOpen) return null;
-
-  const handleSelectPreset = (preset: MaterialPreset) => {
-    edit(applyRecipe(preset.recipe));
-    setOpen(false);
-  };
-
-  return (
-    <div className={styles.overlay} onClick={() => setOpen(false)}>
-      <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
-        <div className={styles.header}>
-          <div className={styles.title}>
-            <BookOpen size={18} color="var(--accent-primary)" />
-            Material Substrate Presets
-          </div>
-          <button className={styles.closeButton} onClick={() => setOpen(false)}>
-            <X size={18} />
-          </button>
-        </div>
-
-        <div className={styles.body}>
-          {PRESETS.map((preset) => (
-            <div
-              key={preset.id}
-              className={styles.presetCard}
-              onClick={() => handleSelectPreset(preset)}
-            >
-              <div className={styles.cardHeader}>
-                <span className={styles.presetName}>{preset.name}</span>
-                <span className={styles.categoryBadge}>{preset.category}</span>
-              </div>
-              <p className={styles.presetDesc}>{preset.description}</p>
-              <div className={styles.presetSpecs}>
-                <span className={styles.specBadge}>{preset.recommendedDpi} DPI</span>
-                <span className={styles.specBadge}>{preset.recommendedDither}</span>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-};

@@ -8,6 +8,7 @@ import { fitsDimensions } from '../../lib/crop';
 import { fromCentre } from '../../lib/viewport';
 import { isTypingTarget } from '../../lib/shortcuts';
 import { useUIStore } from '../../store/uiStore';
+import { canvasImage, showsOrbitView } from '../../lib/workflows';
 import { DropZone } from '../shared/DropZone';
 import { DepthViewer3D } from './DepthViewer3D';
 import { CanvasRulers } from './CanvasRulers';
@@ -22,7 +23,11 @@ export const PreviewCanvas: React.FC = () => {
 
   const source = useRenderStore((s) => s.source);
   const previewBuffer = source?.buffer ?? null;
-  const processedBuffer = useRenderStore((s) => s.processed);
+  // What the job's output is made from: in the vector job, the image the trace reads.
+  const job = useUIStore((s) => s.job);
+  const shows = canvasImage(job);
+  const processedRender = useRenderStore((s) => s.processed);
+  const processedBuffer = shows === 'source' ? previewBuffer : processedRender;
   const depthHeightMapBuffer = useRenderStore((s) => s.depthHeightMap);
   const previewVersion = useRenderStore((s) => s.previewVersion);
   const docId = useDocumentStore((s) => s.doc?.id ?? null);
@@ -46,10 +51,10 @@ export const PreviewCanvas: React.FC = () => {
     [dimsWidth, dimsHeight]
   );
 
-  const isSplitView = useUIStore((s) => s.isSplitView);
-  const isInvertedBurn = useUIStore((s) => s.isInvertedBurn);
+  // With the source shown there is no before and after to split.
+  const isSplitView = useUIStore((s) => s.isSplitView) && shows !== 'source';
+  const isInvertedView = useUIStore((s) => s.isInvertedView);
   const showVectorOverlay = useUIStore((s) => s.showVectorOverlay);
-  const activeTab = useUIStore((s) => s.activeTab);
 
   const vectorResult = useRenderStore((s) => s.vectorResult);
   const depthConfig = useDocumentStore((s) => s.doc?.depth ?? DEFAULT_DEPTH);
@@ -284,8 +289,9 @@ export const PreviewCanvas: React.FC = () => {
     );
   }
 
-  // Interactive 3D Orbit Viewport for 3D Depth Tab
-  if (activeTab === 'depth' && depthConfig.viewMode === '3d-interactive') {
+  // Interactive 3D orbit view of the relief
+  // (not while cropping: the crop box is drawn on the flat relief).
+  if (showsOrbitView(job, depthConfig.viewMode, canvasTool)) {
     return (
       <div className={styles.canvasContainer}>
         <DepthViewer3D
@@ -310,7 +316,7 @@ export const PreviewCanvas: React.FC = () => {
       onDrop={handleDrop}
       onContextMenu={(e) => e.preventDefault()}
       style={{
-        outline: isDragOverCanvas ? '2px dashed var(--accent-primary)' : 'none',
+        outline: isDragOverCanvas ? '2px dashed var(--canvas-text)' : 'none',
         outlineOffset: '-4px',
       }}
     >
@@ -329,7 +335,7 @@ export const PreviewCanvas: React.FC = () => {
         style={{
           transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
           transformOrigin: 'center center',
-          filter: isInvertedBurn ? 'invert(1) hue-rotate(180deg)' : 'none',
+          filter: isInvertedView ? 'invert(1) hue-rotate(180deg)' : 'none',
         }}
       >
         <canvas ref={canvasRef} className={styles.mainCanvas} />
@@ -372,7 +378,7 @@ export const PreviewCanvas: React.FC = () => {
                 cx={dims.width / 2}
                 cy={dims.height / 2}
                 r={Math.min(dims.width, dims.height) / 2 - 4}
-                stroke="var(--accent-primary, #38bdf8)"
+                stroke="var(--overlay)"
                 strokeWidth="2"
                 strokeDasharray="6 4"
                 fill="none"
@@ -385,7 +391,7 @@ export const PreviewCanvas: React.FC = () => {
                 width={dims.width - 8}
                 height={dims.height - 8}
                 rx={Math.round(substrateCornerRadius * pxPerMm)}
-                stroke="var(--accent-primary, #38bdf8)"
+                stroke="var(--overlay)"
                 strokeWidth="2"
                 strokeDasharray="6 4"
                 fill="none"
@@ -397,7 +403,7 @@ export const PreviewCanvas: React.FC = () => {
                 cy={dims.height / 2}
                 rx={dims.width / 2 - 4}
                 ry={dims.height / 2 - 4}
-                stroke="var(--accent-primary, #38bdf8)"
+                stroke="var(--overlay)"
                 strokeWidth="2"
                 strokeDasharray="6 4"
                 fill="none"

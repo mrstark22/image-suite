@@ -1,10 +1,8 @@
 import React, { useState } from 'react';
 import {
-  Download,
   Eye,
   EyeOff,
   Layers,
-  FileCode,
   Play,
   Trash2,
   RotateCcw,
@@ -16,8 +14,6 @@ import { useDocumentStore } from '../../store/documentStore';
 import { useRenderStore } from '../../store/renderStore';
 import { DocumentSlider, Slider } from '../shared/Slider';
 import { DEFAULT_VECTOR, resetVector, setVector } from '../../lib/document';
-import { generateDXF } from '../../lib/dxf-export';
-import { generateProductionSVG } from '../../lib/svg-export';
 import type { VectorMode } from '../../types/vector';
 import styles from './VectorizationPanel.module.css';
 
@@ -54,39 +50,12 @@ export const VectorizationPanel: React.FC = () => {
 
   const handleTraceNow = () => requestTrace();
 
-  const handleDownloadSVG = () => {
-    if (!vectorResult) return;
-    const svgStr = generateProductionSVG(vectorResult, {
-      strokeWidth: vector.strokeWidth,
-      physicalUnits: 'px',
-    });
-    const blob = new Blob([svgStr], { type: 'image/svg+xml' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `vector-${vector.mode}-output.svg`;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
-  const handleDownloadDXF = () => {
-    if (!vectorResult) return;
-    const dxfStr = generateDXF(vectorResult);
-    const blob = new Blob([dxfStr], { type: 'application/dxf' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `vector-${vector.mode}-output.dxf`;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
   return (
     <div className={styles.panel}>
       {/* Panel Header */}
       <div className={styles.panelHeader}>
         <span className={styles.panelTitle}>
-          <Zap size={14} color="var(--accent-primary)" />
+          <Zap size={14} color="var(--text-2)" />
           <span>Vector Engine</span>
         </span>
         <div className={styles.headerActions}>
@@ -272,7 +241,7 @@ export const VectorizationPanel: React.FC = () => {
       <div className={styles.section}>
         <div className={styles.featureCard} style={{ borderColor: 'rgba(239, 68, 68, 0.3)' }}>
           <div className={styles.featureCardHeader}>
-            <span className={styles.featureCardTitle} style={{ color: '#ef4444' }}>
+            <span className={styles.featureCardTitle} style={{ color: 'var(--danger)' }}>
               <Scissors size={13} />
               <span>Contour Cutline (Offset Path)</span>
             </span>
@@ -320,7 +289,7 @@ export const VectorizationPanel: React.FC = () => {
           <div className={styles.featureCard}>
             <div className={styles.featureCardHeader}>
               <span className={styles.featureCardTitle}>
-                <Sparkles size={13} color="var(--accent-primary)" />
+                <Sparkles size={13} color="var(--text-2)" />
                 <span>Node Reduction & Splines</span>
               </span>
             </div>
@@ -381,7 +350,7 @@ export const VectorizationPanel: React.FC = () => {
                     style={{ backgroundColor: layer.color }}
                   />
                   <span style={{ fontWeight: 600 }}>{layer.name}</span>
-                  <span style={{ color: 'var(--text-tertiary)', fontSize: 10.5 }}>
+                  <span style={{ color: 'var(--text-3)', fontSize: 10.5 }}>
                     ({layer.paths.length} paths • {layer.totalNodes} nodes)
                   </span>
                 </div>
@@ -389,7 +358,7 @@ export const VectorizationPanel: React.FC = () => {
                 <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                   <button
                     className={styles.iconButton}
-                    style={{ color: layer.visible ? 'var(--accent-primary)' : 'var(--text-tertiary)' }}
+                    style={{ color: layer.visible ? 'var(--text)' : 'var(--text-3)' }}
                     onClick={() => toggleVectorLayer(layer.id)}
                     title={layer.visible ? 'Hide layer' : 'Show layer'}
                   >
@@ -416,29 +385,21 @@ export const VectorizationPanel: React.FC = () => {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
             <div className={styles.statRow}>
               <span>Total Paths:</span>
-              <span className={styles.statValue} style={{ color: 'var(--accent-primary)' }}>
+              <span className={styles.statValue} style={{ color: 'var(--text)' }}>
                 {vectorResult.totalPaths}
               </span>
             </div>
             <div className={styles.statRow}>
               <span>Total Nodes:</span>
-              <span className={styles.statValue} style={{ color: 'var(--accent-success, #4ade80)' }}>
+              <span className={styles.statValue} style={{ color: 'var(--success)' }}>
                 {vectorResult.totalNodes}
               </span>
             </div>
           </div>
 
-          <div className={styles.exportRow}>
-            <button className={styles.actionBtnSecondary} onClick={handleDownloadSVG}>
-              <Download size={13} /> SVG
-            </button>
-            <button className={styles.actionBtnSecondary} onClick={handleDownloadDXF}>
-              <FileCode size={13} /> DXF
-            </button>
-          </div>
         </div>
       ) : (
-        <div style={{ padding: '20px 16px', textAlign: 'center', color: 'var(--text-tertiary)', fontSize: 11.5 }}>
+        <div style={{ padding: '20px 16px', textAlign: 'center', color: 'var(--text-3)', fontSize: 11.5 }}>
           Click <strong>Trace Vectors</strong> above to generate toolpaths.
         </div>
       )}

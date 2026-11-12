@@ -103,7 +103,7 @@ export const MaterialTestGridDialog: React.FC<Props> = ({ isOpen, onClose }) => 
       <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
         <div className={styles.header}>
           <div className={styles.title}>
-            <Grid size={16} color="var(--accent-primary)" />
+            <Grid size={16} color="var(--text-2)" />
             <span>Generate Material Test Grid Matrix</span>
           </div>
           <button className={styles.closeBtn} onClick={onClose}>

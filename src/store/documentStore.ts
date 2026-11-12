@@ -58,6 +58,19 @@ let nextDocumentId = 0;
 let nextSourceId = 0;
 let loadSequence = 0;
 
+/** Applied to every document as it opens; see `setOpenDefaults`. */
+let openDefaults: DocumentUpdate | null = null;
+
+/**
+ * Sets the starting point of documents opened from now on: the material
+ * chosen in the shell (#53). It is part of the document as loaded, so it is
+ * not an undo entry and does not count as an unsaved edit. `null` opens
+ * documents with the plain defaults.
+ */
+export function setOpenDefaults(update: DocumentUpdate | null): void {
+  openDefaults = update;
+}
+
 /** A new id for a source about to be loaded into the pipeline. */
 export function newSourceId(): string {
   return `source-${++nextSourceId}`;
@@ -217,21 +230,20 @@ export const useDocumentStore = create<DocumentState>((set, get) => {
     open: (image, mmPerPx = null) => {
       loadSequence++;
       const id = `doc-${++nextDocumentId}`;
-      replace(
-        createDocument(
-          id,
-          {
-            sourceId: image.sourceId,
-            name: image.name,
-            widthPx: image.widthPx,
-            heightPx: image.heightPx,
-            format: 'rgba8',
-            hasAlpha: image.hasAlpha,
-            fileDpi: image.fileDpi,
-          },
-          mmPerPx
-        )
+      const created = createDocument(
+        id,
+        {
+          sourceId: image.sourceId,
+          name: image.name,
+          widthPx: image.widthPx,
+          heightPx: image.heightPx,
+          format: 'rgba8',
+          hasAlpha: image.hasAlpha,
+          fileDpi: image.fileDpi,
+        },
+        mmPerPx
       );
+      replace(openDefaults ? openDefaults(created) : created);
     },
 
     close: () => {

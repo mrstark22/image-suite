@@ -91,15 +91,15 @@ export const DropZone: React.FC = () => {
         <div className={styles.samplesTitle}>Or try a precision test pattern</div>
         <div className={styles.samplesGrid}>
           <button className={styles.sampleButton} onClick={() => loadSample('gradient')}>
-            <Sparkles size={14} style={{ marginBottom: 4, color: 'var(--accent-warning)' }} />
+            <Sparkles size={14} style={{ marginBottom: 4, color: 'var(--warning)' }} />
             Gradient Ramp
           </button>
           <button className={styles.sampleButton} onClick={() => loadSample('emblem')}>
-            <ShieldCheck size={14} style={{ marginBottom: 4, color: 'var(--accent-primary)' }} />
+            <ShieldCheck size={14} style={{ marginBottom: 4, color: 'var(--text-2)' }} />
             Laser Emblem
           </button>
           <button className={styles.sampleButton} onClick={() => loadSample('grid')}>
-            <Image size={14} style={{ marginBottom: 4, color: 'var(--accent-success)' }} />
+            <Image size={14} style={{ marginBottom: 4, color: 'var(--success)' }} />
             Calibration Grid
           </button>
         </div>

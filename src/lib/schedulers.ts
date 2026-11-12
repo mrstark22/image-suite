@@ -4,6 +4,7 @@ import type { VectorResult } from '../types/vector';
 import { useDocumentStore } from '../store/documentStore';
 import { useRenderStore } from '../store/renderStore';
 import { useUIStore } from '../store/uiStore';
+import { showsRelief, traces } from './workflows';
 import { RenderScheduler } from './render-scheduler';
 import { previewTarget, sourceStageKey } from './render-target';
 import { renderReliefPreview } from './depth-shader';
@@ -66,8 +67,8 @@ export function createSchedulers(pipeline: () => Pipeline): Schedulers {
   // Each scheduler's `select` lists exactly what its request reads.
   const preview = new RenderScheduler({
     select: (doc: ImageDocument) => [doc.source, doc.mmPerPx, doc.steps, render().backgroundRemoval] as const,
-    // On the 3D tab the relief is shown instead.
-    enabled: () => ui().activeTab !== 'depth' && notExporting(),
+    // In the relief job the relief is shown instead.
+    enabled: () => !showsRelief(ui().job) && notExporting(),
     buildRequest: renderRequest,
     run: withSpinner((req: DocumentRenderRequest) => pipeline().renderPreview(req)),
     commit: (res: PreviewRenderResult) => {
@@ -88,7 +89,7 @@ export function createSchedulers(pipeline: () => Pipeline): Schedulers {
       [doc.source, doc.steps.crop, doc.vector, render().traceRequest, render().backgroundRemoval] as const,
     // Waits for a gesture to end, so a slider drag does not trace every step.
     enabled: () =>
-      ui().activeTab === 'vector' && render().autoTrace && useDocumentStore.getState().gesture === null && notExporting(),
+      traces(ui().job) && render().autoTrace && useDocumentStore.getState().gesture === null && notExporting(),
     buildRequest: (doc: ImageDocument): TraceRequest => ({
       doc,
       target: previewTarget(doc),
@@ -101,7 +102,7 @@ export function createSchedulers(pipeline: () => Pipeline): Schedulers {
 
   const relief = new RenderScheduler({
     select: (doc: ImageDocument) => [doc.source, doc.steps.crop, doc.depth, render().backgroundRemoval] as const,
-    enabled: () => ui().activeTab === 'depth' && notExporting(),
+    enabled: () => showsRelief(ui().job) && notExporting(),
     buildRequest: renderRequest,
     run: withSpinner((req: DocumentRenderRequest) => pipeline().renderRelief(req)),
     commit: (res: ReliefRenderResult) => {
@@ -151,10 +152,10 @@ export function connectSchedulers(schedulers: Schedulers, pipeline: () => Pipeli
       if (changed) for (const s of all) s.refresh();
     }),
     useUIStore.subscribe((state, prev) => {
-      if (state.activeTab === prev.activeTab) return;
-      // The preview and the relief both write the preview: whichever the new tab
+      if (state.job === prev.job) return;
+      // The preview and the relief both write the preview: whichever the new job
       // shows renders again, and a result of the other still in flight is dropped.
-      if ((state.activeTab === 'depth') !== (prev.activeTab === 'depth')) {
+      if (showsRelief(state.job) !== showsRelief(prev.job)) {
         schedulers.preview.rerun();
         schedulers.relief.rerun();
       }
