@@ -65,7 +65,6 @@ export const DEFAULT_DITHER: DitherConfig = {
   serpentine: true,
   matrixScale: 1,
   invertedBurn: false,
-  alphaHandling: 'white-ignore',
 };
 
 export const DEFAULT_VECTOR: VectorConfig = {

@@ -2,7 +2,7 @@ import React from 'react';
 import { useDocumentStore } from '../../store/documentStore';
 import { DocumentSlider } from '../shared/Slider';
 import { DEFAULT_DITHER, resetDither, setDither } from '../../lib/document';
-import type { AlphaBurnHandling, DitherAlgorithm } from '../../types/dither';
+import type { DitherAlgorithm } from '../../types/dither';
 import styles from './Panels.module.css';
 
 interface DitherOption {
@@ -111,22 +111,6 @@ export const DitheringPanel: React.FC = () => {
               update={(v) => setDither({ matrixScale: v })}
             />
           )}
-
-          {/* Alpha / Background Handling for Lasers */}
-          <div style={{ marginTop: 12 }}>
-            <label style={{ fontSize: 11, color: 'var(--text-secondary)', marginBottom: 4, display: 'block' }}>
-              Transparency & Background Burn
-            </label>
-            <select
-              className={styles.select}
-              value={dither.alphaHandling || 'white-ignore'}
-              onChange={(e) => edit(setDither({ alphaHandling: e.target.value as AlphaBurnHandling }))}
-            >
-              <option value="white-ignore">White (Ignore / No Burn - Standard for Laser)</option>
-              <option value="black-burn">Black (Burn Background Box)</option>
-              <option value="transparent">Transparent Alpha (Preserve PNG transparency)</option>
-            </select>
-          </div>
         </div>
       )}
     </div>
