@@ -459,7 +459,8 @@ export const DepthViewer3D: React.FC<DepthViewer3DProps> = ({
         }
 
         gl.viewport(0, 0, canvas.width, canvas.height);
-        gl.clearColor(0.08, 0.10, 0.12, 1.0);
+        // #767676, the --canvas token: 18% grey, as around the 2D canvas.
+        gl.clearColor(118 / 255, 118 / 255, 118 / 255, 1.0);
         gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
         gl.useProgram(program);

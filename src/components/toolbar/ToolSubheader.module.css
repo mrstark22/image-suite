@@ -3,8 +3,8 @@
   align-items: center;
   justify-content: space-between;
   height: 34px;
-  background: var(--bg-surface-active);
-  border-bottom: 1px solid var(--border-subtle);
+  background: var(--surface-hover);
+  border-bottom: 1px solid var(--border);
   padding: 0 12px;
   font-size: 11px;
   user-select: none;
@@ -21,8 +21,8 @@
   display: flex;
   align-items: center;
   gap: 2px;
-  background: var(--bg-surface);
-  border: 1px solid var(--border-subtle);
+  background: var(--surface);
+  border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   padding: 2px;
 }
@@ -30,7 +30,7 @@
 .toolBtn {
   background: transparent;
   border: none;
-  color: var(--text-secondary);
+  color: var(--text-2);
   padding: 3px 6px;
   border-radius: 3px;
   cursor: pointer;
@@ -42,25 +42,25 @@
 }
 
 .toolBtn:hover {
-  color: var(--text-primary);
-  background: var(--bg-surface-hover);
+  color: var(--text);
+  background: var(--surface-hover);
 }
 
 .toolBtnActive {
-  background: var(--accent-primary);
-  color: #000;
+  background: var(--sel-bg);
+  color: var(--on-sel);
   font-weight: 600;
 }
 
 .toolBtnActive:hover {
-  background: var(--accent-primary);
-  color: #000;
+  background: var(--sel-bg);
+  color: var(--on-sel);
 }
 
 .modeSelect {
-  background: var(--bg-surface);
-  color: var(--text-primary);
-  border: 1px solid var(--border-subtle);
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   padding: 2px 6px;
   font-size: 11px;
@@ -70,7 +70,7 @@
 }
 
 .modeSelect:focus {
-  border-color: var(--accent-primary);
+  border-color: var(--focus);
 }
 
 .rightGroup {
@@ -80,9 +80,9 @@
 }
 
 .actionBtn {
-  background: var(--bg-surface);
-  border: 1px solid var(--border-subtle);
-  color: var(--text-primary);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text);
   font-size: 11px;
   padding: 2px 8px;
   border-radius: var(--radius-sm);
@@ -94,24 +94,24 @@
 }
 
 .actionBtn:hover {
-  background: var(--bg-surface-hover);
-  border-color: var(--border-medium);
+  background: var(--surface-hover);
+  border-color: var(--control-border);
 }
 
 .actionBtnPrimary {
-  background: var(--accent-primary);
-  color: #000;
+  background: var(--accent);
+  color: var(--on-accent);
   border: none;
   font-weight: 600;
 }
 
 .actionBtnPrimary:hover {
-  opacity: 0.9;
+  background: var(--accent-hover);
 }
 
 .actionBtnDanger {
   background: rgba(239, 68, 68, 0.15);
-  color: var(--accent-danger);
+  color: var(--danger);
   border: 1px solid rgba(239, 68, 68, 0.3);
 }
 

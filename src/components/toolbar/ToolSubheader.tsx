@@ -88,7 +88,7 @@ export const ToolSubheader: React.FC = () => {
 
             <button
               className={styles.actionBtn}
-              style={{ background: 'rgba(239, 68, 68, 0.15)', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.3)' }}
+              style={{ background: 'rgba(239, 68, 68, 0.15)', color: 'var(--danger)', border: '1px solid rgba(239, 68, 68, 0.3)' }}
               onClick={() => generateCutline(2.0, 3)}
               disabled={!sizeSet}
               title={sizeSet ? 'Generate outer perimeter vector cutline (+2mm)' : 'Set the size to use this'}
@@ -106,7 +106,7 @@ export const ToolSubheader: React.FC = () => {
               </button>
             )}
 
-            <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 10, color: 'var(--text-secondary)' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 10, color: 'var(--text-2)' }}>
               <input
                 type="checkbox"
                 checked={autoTrace}
@@ -119,14 +119,14 @@ export const ToolSubheader: React.FC = () => {
 
         {/* DITHER TAB CONTEXT */}
         {activeTab === 'dither' && (
-          <span style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>
+          <span style={{ fontSize: 10, color: 'var(--text-3)' }}>
             Real-time Substrate Dithering Engine
           </span>
         )}
 
         {/* DEPTH TAB CONTEXT */}
         {activeTab === 'depth' && (
-          <span style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>
+          <span style={{ fontSize: 10, color: 'var(--text-3)' }}>
             Precision 16-Bit Relief Heightmap Engine
           </span>
         )}

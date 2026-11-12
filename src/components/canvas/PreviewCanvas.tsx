@@ -310,7 +310,7 @@ export const PreviewCanvas: React.FC = () => {
       onDrop={handleDrop}
       onContextMenu={(e) => e.preventDefault()}
       style={{
-        outline: isDragOverCanvas ? '2px dashed var(--accent-primary)' : 'none',
+        outline: isDragOverCanvas ? '2px dashed var(--canvas-text)' : 'none',
         outlineOffset: '-4px',
       }}
     >
@@ -372,7 +372,7 @@ export const PreviewCanvas: React.FC = () => {
                 cx={dims.width / 2}
                 cy={dims.height / 2}
                 r={Math.min(dims.width, dims.height) / 2 - 4}
-                stroke="var(--accent-primary, #38bdf8)"
+                stroke="var(--overlay)"
                 strokeWidth="2"
                 strokeDasharray="6 4"
                 fill="none"
@@ -385,7 +385,7 @@ export const PreviewCanvas: React.FC = () => {
                 width={dims.width - 8}
                 height={dims.height - 8}
                 rx={Math.round(substrateCornerRadius * pxPerMm)}
-                stroke="var(--accent-primary, #38bdf8)"
+                stroke="var(--overlay)"
                 strokeWidth="2"
                 strokeDasharray="6 4"
                 fill="none"
@@ -397,7 +397,7 @@ export const PreviewCanvas: React.FC = () => {
                 cy={dims.height / 2}
                 rx={dims.width / 2 - 4}
                 ry={dims.height / 2 - 4}
-                stroke="var(--accent-primary, #38bdf8)"
+                stroke="var(--overlay)"
                 strokeWidth="2"
                 strokeDasharray="6 4"
                 fill="none"

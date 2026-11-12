@@ -86,7 +86,7 @@ export const VectorizationPanel: React.FC = () => {
       {/* Panel Header */}
       <div className={styles.panelHeader}>
         <span className={styles.panelTitle}>
-          <Zap size={14} color="var(--accent-primary)" />
+          <Zap size={14} color="var(--text-2)" />
           <span>Vector Engine</span>
         </span>
         <div className={styles.headerActions}>
@@ -272,7 +272,7 @@ export const VectorizationPanel: React.FC = () => {
       <div className={styles.section}>
         <div className={styles.featureCard} style={{ borderColor: 'rgba(239, 68, 68, 0.3)' }}>
           <div className={styles.featureCardHeader}>
-            <span className={styles.featureCardTitle} style={{ color: '#ef4444' }}>
+            <span className={styles.featureCardTitle} style={{ color: 'var(--danger)' }}>
               <Scissors size={13} />
               <span>Contour Cutline (Offset Path)</span>
             </span>
@@ -320,7 +320,7 @@ export const VectorizationPanel: React.FC = () => {
           <div className={styles.featureCard}>
             <div className={styles.featureCardHeader}>
               <span className={styles.featureCardTitle}>
-                <Sparkles size={13} color="var(--accent-primary)" />
+                <Sparkles size={13} color="var(--text-2)" />
                 <span>Node Reduction & Splines</span>
               </span>
             </div>
@@ -381,7 +381,7 @@ export const VectorizationPanel: React.FC = () => {
                     style={{ backgroundColor: layer.color }}
                   />
                   <span style={{ fontWeight: 600 }}>{layer.name}</span>
-                  <span style={{ color: 'var(--text-tertiary)', fontSize: 10.5 }}>
+                  <span style={{ color: 'var(--text-3)', fontSize: 10.5 }}>
                     ({layer.paths.length} paths • {layer.totalNodes} nodes)
                   </span>
                 </div>
@@ -389,7 +389,7 @@ export const VectorizationPanel: React.FC = () => {
                 <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                   <button
                     className={styles.iconButton}
-                    style={{ color: layer.visible ? 'var(--accent-primary)' : 'var(--text-tertiary)' }}
+                    style={{ color: layer.visible ? 'var(--text)' : 'var(--text-3)' }}
                     onClick={() => toggleVectorLayer(layer.id)}
                     title={layer.visible ? 'Hide layer' : 'Show layer'}
                   >
@@ -416,13 +416,13 @@ export const VectorizationPanel: React.FC = () => {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
             <div className={styles.statRow}>
               <span>Total Paths:</span>
-              <span className={styles.statValue} style={{ color: 'var(--accent-primary)' }}>
+              <span className={styles.statValue} style={{ color: 'var(--text)' }}>
                 {vectorResult.totalPaths}
               </span>
             </div>
             <div className={styles.statRow}>
               <span>Total Nodes:</span>
-              <span className={styles.statValue} style={{ color: 'var(--accent-success, #4ade80)' }}>
+              <span className={styles.statValue} style={{ color: 'var(--success)' }}>
                 {vectorResult.totalNodes}
               </span>
             </div>
@@ -438,7 +438,7 @@ export const VectorizationPanel: React.FC = () => {
           </div>
         </div>
       ) : (
-        <div style={{ padding: '20px 16px', textAlign: 'center', color: 'var(--text-tertiary)', fontSize: 11.5 }}>
+        <div style={{ padding: '20px 16px', textAlign: 'center', color: 'var(--text-3)', fontSize: 11.5 }}>
           Click <strong>Trace Vectors</strong> above to generate toolpaths.
         </div>
       )}

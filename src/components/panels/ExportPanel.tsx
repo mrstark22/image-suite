@@ -57,7 +57,7 @@ export const ExportPanel: React.FC = () => {
         <div className={styles.panelHeader}>
           <span className={styles.panelTitle}>Export Engine</span>
         </div>
-        <div style={{ padding: 24, textAlign: 'center', color: 'var(--text-tertiary)' }}>
+        <div style={{ padding: 24, textAlign: 'center', color: 'var(--text-3)' }}>
           Please load an image to configure export.
         </div>
       </div>
@@ -163,7 +163,7 @@ export const ExportPanel: React.FC = () => {
         >
           {isDone ? (
             <>
-              <CheckCircle size={16} color="#041019" /> Export Complete
+              <CheckCircle size={16} color="var(--on-accent)" /> Export Complete
             </>
           ) : (
             <>
@@ -190,7 +190,7 @@ export const ExportPanel: React.FC = () => {
         )}
         {blocker && plan && <div className={styles.controlNote} style={{ marginTop: 8 }}>{blocker}</div>}
         {error && (
-          <div className={styles.controlNote} style={{ marginTop: 8, color: 'var(--accent-danger)' }} role="alert">
+          <div className={styles.controlNote} style={{ marginTop: 8, color: 'var(--danger)' }} role="alert">
             Export failed: {error}
           </div>
         )}
@@ -198,12 +198,12 @@ export const ExportPanel: React.FC = () => {
 
       {/* Vector Production Files */}
       {vectorResult && (
-        <div className={styles.section} style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: 14, marginTop: 14 }}>
+        <div className={styles.section} style={{ borderTop: '1px solid var(--border)', paddingTop: 14, marginTop: 14 }}>
           <div className={styles.sectionTitle}>Vector Toolpaths (Laser / CNC)</div>
           <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
             <button
               className={styles.primaryActionBtn}
-              style={{ flex: 1, backgroundColor: 'var(--bg-surface-hover)', color: 'var(--text-primary)', border: '1px solid var(--border-medium)' }}
+              style={{ flex: 1, backgroundColor: 'var(--surface-hover)', color: 'var(--text)', border: '1px solid var(--control-border)' }}
               disabled={!previewResolution}
               onClick={() => {
                 if (!previewResolution) return;
@@ -225,7 +225,7 @@ export const ExportPanel: React.FC = () => {
             </button>
             <button
               className={styles.primaryActionBtn}
-              style={{ flex: 1, backgroundColor: 'var(--bg-surface-hover)', color: 'var(--text-primary)', border: '1px solid var(--border-medium)' }}
+              style={{ flex: 1, backgroundColor: 'var(--surface-hover)', color: 'var(--text)', border: '1px solid var(--control-border)' }}
               onClick={() => {
                 const dxfStr = generateDXF(vectorResult);
                 const blob = new Blob([dxfStr], { type: 'application/dxf' });
@@ -245,14 +245,14 @@ export const ExportPanel: React.FC = () => {
 
       {/* 16-Bit Depth Relief Map */}
       {depthHeightMapBuffer && (
-        <div className={styles.section} style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: 14, marginTop: 14 }}>
+        <div className={styles.section} style={{ borderTop: '1px solid var(--border)', paddingTop: 14, marginTop: 14 }}>
           <div className={styles.sectionTitle} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <Box size={14} color="var(--accent-primary)" />
+            <Box size={14} color="var(--text-2)" />
             <span>CNC 16-Bit Relief Heightmap</span>
           </div>
           <button
             className={styles.primaryActionBtn}
-            style={{ marginTop: 8, width: '100%', backgroundColor: 'var(--bg-surface-hover)', color: 'var(--text-primary)', border: '1px solid var(--border-medium)' }}
+            style={{ marginTop: 8, width: '100%', backgroundColor: 'var(--surface-hover)', color: 'var(--text)', border: '1px solid var(--control-border)' }}
             disabled={!previewResolution}
             onClick={() => {
               if (!previewResolution) return;

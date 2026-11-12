@@ -1,8 +1,7 @@
 .backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.7);
-  backdrop-filter: blur(6px);
+  background: var(--scrim);
   z-index: 1000;
   display: flex;
   align-items: center;
@@ -11,10 +10,10 @@
 }
 
 .modal {
-  background: var(--bg-surface);
-  border: 1px solid var(--border-medium);
+  background: var(--surface);
+  border: 1px solid var(--control-border);
   border-radius: var(--radius-lg);
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6);
+  box-shadow: var(--shadow-lg);
   width: 100%;
   max-width: 480px;
   display: flex;
@@ -27,14 +26,14 @@
   align-items: center;
   justify-content: space-between;
   padding: 16px 20px;
-  border-bottom: 1px solid var(--border-subtle);
-  background: var(--bg-surface-raised);
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
 }
 
 .title {
   font-size: 15px;
   font-weight: 700;
-  color: var(--text-primary);
+  color: var(--text);
   display: flex;
   align-items: center;
   gap: 8px;
@@ -43,7 +42,7 @@
 .closeBtn {
   background: transparent;
   border: none;
-  color: var(--text-tertiary);
+  color: var(--text-3);
   cursor: pointer;
   padding: 4px;
   border-radius: var(--radius-sm);
@@ -54,8 +53,8 @@
 }
 
 .closeBtn:hover {
-  background: var(--bg-surface-hover);
-  color: var(--text-primary);
+  background: var(--surface-hover);
+  color: var(--text);
 }
 
 .content {
@@ -84,28 +83,27 @@
 .label {
   font-size: 11px;
   font-weight: 500;
-  color: var(--text-secondary);
+  color: var(--text-2);
 }
 
 .inputWrapper {
   display: flex;
   align-items: center;
-  background: var(--bg-input);
-  border: 1px solid var(--border-medium);
+  background: var(--field);
+  border: 1px solid var(--control-border);
   border-radius: var(--radius-sm);
   padding: 0 8px;
 }
 
 .inputWrapper:focus-within {
-  border-color: var(--accent-primary);
+  border-color: var(--focus);
 }
 
 .input {
   background: transparent;
   border: none;
-  color: var(--text-primary);
+  color: var(--text);
   font-size: 13px;
-  font-family: var(--font-mono);
   padding: 6px 0;
   width: 100%;
   outline: none;
@@ -113,7 +111,7 @@
 
 .unitLabel {
   font-size: 11px;
-  color: var(--text-tertiary);
+  color: var(--text-3);
   padding-left: 4px;
 }
 
@@ -130,14 +128,14 @@
   justify-content: flex-end;
   gap: 8px;
   padding: 16px 20px;
-  border-top: 1px solid var(--border-subtle);
-  background: var(--bg-surface-raised);
+  border-top: 1px solid var(--border);
+  background: var(--surface-2);
 }
 
 .cancelBtn {
   background: transparent;
-  border: 1px solid var(--border-medium);
-  color: var(--text-primary);
+  border: 1px solid var(--control-border);
+  color: var(--text);
   padding: 6px 14px;
   border-radius: var(--radius-sm);
   font-size: 12px;
@@ -145,12 +143,12 @@
 }
 
 .cancelBtn:hover {
-  background: var(--bg-surface-hover);
+  background: var(--surface-hover);
 }
 
 .applyBtn {
-  background: var(--accent-primary);
-  color: #000;
+  background: var(--accent);
+  color: var(--on-accent);
   font-weight: 600;
   border: none;
   padding: 6px 18px;
@@ -163,13 +161,12 @@
 }
 
 .applyBtn:hover {
-  opacity: 0.9;
+  background: var(--accent-hover);
 }
 
 .readout {
-  font-family: var(--font-mono);
   font-size: 12px;
-  color: var(--text-primary);
+  color: var(--text);
 }
 
 .unitRow {
@@ -179,9 +176,9 @@
 }
 
 .unitSelect {
-  background: var(--bg-input);
-  color: var(--text-primary);
-  border: 1px solid var(--border-medium);
+  background: var(--field);
+  color: var(--text);
+  border: 1px solid var(--control-border);
   border-radius: var(--radius-sm);
   padding: 3px 8px;
   font-size: 11px;
@@ -196,7 +193,7 @@
   margin: 0;
   font-size: 12px;
   line-height: 1.5;
-  color: var(--accent-warning);
+  color: var(--warning);
 }
 
 .suggestion {
@@ -206,9 +203,9 @@
   gap: var(--space-2);
   padding: 8px 10px;
   font-size: 12px;
-  color: var(--text-secondary);
-  background: var(--bg-input);
-  border: 1px solid var(--border-subtle);
+  color: var(--text-2);
+  background: var(--field);
+  border: 1px solid var(--border);
   border-radius: var(--radius-sm);
 }
 
@@ -216,9 +213,9 @@
   flex-shrink: 0;
   padding: 4px 10px;
   font-size: 12px;
-  color: var(--accent-primary);
+  color: var(--text);
   background: transparent;
-  border: 1px solid var(--accent-primary);
+  border: 1px solid var(--control-border);
   border-radius: var(--radius-sm);
   cursor: pointer;
 }

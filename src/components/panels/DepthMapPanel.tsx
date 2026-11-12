@@ -202,7 +202,7 @@ export const DepthMapPanel: React.FC = () => {
         {/* Material Selection for 3D Shaded Mode */}
         {depth.viewMode !== 'heatmap' && depth.viewMode !== 'grayscale' && (
           <div>
-            <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginBottom: 6 }}>
+            <div style={{ fontSize: 11, color: 'var(--text-2)', marginBottom: 6 }}>
               Substrate Material
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginBottom: 12 }}>
@@ -216,12 +216,12 @@ export const DepthMapPanel: React.FC = () => {
                       alignItems: 'center',
                       gap: 8,
                       padding: '6px 8px',
-                      background: isActive ? 'var(--bg-surface-active)' : 'var(--bg-surface)',
-                      border: isActive ? '1px solid var(--accent-primary)' : '1px solid var(--border-subtle)',
+                      background: isActive ? 'var(--surface-hover)' : 'var(--surface)',
+                      border: isActive ? '1px solid var(--text)' : '1px solid var(--border)',
                       borderRadius: 6,
                       cursor: 'pointer',
                       fontSize: 11,
-                      color: 'var(--text-primary)',
+                      color: 'var(--text)',
                     }}
                     onClick={() => edit(setDepth({ material: m.id }))}
                   >
@@ -365,7 +365,7 @@ export const DepthMapPanel: React.FC = () => {
         <div className={styles.toggleRow} style={{ marginTop: 12 }}>
           <div>
             <div className={styles.toggleLabel}>Invert Z-Axis Height</div>
-            <div style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>
+            <div style={{ fontSize: 10, color: 'var(--text-3)' }}>
               {depth.invertZ ? 'Dark = Highest / Light = Deepest' : 'Light = Highest / Dark = Deepest (Standard CNC)'}
             </div>
           </div>
@@ -391,7 +391,7 @@ export const DepthMapPanel: React.FC = () => {
           >
             {exportTypeDone === 'png16' ? (
               <>
-                <CheckCircle size={16} color="#041019" /> 16-Bit Heightmap Exported (.PNG)
+                <CheckCircle size={16} color="var(--on-accent)" /> 16-Bit Heightmap Exported (.PNG)
               </>
             ) : (
               <>
@@ -403,9 +403,9 @@ export const DepthMapPanel: React.FC = () => {
           <button
             className={styles.primaryActionBtn}
             style={{
-              backgroundColor: 'var(--bg-surface-active)',
-              color: 'var(--text-primary)',
-              border: '1px solid var(--border-subtle)',
+              backgroundColor: 'var(--surface-hover)',
+              color: 'var(--text)',
+              border: '1px solid var(--border)',
             }}
             onClick={handleExportCncBmp}
             disabled={isExporting || !previewBuffer || !sizeSet}
@@ -413,7 +413,7 @@ export const DepthMapPanel: React.FC = () => {
           >
             {exportTypeDone === 'cnc' ? (
               <>
-                <CheckCircle size={16} color="var(--accent-primary)" /> 8-Bit CNC Heightmap Exported (.BMP)
+                <CheckCircle size={16} color="var(--success)" /> 8-Bit CNC Heightmap Exported (.BMP)
               </>
             ) : (
               <>
@@ -426,8 +426,8 @@ export const DepthMapPanel: React.FC = () => {
             className={styles.primaryActionBtn}
             style={{
               backgroundColor: 'transparent',
-              color: 'var(--text-secondary)',
-              border: '1px dashed var(--border-subtle)',
+              color: 'var(--text-2)',
+              border: '1px dashed var(--border)',
             }}
             onClick={handleExportShadedBmp}
             disabled={isExporting || !previewBuffer || !sizeSet}
@@ -435,7 +435,7 @@ export const DepthMapPanel: React.FC = () => {
           >
             {exportTypeDone === 'shaded' ? (
               <>
-                <CheckCircle size={16} color="var(--accent-primary)" /> Presentation Render Exported (.BMP)
+                <CheckCircle size={16} color="var(--success)" /> Presentation Render Exported (.BMP)
               </>
             ) : (
               <>

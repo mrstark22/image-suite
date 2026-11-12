@@ -81,18 +81,18 @@ export const AIPanel: React.FC = () => {
         <div className={styles.sectionTitle}>Client-Side Intelligence</div>
         <div
           style={{
-            background: 'var(--bg-surface-raised)',
+            background: 'var(--surface-2)',
             padding: '12px',
             borderRadius: 'var(--radius-md)',
-            border: '1px solid var(--border-subtle)',
+            border: '1px solid var(--border)',
             marginBottom: '12px',
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-            <Cpu size={16} color="var(--accent-primary)" />
+            <Cpu size={16} color="var(--text-2)" />
             <strong style={{ fontSize: 12 }}>Edge-Aware Matting Engine</strong>
           </div>
-          <p style={{ fontSize: 11, color: 'var(--text-secondary)', lineHeight: 1.4 }}>
+          <p style={{ fontSize: 11, color: 'var(--text-2)', lineHeight: 1.4 }}>
             Multi-point perimeter flood-fill segmentation with soft Gaussian alpha feathering. 100% in-browser computation.
           </p>
         </div>
@@ -157,7 +157,7 @@ export const AIPanel: React.FC = () => {
               borderRadius: 'var(--radius-sm)',
               background: 'rgba(52, 211, 153, 0.1)',
               border: '1px solid rgba(52, 211, 153, 0.25)',
-              color: 'var(--accent-success)',
+              color: 'var(--success)',
               fontSize: 11,
               display: 'flex',
               alignItems: 'center',

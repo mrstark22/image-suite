@@ -3,8 +3,8 @@
   align-items: center;
   justify-content: space-between;
   height: 38px;
-  background: var(--bg-surface);
-  border-bottom: 1px solid var(--border-subtle);
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
   padding: 0 12px;
   user-select: none;
   z-index: 100;
@@ -26,23 +26,20 @@
 }
 
 .brandTitle {
-  font-weight: 700;
+  font-weight: var(--weight-strong);
   font-size: 13px;
-  letter-spacing: 0.06em;
-  background: linear-gradient(135deg, var(--accent-primary) 0%, #38bdf8 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
+  color: var(--text);
 }
 
 .brandBadge {
   font-size: 9px;
   font-weight: 700;
   letter-spacing: 0.05em;
-  background: var(--bg-surface-active);
-  color: var(--accent-primary);
+  background: var(--surface-hover);
+  color: var(--text-2);
   padding: 1px 4px;
   border-radius: 3px;
-  border: 1px solid rgba(56, 189, 248, 0.2);
+  border: 1px solid var(--border);
 }
 
 .menusList {
@@ -58,7 +55,7 @@
 .menuBtn {
   background: transparent;
   border: none;
-  color: var(--text-secondary);
+  color: var(--text-2);
   font-size: 12px;
   font-weight: 500;
   padding: 4px 8px;
@@ -69,18 +66,18 @@
 
 .menuBtn:hover,
 .menuBtnActive {
-  background: var(--bg-surface-hover);
-  color: var(--text-primary);
+  background: var(--surface-hover);
+  color: var(--text);
 }
 
 .dropdownMenu {
   position: absolute;
   top: calc(100% + 4px);
   left: 0;
-  background: var(--bg-surface);
-  border: 1px solid var(--border-medium);
+  background: var(--surface);
+  border: 1px solid var(--control-border);
   border-radius: var(--radius-md);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  box-shadow: var(--shadow-md);
   min-width: 220px;
   padding: 4px 0;
   z-index: 1000;
@@ -94,7 +91,7 @@
   justify-content: space-between;
   padding: 6px 12px;
   font-size: 12px;
-  color: var(--text-primary);
+  color: var(--text);
   background: transparent;
   border: none;
   width: 100%;
@@ -104,8 +101,8 @@
 }
 
 .dropdownItem:hover:not(:disabled) {
-  background: var(--accent-primary);
-  color: #000;
+  background: var(--sel-bg);
+  color: var(--on-sel);
 }
 
 .dropdownItem:disabled {
@@ -121,17 +118,16 @@
 
 .itemShortcut {
   font-size: 10px;
-  color: var(--text-tertiary);
-  font-family: var(--font-mono);
+  color: var(--text-3);
 }
 
 .dropdownItem:hover:not(:disabled) .itemShortcut {
-  color: rgba(0, 0, 0, 0.7);
+  color: var(--on-sel);
 }
 
 .menuDivider {
   height: 1px;
-  background: var(--border-subtle);
+  background: var(--border);
   margin: 4px 0;
 }
 
@@ -146,22 +142,22 @@
   align-items: center;
   gap: 6px;
   font-size: 11px;
-  color: var(--text-secondary);
-  background: var(--bg-canvas);
+  color: var(--text-2);
+  background: var(--surface-2);
   padding: 3px 8px;
   border-radius: var(--radius-sm);
-  border: 1px solid var(--border-subtle);
+  border: 1px solid var(--border);
 }
 
 .pulseDot {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: var(--accent-success);
+  background: var(--success);
 }
 
 .processingDot {
-  background: var(--accent-warning);
+  background: var(--warning);
   animation: pulse 1s infinite;
 }
 
@@ -171,9 +167,9 @@
 }
 
 .quickActionBtn {
-  background: var(--bg-surface);
-  border: 1px solid var(--border-subtle);
-  color: var(--text-primary);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text);
   font-size: 12px;
   padding: 4px 10px;
   border-radius: var(--radius-sm);
@@ -185,13 +181,13 @@
 }
 
 .quickActionBtn:hover {
-  background: var(--bg-surface-hover);
-  border-color: var(--border-medium);
+  background: var(--surface-hover);
+  border-color: var(--control-border);
 }
 
 .exportBtn {
-  background: var(--accent-primary);
-  color: #000;
+  background: var(--accent);
+  color: var(--on-accent);
   font-weight: 600;
   border: none;
   font-size: 12px;
@@ -201,9 +197,9 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  transition: opacity var(--transition-fast);
+  transition: background var(--transition-fast);
 }
 
 .exportBtn:hover {
-  opacity: 0.9;
+  background: var(--accent-hover);
 }

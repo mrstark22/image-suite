@@ -5,12 +5,11 @@
   display: flex;
   align-items: center;
   gap: var(--space-1);
-  background: var(--glass-bg);
-  backdrop-filter: blur(12px);
+  background: var(--surface);
   padding: 4px 8px;
   border-radius: var(--radius-lg);
-  border: 1px solid var(--border-medium);
-  box-shadow: var(--shadow-lg);
+  border: 1px solid var(--control-border);
+  box-shadow: var(--shadow-md);
   z-index: 20;
 }
 
@@ -21,20 +20,19 @@
   width: 28px;
   height: 28px;
   border-radius: var(--radius-sm);
-  color: var(--text-secondary);
+  color: var(--text-2);
   transition: all var(--transition-fast);
 }
 
 .button:hover {
-  background: var(--bg-surface-hover);
-  color: var(--text-primary);
+  background: var(--surface-hover);
+  color: var(--text);
 }
 
 .zoomLabel {
-  font-family: var(--font-mono);
   font-size: 11px;
   font-weight: 600;
-  color: var(--accent-primary);
+  color: var(--text);
   min-width: 48px;
   text-align: center;
   padding: 0 4px;

@@ -1,7 +1,7 @@
 .toolPanel {
   width: var(--tool-sidebar-width);
-  background: var(--bg-surface);
-  border-right: 1px solid var(--border-subtle);
+  background: var(--surface);
+  border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -19,18 +19,18 @@
   width: 44px;
   height: 44px;
   border-radius: var(--radius-md);
-  color: var(--text-tertiary);
+  color: var(--text-3);
   transition: all var(--transition-fast);
 }
 
 .toolButton:hover {
-  background: var(--bg-surface-hover);
-  color: var(--text-primary);
+  background: var(--surface-hover);
+  color: var(--text);
 }
 
 .toolButtonActive {
-  background: rgba(56, 189, 248, 0.12);
-  color: var(--accent-primary);
+  background: var(--sel-bg);
+  color: var(--on-sel);
 }
 
 .activeIndicator {
@@ -40,8 +40,7 @@
   bottom: 8px;
   width: 3px;
   border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
-  background: var(--accent-primary);
-  box-shadow: 0 0 8px var(--accent-primary);
+  background: var(--text);
 }
 
 .toolLabel {

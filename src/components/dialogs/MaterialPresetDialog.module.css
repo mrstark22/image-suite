@@ -4,8 +4,7 @@
   left: 0;
   right: 0;
   bottom: 0;
-  background: var(--bg-overlay);
-  backdrop-filter: blur(8px);
+  background: var(--scrim);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -16,9 +15,9 @@
 .modal {
   width: 100%;
   max-width: 680px;
-  background: var(--bg-surface);
-  border: 1px solid var(--border-medium);
-  border-radius: var(--radius-xl);
+  background: var(--surface);
+  border: 1px solid var(--control-border);
+  border-radius: var(--radius-lg);
   box-shadow: var(--shadow-lg);
   display: flex;
   flex-direction: column;
@@ -31,29 +30,29 @@
   justify-content: space-between;
   align-items: center;
   padding: var(--space-4) var(--space-6);
-  border-bottom: 1px solid var(--border-subtle);
-  background: var(--bg-surface-raised);
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
 }
 
 .title {
   font-size: 15px;
   font-weight: 700;
-  color: var(--text-primary);
+  color: var(--text);
   display: flex;
   align-items: center;
   gap: var(--space-2);
 }
 
 .closeButton {
-  color: var(--text-tertiary);
+  color: var(--text-3);
   padding: 4px;
   border-radius: var(--radius-sm);
   transition: all var(--transition-fast);
 }
 
 .closeButton:hover {
-  color: var(--text-primary);
-  background: var(--bg-surface-hover);
+  color: var(--text);
+  background: var(--surface-hover);
 }
 
 .body {
@@ -69,8 +68,8 @@
   flex-direction: column;
   align-items: flex-start;
   padding: var(--space-4);
-  background: var(--bg-surface-raised);
-  border: 1px solid var(--border-subtle);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   text-align: left;
   transition: all var(--transition-fast);
@@ -78,9 +77,8 @@
 }
 
 .presetCard:hover {
-  border-color: var(--accent-primary);
-  background: var(--bg-surface-hover);
-  box-shadow: 0 0 15px var(--accent-primary-glow);
+  border-color: var(--text);
+  background: var(--surface-hover);
   transform: translateY(-2px);
 }
 
@@ -95,7 +93,7 @@
 .presetName {
   font-size: 13px;
   font-weight: 700;
-  color: var(--text-primary);
+  color: var(--text);
 }
 
 .categoryBadge {
@@ -103,14 +101,13 @@
   font-weight: 600;
   padding: 2px 6px;
   border-radius: var(--radius-sm);
-  background: var(--bg-surface-active);
-  color: var(--text-tertiary);
-  font-family: var(--font-mono);
+  background: var(--surface-hover);
+  color: var(--text-3);
 }
 
 .presetDesc {
   font-size: 11px;
-  color: var(--text-secondary);
+  color: var(--text-2);
   line-height: 1.4;
   margin-bottom: var(--space-3);
 }
@@ -125,9 +122,8 @@
 
 .specBadge {
   font-size: 10px;
-  font-family: var(--font-mono);
-  color: var(--accent-primary);
-  background: rgba(56, 189, 248, 0.1);
+  color: var(--text-2);
+  background: var(--surface-2);
   padding: 2px 6px;
   border-radius: var(--radius-sm);
 }

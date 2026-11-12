@@ -88,7 +88,7 @@ export const MenuBar: React.FC = () => {
       {/* Left: Brand & Desktop Menus */}
       <div className={styles.leftSide}>
         <div className={styles.brand} onClick={() => setActiveTab('adjustments')}>
-          <Sparkles size={16} color="var(--accent-primary)" />
+          <Sparkles size={16} color="var(--text-2)" />
           <span className={styles.brandTitle}>IMAGE SUITE</span>
           <span className={styles.brandBadge}>PRO</span>
         </div>
@@ -161,7 +161,7 @@ export const MenuBar: React.FC = () => {
                 <button
                   className={styles.dropdownItem}
                   disabled={!doc}
-                  style={{ color: 'var(--accent-danger)' }}
+                  style={{ color: 'var(--danger)' }}
                   onClick={handleClearWorkspace}
                 >
                   <span className={styles.itemLabel}><Trash2 size={14} /> Clear Workspace</span>
@@ -402,10 +402,10 @@ export const MenuBar: React.FC = () => {
             <span style={{ textDecoration: 'underline dotted', textUnderlineOffset: 3 }}>
               {shownSize.width}×{shownSize.height}px
             </span>
-            <span style={{ color: 'var(--text-muted)' }}>•</span>
+            <span style={{ color: 'var(--text-3)' }}>•</span>
             <span>{dpi === null ? 'Size not set' : `${Number(dpi.toFixed(1))} DPI`}</span>
-            <span style={{ color: 'var(--text-muted)' }}>•</span>
-            <span style={{ color: 'var(--accent-primary)', fontFamily: 'var(--font-mono)' }}>
+            <span style={{ color: 'var(--text-3)' }}>•</span>
+            <span style={{ color: 'var(--text)' }}>
               {isExporting ? 'Paused while exporting' : isProcessing ? '...' : `${durationMs.toFixed(1)}ms`}
             </span>
           </div>

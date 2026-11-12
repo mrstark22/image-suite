@@ -194,7 +194,7 @@ export const AdjustmentsPanel: React.FC = () => {
                 <RotateCcw size={12} />
               </button>
             )}
-            {openSections.tone ? <ChevronDown size={15} color="var(--text-tertiary)" /> : <ChevronRight size={15} color="var(--text-tertiary)" />}
+            {openSections.tone ? <ChevronDown size={15} color="var(--text-3)" /> : <ChevronRight size={15} color="var(--text-3)" />}
           </div>
         </div>
 
@@ -302,7 +302,7 @@ export const AdjustmentsPanel: React.FC = () => {
                 <RotateCcw size={12} />
               </button>
             )}
-            {openSections.levels ? <ChevronDown size={15} color="var(--text-tertiary)" /> : <ChevronRight size={15} color="var(--text-tertiary)" />}
+            {openSections.levels ? <ChevronDown size={15} color="var(--text-3)" /> : <ChevronRight size={15} color="var(--text-3)" />}
           </div>
         </div>
 
@@ -369,7 +369,7 @@ export const AdjustmentsPanel: React.FC = () => {
                 <RotateCcw size={12} />
               </button>
             )}
-            {openSections.detail ? <ChevronDown size={15} color="var(--text-tertiary)" /> : <ChevronRight size={15} color="var(--text-tertiary)" />}
+            {openSections.detail ? <ChevronDown size={15} color="var(--text-3)" /> : <ChevronRight size={15} color="var(--text-3)" />}
           </div>
         </div>
 
@@ -444,7 +444,7 @@ export const AdjustmentsPanel: React.FC = () => {
                 <RotateCcw size={12} />
               </button>
             )}
-            {openSections.color ? <ChevronDown size={15} color="var(--text-tertiary)" /> : <ChevronRight size={15} color="var(--text-tertiary)" />}
+            {openSections.color ? <ChevronDown size={15} color="var(--text-3)" /> : <ChevronRight size={15} color="var(--text-3)" />}
           </div>
         </div>
 
@@ -452,7 +452,7 @@ export const AdjustmentsPanel: React.FC = () => {
           <div className={styles.accordionContent}>
             {/* Grayscale Mode Selector */}
             <div style={{ marginBottom: 4 }}>
-              <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)', marginBottom: 6 }}>
                 Grayscale Conversion Mode
               </div>
               <div className={styles.segmentedGroup}>
@@ -536,7 +536,7 @@ export const AdjustmentsPanel: React.FC = () => {
                 <RotateCcw size={12} />
               </button>
             )}
-            {openSections.filters ? <ChevronDown size={15} color="var(--text-tertiary)" /> : <ChevronRight size={15} color="var(--text-tertiary)" />}
+            {openSections.filters ? <ChevronDown size={15} color="var(--text-3)" /> : <ChevronRight size={15} color="var(--text-3)" />}
           </div>
         </div>
 

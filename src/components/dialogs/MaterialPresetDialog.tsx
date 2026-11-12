@@ -135,7 +135,7 @@ export const MaterialPresetDialog: React.FC = () => {
       <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
         <div className={styles.header}>
           <div className={styles.title}>
-            <BookOpen size={18} color="var(--accent-primary)" />
+            <BookOpen size={18} color="var(--text-2)" />
             Material Substrate Presets
           </div>
           <button className={styles.closeButton} onClick={() => setOpen(false)}>

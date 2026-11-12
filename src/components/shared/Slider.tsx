@@ -125,7 +125,7 @@ export const Slider: React.FC<SliderProps> = ({
           }}
           onChange={(e) => onChange(parseFloat(e.target.value))}
           style={{
-            background: `linear-gradient(to right, var(--accent-primary) 0%, var(--accent-primary) ${percentage}%, var(--bg-surface-active) ${percentage}%, var(--bg-surface-active) 100%)`,
+            background: `linear-gradient(to right, var(--accent) 0%, var(--accent) ${percentage}%, var(--track) ${percentage}%, var(--track) 100%)`,
           }}
         />
       </div>

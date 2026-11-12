@@ -7,8 +7,25 @@ import { MM_PER_INCH } from '../../lib/document-size';
 import { RULER_THICKNESS, rulerZero } from '../../lib/viewport';
 import styles from './CanvasRulers.module.css';
 
+/**
+ * Canvas 2D cannot read CSS variables, so the rulers resolve the theme's
+ * tokens from the element's computed style each time they draw.
+ */
+function rulerColours(el: Element) {
+  const css = getComputedStyle(el);
+  const token = (name: string) => css.getPropertyValue(name).trim();
+  return {
+    background: token('--surface'),
+    tick: token('--control-border'),
+    label: token('--text-3'),
+    pointer: token('--text'),
+    font: `${token('--text-xs')} ${token('--font')}`,
+  };
+}
+
 export const CanvasRulers: React.FC = () => {
   const showRulers = useUIStore((s) => s.showRulers);
+  const theme = useUIStore((s) => s.theme);
   const source = useRenderStore((s) => s.source);
   const dims = source;
   const zoom = useViewStore((s) => s.zoom);
@@ -50,8 +67,9 @@ export const CanvasRulers: React.FC = () => {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
+    const colours = rulerColours(canvas);
     ctx.clearRect(0, 0, width, height);
-    ctx.fillStyle = '#0d1117';
+    ctx.fillStyle = colours.background;
     ctx.fillRect(0, 0, width, height);
 
     // The image's left edge on this ruler, which starts past the corner box.
@@ -78,9 +96,9 @@ export const CanvasRulers: React.FC = () => {
     const startIdx = Math.floor(-canvasOriginX / stepScreenPx) - 1;
     const endIdx = Math.ceil((width - canvasOriginX) / stepScreenPx) + 1;
 
-    ctx.strokeStyle = '#30363d';
-    ctx.fillStyle = '#8b949e';
-    ctx.font = '9px monospace';
+    ctx.strokeStyle = colours.tick;
+    ctx.fillStyle = colours.label;
+    ctx.font = colours.font;
     ctx.lineWidth = 1;
 
     for (let i = startIdx; i <= endIdx; i++) {
@@ -109,14 +127,14 @@ export const CanvasRulers: React.FC = () => {
       const rect = canvas.getBoundingClientRect();
       const cursorX = mousePos.x - rect.left;
       if (cursorX >= 0 && cursorX <= width) {
-        ctx.strokeStyle = 'var(--accent-primary, #38bdf8)';
+        ctx.strokeStyle = colours.pointer;
         ctx.beginPath();
         ctx.moveTo(cursorX, 0);
         ctx.lineTo(cursorX, 24);
         ctx.stroke();
       }
     }
-  }, [showRulers, dims, container, zoom, pan, dpi, unit, mousePos]);
+  }, [showRulers, dims, container, zoom, pan, dpi, unit, mousePos, theme]);
 
   // Render Vertical (Left) Ruler
   useEffect(() => {
@@ -133,8 +151,9 @@ export const CanvasRulers: React.FC = () => {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
+    const colours = rulerColours(canvas);
     ctx.clearRect(0, 0, width, height);
-    ctx.fillStyle = '#0d1117';
+    ctx.fillStyle = colours.background;
     ctx.fillRect(0, 0, width, height);
 
     // The image's top edge on this ruler, which starts below the corner box.
@@ -159,9 +178,9 @@ export const CanvasRulers: React.FC = () => {
     const startIdx = Math.floor(-canvasOriginY / stepScreenPx) - 1;
     const endIdx = Math.ceil((height - canvasOriginY) / stepScreenPx) + 1;
 
-    ctx.strokeStyle = '#30363d';
-    ctx.fillStyle = '#8b949e';
-    ctx.font = '9px monospace';
+    ctx.strokeStyle = colours.tick;
+    ctx.fillStyle = colours.label;
+    ctx.font = colours.font;
     ctx.lineWidth = 1;
 
     for (let i = startIdx; i <= endIdx; i++) {
@@ -195,14 +214,14 @@ export const CanvasRulers: React.FC = () => {
       const rect = canvas.getBoundingClientRect();
       const cursorY = mousePos.y - rect.top;
       if (cursorY >= 0 && cursorY <= height) {
-        ctx.strokeStyle = 'var(--accent-primary, #38bdf8)';
+        ctx.strokeStyle = colours.pointer;
         ctx.beginPath();
         ctx.moveTo(0, cursorY);
         ctx.lineTo(24, cursorY);
         ctx.stroke();
       }
     }
-  }, [showRulers, dims, container, zoom, pan, dpi, unit, mousePos]);
+  }, [showRulers, dims, container, zoom, pan, dpi, unit, mousePos, theme]);
 
   if (!showRulers || !dims) return null;
 
