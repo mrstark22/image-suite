@@ -52,7 +52,20 @@ export const CanvasCropOverlay: React.FC<{ barHost: HTMLElement | null }> = ({ b
 
   // The box, focused when the tool opens so the arrow keys work at once (#79).
   const boxRef = useRef<HTMLDivElement>(null);
-  const [isBoxFocused, setIsBoxFocused] = useState(false);
+  // Whether the box's keys are shown: while it has focus from the keyboard,
+  // not after a click or a tap, where they would only be clutter.
+  const [showKeys, setShowKeys] = useState(false);
+  const lastInputWasKeyRef = useRef(false);
+  useEffect(() => {
+    const onKey = () => (lastInputWasKeyRef.current = true);
+    const onPointer = () => (lastInputWasKeyRef.current = false);
+    window.addEventListener('keydown', onKey, true);
+    window.addEventListener('pointerdown', onPointer, true);
+    return () => {
+      window.removeEventListener('keydown', onKey, true);
+      window.removeEventListener('pointerdown', onPointer, true);
+    };
+  }, []);
   const hintId = useId();
 
   const [dragHandle, setDragHandle] = useState<CropHandle | null>(null);
@@ -136,6 +149,7 @@ export const CanvasCropOverlay: React.FC<{ barHost: HTMLElement | null }> = ({ b
     // The canvas pans on the arrow keys when it has focus itself; the box's keys are the box's.
     e.stopPropagation();
     setCropBox(next);
+    setShowKeys(true);
   };
 
   const handlePointerUp = useCallback((e: PointerEvent) => {
@@ -184,8 +198,8 @@ export const CanvasCropOverlay: React.FC<{ barHost: HTMLElement | null }> = ({ b
         {fileW}×{fileH}px ({physical})
       </span>
 
-      {/* While the box has focus, its keys are shown where the size changes. */}
-      <span id={hintId} className={isBoxFocused ? styles.keyHint : styles.visuallyHidden}>
+      {/* While the box has keyboard focus, its keys are shown where the size changes; after a tap they are not. */}
+      <span id={hintId} className={showKeys ? styles.keyHint : styles.visuallyHidden}>
         Arrows move · Shift+Arrows size · Alt: 1 px · Enter applies
       </span>
 
@@ -215,8 +229,8 @@ export const CanvasCropOverlay: React.FC<{ barHost: HTMLElement | null }> = ({ b
         aria-label="Crop box"
         aria-describedby={hintId}
         onKeyDown={handleKeyDown}
-        onFocus={() => setIsBoxFocused(true)}
-        onBlur={() => setIsBoxFocused(false)}
+        onFocus={() => setShowKeys(lastInputWasKeyRef.current)}
+        onBlur={() => setShowKeys(false)}
         style={{
           left: cropBox.x,
           top: cropBox.y,

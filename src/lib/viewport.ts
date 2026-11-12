@@ -76,14 +76,13 @@ function panAxis(p: number, d: number, limit: number): number {
   return Math.min(p, Math.max(p + d, -limit));
 }
 
-/** How far a keyboard pan may take the pan along one axis. */
+/**
+ * How far a keyboard pan may take the pan along one axis: until the image's
+ * far edge is `PAN_KEY_MARGIN` inside the container. An image that already
+ * shows that edge clear of the margin does not pan along the axis.
+ */
 function panAxisLimit(container: number, image: number, zoom: number): number {
-  const shown = image * zoom;
-  // A larger image pans until its edge is `PAN_KEY_MARGIN` inside the container;
-  // a smaller one until its edge is that far from the container's.
-  return shown > container
-    ? (shown - container) / 2 + PAN_KEY_MARGIN
-    : Math.max(0, (container - shown) / 2 - PAN_KEY_MARGIN);
+  return Math.max(0, (image * zoom - container) / 2 + PAN_KEY_MARGIN);
 }
 
 /**

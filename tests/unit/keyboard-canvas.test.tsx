@@ -152,8 +152,12 @@ describe('cropping without a pointer (#79)', () => {
     const box = cropBox();
     expect(document.activeElement).toBe(box);
     expect(box.tabIndex).toBe(0);
-    const hint = document.getElementById(box.getAttribute('aria-describedby')!);
-    expect(hint?.textContent).toMatch(/Arrows move.*Shift\+Arrows size/);
+    const hint = document.getElementById(box.getAttribute('aria-describedby')!)!;
+    expect(hint.textContent).toMatch(/Arrows move.*Shift\+Arrows size/);
+    // Opened from code after a pointer: the keys are only read out. After a key, they are shown too.
+    expect(hint.className).toMatch(/visuallyHidden/);
+    press('ArrowRight');
+    expect(hint.className).not.toMatch(/visuallyHidden/);
   });
 
   it('a chosen region is drawn, adjusted and applied with the keys alone', () => {
@@ -209,6 +213,13 @@ describe('panning the canvas from the keyboard (#81)', () => {
     expect(panForKey(view, container, image, key('ArrowDown'))).toEqual({ x: 0, y: -PAN_KEY_STEP });
     expect(panForKey(view, container, image, key('ArrowUp', true))).toEqual({ x: 0, y: PAN_KEY_STEP_LARGE });
     expect(panForKey(view, container, image, key('a'))).toBeNull();
+  });
+
+  it('an image that nearly fills the view pans just far enough to clear the rulers; a small one stays put', () => {
+    // 200 px tall at 1.95x is 390 px in a 400 px view: its edges are 5 px in, under the rulers.
+    const near = panForKey({ zoom: 1.95, pan: { x: 0, y: 0 } }, container, image, key('ArrowUp', true))!;
+    expect(near.y).toBeCloseTo(PAN_KEY_MARGIN - 5, 9);
+    expect(panForKey({ zoom: 0.5, pan: { x: 0, y: 0 } }, container, image, key('ArrowUp', true))).toEqual({ x: 0, y: 0 });
   });
 
   it('a pan a drag took past the limit is not pulled back by a key', () => {
