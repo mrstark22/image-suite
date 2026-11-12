@@ -69,7 +69,7 @@ export const DepthMapPanel: React.FC = () => {
       });
 
       const depth16Data = new Uint16Array(result.heightMapBuffer);
-      const pngBytes = encodePngGrayscale16(depth16Data, dims.width, dims.height);
+      const pngBytes = await encodePngGrayscale16(depth16Data, dims.width, dims.height);
 
       const blob = new Blob([pngBytes.buffer as ArrayBuffer], { type: 'image/png' });
       const url = URL.createObjectURL(blob);

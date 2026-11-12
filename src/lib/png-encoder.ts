@@ -1,11 +1,14 @@
 /**
- * High-performance 16-bit Grayscale PNG Encoder for CNC & CAM Heightmap Export.
- * Generates lossless 16-bit (65,536 discrete depth levels) PNGs compatible with:
- * - Vectric Aspire / VCarve
- * - Carbide Create Pro
- * - CarveCo
- * - LightBurn 3D Sliced Laser Relief
- * - Blender Displace Modifier
+ * PNG encoders: 8-bit greyscale, RGB or RGBA for raster export (#17), and
+ * 16-bit greyscale for heightmaps.
+ *
+ * Image data is compressed with the platform's `CompressionStream('deflate')`
+ * (a zlib stream, as PNG requires), which browsers, workers and Node provide.
+ * Rows are fed to it in chunks, so the whole filtered image never exists at
+ * once. Every row uses filter type 0 (None).
+ *
+ * The resolution is written as a `pHYs` chunk in pixels per metre, rounded to
+ * a whole number as the format requires.
  */
 
 const crcTable = new Uint32Array(256);
@@ -25,145 +28,197 @@ function computeCrc32(buf: Uint8Array, offset: number, length: number): number {
   return (c ^ 0xffffffff) >>> 0;
 }
 
-function adler32(buf: Uint8Array): number {
-  let a = 1;
-  let b = 0;
-  for (let i = 0; i < buf.length; i++) {
-    a = (a + buf[i]) % 65521;
-    b = (b + a) % 65521;
-  }
-  return ((b << 16) | a) >>> 0;
+/** Uncompressed bytes of filtered rows sent to the compressor at a time. */
+const CHUNK_BYTES = 1 << 20;
+
+/** PNG colour types written here: greyscale, RGB and RGBA. */
+export type PngColour = 'grey' | 'rgb' | 'rgba';
+
+const COLOUR_TYPE: Record<PngColour, number> = { grey: 0, rgb: 2, rgba: 6 };
+const CHANNELS: Record<PngColour, number> = { grey: 1, rgb: 3, rgba: 4 };
+
+/** Pixels per metre at `pxPerMm`, as `pHYs` and BMP store it. */
+export function pixelsPerMetre(pxPerMm: number): number {
+  return Math.round(pxPerMm * 1000);
+}
+
+interface PngLayout {
+  width: number;
+  height: number;
+  bitDepth: 8 | 16;
+  colourType: number;
+  /** Bytes in one row, without its filter byte. */
+  rowBytes: number;
+  /** Written as `pHYs` when given. */
+  pxPerMm?: number;
 }
 
 /**
- * Encodes uncompressed / fast deflate zlib block for PNG IDAT
+ * Writes one image row's samples into `out` (exactly `rowBytes` long). Called
+ * for rows 0 to height - 1 in order.
  */
-function createZlibBlocks(rawScanlines: Uint8Array): Uint8Array {
-  // Use uncompressed deflate blocks for maximum speed and zero dependencies
-  // Max uncompressed block size is 65535 bytes
-  const MAX_BLOCK_SIZE = 65535;
-  const numBlocks = Math.ceil(rawScanlines.length / MAX_BLOCK_SIZE) || 1;
-  const totalZlibSize = 2 + numBlocks * 5 + rawScanlines.length + 4;
+type RowWriter = (y: number, out: Uint8Array) => void;
 
-  const out = new Uint8Array(totalZlibSize);
-  let outIdx = 0;
+/**
+ * Called after each chunk of rows with the fraction of rows written. Awaited,
+ * so it can yield to other work, and can stop the encode by throwing.
+ */
+export type EncodeProgress = (fraction: number) => void | Promise<void>;
 
-  // Zlib Header: CMF (0x78 = 32K window, deflate) + FLG (0x01 = check bits)
-  out[outIdx++] = 0x78;
-  out[outIdx++] = 0x01;
-
-  let inOffset = 0;
-  for (let b = 0; b < numBlocks; b++) {
-    const isLast = b === numBlocks - 1;
-    const blockSize = Math.min(MAX_BLOCK_SIZE, rawScanlines.length - inOffset);
-
-    // BFINAL (1 bit) + BTYPE (00 = uncompressed, 2 bits)
-    out[outIdx++] = isLast ? 0x01 : 0x00;
-
-    // LEN (16-bit little-endian)
-    out[outIdx++] = blockSize & 0xff;
-    out[outIdx++] = (blockSize >>> 8) & 0xff;
-
-    // NLEN (one's complement of LEN)
-    const nlen = ~blockSize & 0xffff;
-    out[outIdx++] = nlen & 0xff;
-    out[outIdx++] = (nlen >>> 8) & 0xff;
-
-    // Data payload
-    out.set(rawScanlines.subarray(inOffset, inOffset + blockSize), outIdx);
-    outIdx += blockSize;
-    inOffset += blockSize;
+async function encodePng(layout: PngLayout, writeRow: RowWriter, onProgress?: EncodeProgress): Promise<Uint8Array> {
+  const { width, height, rowBytes } = layout;
+  if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1) {
+    throw new Error(`Cannot encode a ${width} × ${height} PNG.`);
   }
+  const idat = await deflateRows(rowBytes, height, writeRow, onProgress);
 
-  // Adler-32 Checksum (big-endian)
-  const checksum = adler32(rawScanlines);
-  out[outIdx++] = (checksum >>> 24) & 0xff;
-  out[outIdx++] = (checksum >>> 16) & 0xff;
-  out[outIdx++] = (checksum >>> 8) & 0xff;
-  out[outIdx++] = checksum & 0xff;
+  const ihdr = new Uint8Array(13);
+  const ihdrView = new DataView(ihdr.buffer);
+  ihdrView.setUint32(0, width, false);
+  ihdrView.setUint32(4, height, false);
+  ihdr[8] = layout.bitDepth;
+  ihdr[9] = layout.colourType;
+  // Compression 0 (deflate), filter method 0, no interlace.
 
-  return out;
+  const chunks: Array<[string, Uint8Array]> = [['IHDR', ihdr]];
+  if (layout.pxPerMm !== undefined) {
+    const ppm = pixelsPerMetre(layout.pxPerMm);
+    if (!(ppm >= 1 && ppm <= 0x7fffffff)) throw new Error(`Cannot write a resolution of ${layout.pxPerMm} px/mm.`);
+    const phys = new Uint8Array(9);
+    const physView = new DataView(phys.buffer);
+    physView.setUint32(0, ppm, false);
+    physView.setUint32(4, ppm, false);
+    phys[8] = 1; // unit: metre
+    chunks.push(['pHYs', phys]);
+  }
+  for (const part of idat) chunks.push(['IDAT', part]);
+  chunks.push(['IEND', new Uint8Array(0)]);
+
+  const total = 8 + chunks.reduce((n, [, data]) => n + 12 + data.length, 0);
+  const png = new Uint8Array(total);
+  const view = new DataView(png.buffer);
+  png.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a], 0);
+  let p = 8;
+  for (const [type, data] of chunks) {
+    view.setUint32(p, data.length, false);
+    const typeStart = p + 4;
+    for (let i = 0; i < 4; i++) png[typeStart + i] = type.charCodeAt(i);
+    png.set(data, typeStart + 4);
+    p = typeStart + 4 + data.length;
+    view.setUint32(p, computeCrc32(png, typeStart, 4 + data.length), false);
+    p += 4;
+  }
+  return png;
 }
 
 /**
- * Encodes a 16-bit heightmap buffer into a 16-bit Grayscale PNG.
+ * Filters (type 0) and compresses `height` rows into a zlib stream, returned
+ * as the pieces the compressor produced; each becomes one IDAT chunk.
  */
-export function encodePngGrayscale16(
+async function deflateRows(
+  rowBytes: number,
+  height: number,
+  writeRow: RowWriter,
+  onProgress?: EncodeProgress
+): Promise<Uint8Array[]> {
+  const stream = new CompressionStream('deflate');
+  const writer = stream.writable.getWriter();
+  const pieces: Uint8Array[] = [];
+  const reading = (async () => {
+    const reader = stream.readable.getReader();
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) return;
+      pieces.push(value);
+    }
+  })();
+  // Reported by the write or close that fails; do not leave it unhandled meanwhile.
+  reading.catch(() => undefined);
+
+  const stride = rowBytes + 1;
+  const rowsPerChunk = Math.max(1, Math.floor(CHUNK_BYTES / stride));
+  try {
+    for (let y = 0; y < height; y += rowsPerChunk) {
+      const rows = Math.min(rowsPerChunk, height - y);
+      const chunk = new Uint8Array(rows * stride);
+      for (let r = 0; r < rows; r++) {
+        // chunk[r * stride] stays 0: filter type None.
+        writeRow(y + r, chunk.subarray(r * stride + 1, (r + 1) * stride));
+      }
+      await writer.write(chunk);
+      await onProgress?.((y + rows) / height);
+    }
+    await writer.close();
+  } catch (err) {
+    await writer.abort(err).catch(() => undefined);
+    throw err;
+  }
+  await reading;
+  return pieces;
+}
+
+/**
+ * Encodes an 8-bit PNG from RGBA8 rows. `readRgba` returns the whole RGBA
+ * image (`width * height * 4` bytes); it is called again for every chunk, so
+ * it can return a fresh view of memory that may have moved (WebAssembly
+ * memory after growth). `colour` picks which channels are written: `grey`
+ * writes the red channel and is meant for images whose channels are equal.
+ */
+export async function encodePng8(
+  readRgba: () => Uint8Array | Uint8ClampedArray,
+  width: number,
+  height: number,
+  colour: PngColour,
+  options: { pxPerMm?: number; onProgress?: EncodeProgress } = {}
+): Promise<Uint8Array> {
+  const channels = CHANNELS[colour];
+  if (readRgba().length < width * height * 4) {
+    throw new Error(`The pixels are fewer than ${width} × ${height} RGBA.`);
+  }
+  const writeRow: RowWriter = (y, out) => {
+    const rgba = readRgba();
+    let s = y * width * 4;
+    if (channels === 4) {
+      out.set(rgba.subarray(s, s + width * 4));
+      return;
+    }
+    let d = 0;
+    for (let x = 0; x < width; x++, s += 4) {
+      out[d++] = rgba[s];
+      if (channels === 3) {
+        out[d++] = rgba[s + 1];
+        out[d++] = rgba[s + 2];
+      }
+    }
+  };
+  return encodePng(
+    { width, height, bitDepth: 8, colourType: COLOUR_TYPE[colour], rowBytes: width * channels, pxPerMm: options.pxPerMm },
+    writeRow,
+    options.onProgress
+  );
+}
+
+/**
+ * Encodes a 16-bit heightmap buffer into a 16-bit greyscale PNG, writing
+ * `pHYs` when `pxPerMm` is given.
+ */
+export async function encodePngGrayscale16(
   depth16: Uint16Array,
   width: number,
-  height: number
-): Uint8Array {
-  // Raw scanline format: 1 filter byte (0x00 = None) + width * 2 bytes per row (big-endian)
-  const scanlineLength = 1 + width * 2;
-  const rawScanlines = new Uint8Array(scanlineLength * height);
-
-  let rawIdx = 0;
-  for (let y = 0; y < height; y++) {
-    rawScanlines[rawIdx++] = 0x00; // Filter: None
-    const rowOffset = y * width;
-    for (let x = 0; x < width; x++) {
-      const z = depth16[rowOffset + x];
-      // Big-endian 16-bit uint
-      rawScanlines[rawIdx++] = (z >>> 8) & 0xff;
-      rawScanlines[rawIdx++] = z & 0xff;
-    }
+  height: number,
+  pxPerMm?: number
+): Promise<Uint8Array> {
+  if (depth16.length < width * height) {
+    throw new Error(`The heightmap has fewer than ${width} × ${height} samples.`);
   }
-
-  // Compress into zlib stream
-  const idatPayload = createZlibBlocks(rawScanlines);
-
-  // PNG chunks: Signature (8) + IHDR (25) + IDAT (12 + payload) + IEND (12)
-  const totalFileSize = 8 + 25 + (12 + idatPayload.length) + 12;
-  const png = new Uint8Array(totalFileSize);
-  const view = new DataView(png.buffer);
-  let p = 0;
-
-  // 1. PNG Signature
-  png.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a], p);
-  p += 8;
-
-  // 2. IHDR Chunk (13 bytes payload)
-  view.setUint32(p, 13, false); // Length
-  p += 4;
-  const ihdrStart = p;
-  png.set([0x49, 0x48, 0x44, 0x52], p); // "IHDR"
-  p += 4;
-  view.setUint32(p, width, false);
-  p += 4;
-  view.setUint32(p, height, false);
-  p += 4;
-  png[p++] = 16; // 16 bits per sample
-  png[p++] = 0;  // Color type 0 (Grayscale)
-  png[p++] = 0;  // Compression method (0 = deflate)
-  png[p++] = 0;  // Filter method (0 = standard)
-  png[p++] = 0;  // Interlace (0 = no interlace)
-
-  const ihdrCrc = computeCrc32(png, ihdrStart, p - ihdrStart);
-  view.setUint32(p, ihdrCrc, false);
-  p += 4;
-
-  // 3. IDAT Chunk
-  view.setUint32(p, idatPayload.length, false);
-  p += 4;
-  const idatStart = p;
-  png.set([0x49, 0x44, 0x41, 0x54], p); // "IDAT"
-  p += 4;
-  png.set(idatPayload, p);
-  p += idatPayload.length;
-
-  const idatCrc = computeCrc32(png, idatStart, p - idatStart);
-  view.setUint32(p, idatCrc, false);
-  p += 4;
-
-  // 4. IEND Chunk
-  view.setUint32(p, 0, false); // Length
-  p += 4;
-  const iendStart = p;
-  png.set([0x49, 0x45, 0x4e, 0x44], p); // "IEND"
-  p += 4;
-  const iendCrc = computeCrc32(png, iendStart, p - iendStart);
-  view.setUint32(p, iendCrc, false);
-  p += 4;
-
-  return png;
+  const writeRow: RowWriter = (y, out) => {
+    const row = y * width;
+    for (let x = 0; x < width; x++) {
+      const z = depth16[row + x];
+      // Big-endian 16-bit samples.
+      out[x * 2] = (z >>> 8) & 0xff;
+      out[x * 2 + 1] = z & 0xff;
+    }
+  };
+  return encodePng({ width, height, bitDepth: 16, colourType: 0, rowBytes: width * 2, pxPerMm }, writeRow);
 }
