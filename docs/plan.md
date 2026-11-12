@@ -242,7 +242,7 @@ To fix as each piece is ported. Verified in the audit unless marked.
 - K-means seeds from evenly spaced pixel positions, which often coincide (`src/wasm/src/vector.rs:843`).
 - "Optimize & Smooth Nodes" throws on WASM trace output (`src/lib/vector-smoother.ts:27`).
 - Tracing stops silently at 4,000 contours (`src/wasm/src/vector.rs:153`). Reported.
-- Checkboxes, preset chips and reset buttons in the adjustments panel are not undoable. Reported.
+- Checkboxes, preset chips and reset buttons in the adjustments panel are not undoable. Reported. Fixed in #15 (part 2) and #21: every control changes the document through `edit` or a gesture in `src/store/documentStore.ts`, and `tests/unit/undo-every-control.test.ts` undoes each kind of edit.
 - Stale worker results can overwrite the current preview. Reported. Fixed in #19: the schedulers in `src/lib/render-scheduler.ts` commit a result only if nothing it read has changed.
 - Relief: transparent pixels count as ink, so a logo on a transparent background gives a flat map (`src/wasm/src/depth.rs:40`). Reported. Fixed by flattening transparency in the core: since #16 the relief reads the flattened `source` stage; #18 adds its test.
 - Relief: the Export panel's heightmap button sends 16-bit data down the 8-bit path (`src/components/panels/ExportPanel.tsx:316`). Since #17, which removed that path, the button writes through the 16-bit encoder; removing the duplicate button stays with #46.
