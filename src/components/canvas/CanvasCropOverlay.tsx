@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { Check, X } from 'lucide-react';
 import { useDocumentStore } from '../../store/documentStore';
 import { useRenderStore } from '../../store/renderStore';
@@ -13,8 +14,13 @@ type AspectRatio = 'free' | '1:1' | '4:3' | '16:9' | '3:2';
  * The crop tool. The box is drawn on the preview as shown; applying it sets
  * `steps.crop` in source pixels as one undo entry. The scale is kept, so the
  * physical size follows the crop.
+ *
+ * The box and its handles are drawn on the image; the handles keep their
+ * screen size at any zoom. The Apply and Cancel bar goes into `barHost`, which
+ * sits over the canvas at screen size, so it stays readable and on screen
+ * at a phone's zoom (#54).
  */
-export const CanvasCropOverlay: React.FC = () => {
+export const CanvasCropOverlay: React.FC<{ barHost: HTMLElement | null }> = ({ barHost }) => {
   const canvasTool = useViewStore((s) => s.canvasTool);
   const setCanvasTool = useViewStore((s) => s.setCanvasTool);
   const source = useRenderStore((s) => s.source);
@@ -47,10 +53,12 @@ export const CanvasCropOverlay: React.FC = () => {
 
   const [dragHandle, setDragHandle] = useState<string | null>(null);
   const dragStartRef = useRef<{
+    /** The pointer dragging; another finger on the screen does not move the box. */
+    pointerId: number;
     clientX: number;
     clientY: number;
     box: { x: number; y: number; width: number; height: number };
-  }>({ clientX: 0, clientY: 0, box: { x: 0, y: 0, width: 800, height: 600 } });
+  }>({ pointerId: -1, clientX: 0, clientY: 0, box: { x: 0, y: 0, width: 800, height: 600 } });
 
   // Initialize crop box on tool activation
   useEffect(() => {
@@ -82,19 +90,20 @@ export const CanvasCropOverlay: React.FC = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [canvasTool, cropBox, applyCanvasCrop, setCanvasTool]);
 
-  const handleMouseDownHandle = (e: React.MouseEvent, handle: string) => {
+  const handlePointerDownHandle = (e: React.PointerEvent, handle: string) => {
     e.stopPropagation();
     e.preventDefault();
     setDragHandle(handle);
     dragStartRef.current = {
+      pointerId: e.pointerId,
       clientX: e.clientX,
       clientY: e.clientY,
       box: { ...cropBox },
     };
   };
 
-  const handleMouseMove = useCallback((e: MouseEvent) => {
-    if (!dragHandle || !dims) return;
+  const handlePointerMove = useCallback((e: PointerEvent) => {
+    if (!dragHandle || !dims || e.pointerId !== dragStartRef.current.pointerId) return;
     const dx = (e.clientX - dragStartRef.current.clientX) / zoom;
     const dy = (e.clientY - dragStartRef.current.clientY) / zoom;
     const startBox = dragStartRef.current.box;
@@ -147,20 +156,23 @@ export const CanvasCropOverlay: React.FC = () => {
     });
   }, [dragHandle, dims, zoom, ratio]);
 
-  const handleMouseUp = useCallback(() => {
+  const handlePointerUp = useCallback((e: PointerEvent) => {
+    if (e.pointerId !== dragStartRef.current.pointerId) return;
     setDragHandle(null);
   }, []);
 
   useEffect(() => {
     if (dragHandle) {
-      window.addEventListener('mousemove', handleMouseMove);
-      window.addEventListener('mouseup', handleMouseUp);
+      window.addEventListener('pointermove', handlePointerMove);
+      window.addEventListener('pointerup', handlePointerUp);
+      window.addEventListener('pointercancel', handlePointerUp);
     }
     return () => {
-      window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('mouseup', handleMouseUp);
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+      window.removeEventListener('pointercancel', handlePointerUp);
     };
-  }, [dragHandle, handleMouseMove, handleMouseUp]);
+  }, [dragHandle, handlePointerMove, handlePointerUp]);
 
   if (canvasTool !== 'crop' || !dims) return null;
 
@@ -170,6 +182,34 @@ export const CanvasCropOverlay: React.FC = () => {
   const fileH = inSource?.height ?? 0;
   const physical =
     mmPerPx === null ? 'size not set' : `${(fileW * mmPerPx).toFixed(1)}×${(fileH * mmPerPx).toFixed(1)}mm`;
+
+  const actionBar = (
+    <div className={styles.cropActionBar} onPointerDown={(e) => e.stopPropagation()}>
+      <select
+        className={styles.ratioSelect}
+        aria-label="Aspect ratio"
+        value={ratio}
+        onChange={(e) => setRatio(e.target.value as AspectRatio)}
+      >
+        <option value="free">Freeform</option>
+        <option value="1:1">1:1 Square</option>
+        <option value="4:3">4:3</option>
+        <option value="16:9">16:9</option>
+        <option value="3:2">3:2</option>
+      </select>
+
+      <span className={styles.cropDimLabel}>
+        {fileW}×{fileH}px ({physical})
+      </span>
+
+      <button className={styles.btnCancel} onClick={() => setCanvasTool('pan')} title="Cancel Crop (Esc)">
+        <X size={12} /> Cancel
+      </button>
+      <button className={styles.btnApply} onClick={() => applyCanvasCrop(cropBox)} title="Apply Crop (Enter)">
+        <Check size={12} /> Apply Crop
+      </button>
+    </div>
+  );
 
   return (
     <div className={styles.cropContainer} style={{ width: dims.width, height: dims.height }}>
@@ -188,7 +228,7 @@ export const CanvasCropOverlay: React.FC = () => {
           width: cropBox.width,
           height: cropBox.height,
         }}
-        onMouseDown={(e) => handleMouseDownHandle(e, 'move')}
+        onPointerDown={(e) => handlePointerDownHandle(e, 'move')}
       >
         <div className={styles.gridLineH1} />
         <div className={styles.gridLineH2} />
@@ -196,42 +236,16 @@ export const CanvasCropOverlay: React.FC = () => {
         <div className={styles.gridLineV2} />
 
         {/* 8 Resize Handles */}
-        <div className={`${styles.handle} ${styles.handleNW}`} onMouseDown={(e) => handleMouseDownHandle(e, 'nw')} />
-        <div className={`${styles.handle} ${styles.handleNE}`} onMouseDown={(e) => handleMouseDownHandle(e, 'ne')} />
-        <div className={`${styles.handle} ${styles.handleSW}`} onMouseDown={(e) => handleMouseDownHandle(e, 'sw')} />
-        <div className={`${styles.handle} ${styles.handleSE}`} onMouseDown={(e) => handleMouseDownHandle(e, 'se')} />
-        <div className={`${styles.handle} ${styles.handleN}`} onMouseDown={(e) => handleMouseDownHandle(e, 'n')} />
-        <div className={`${styles.handle} ${styles.handleS}`} onMouseDown={(e) => handleMouseDownHandle(e, 's')} />
-        <div className={`${styles.handle} ${styles.handleW}`} onMouseDown={(e) => handleMouseDownHandle(e, 'w')} />
-        <div className={`${styles.handle} ${styles.handleE}`} onMouseDown={(e) => handleMouseDownHandle(e, 'e')} />
-
-        {/* Floating Action Controls Bar */}
-        <div className={styles.cropActionBar} onMouseDown={(e) => e.stopPropagation()}>
-          <select
-            className={styles.ratioSelect}
-            aria-label="Aspect ratio"
-            value={ratio}
-            onChange={(e) => setRatio(e.target.value as AspectRatio)}
-          >
-            <option value="free">Freeform</option>
-            <option value="1:1">1:1 Square</option>
-            <option value="4:3">4:3</option>
-            <option value="16:9">16:9</option>
-            <option value="3:2">3:2</option>
-          </select>
-
-          <span className={styles.cropDimLabel}>
-            {fileW}×{fileH}px ({physical})
-          </span>
-
-          <button className={styles.btnCancel} onClick={() => setCanvasTool('pan')} title="Cancel Crop (Esc)">
-            <X size={12} /> Cancel
-          </button>
-          <button className={styles.btnApply} onClick={() => applyCanvasCrop(cropBox)} title="Apply Crop (Enter)">
-            <Check size={12} /> Apply Crop
-          </button>
-        </div>
+        <div className={`${styles.handle} ${styles.handleNW}`} onPointerDown={(e) => handlePointerDownHandle(e, 'nw')} />
+        <div className={`${styles.handle} ${styles.handleNE}`} onPointerDown={(e) => handlePointerDownHandle(e, 'ne')} />
+        <div className={`${styles.handle} ${styles.handleSW}`} onPointerDown={(e) => handlePointerDownHandle(e, 'sw')} />
+        <div className={`${styles.handle} ${styles.handleSE}`} onPointerDown={(e) => handlePointerDownHandle(e, 'se')} />
+        <div className={`${styles.handle} ${styles.handleN}`} onPointerDown={(e) => handlePointerDownHandle(e, 'n')} />
+        <div className={`${styles.handle} ${styles.handleS}`} onPointerDown={(e) => handlePointerDownHandle(e, 's')} />
+        <div className={`${styles.handle} ${styles.handleW}`} onPointerDown={(e) => handlePointerDownHandle(e, 'w')} />
+        <div className={`${styles.handle} ${styles.handleE}`} onPointerDown={(e) => handlePointerDownHandle(e, 'e')} />
       </div>
+      {barHost && createPortal(actionBar, barHost)}
     </div>
   );
 };

@@ -37,6 +37,8 @@
   background: #ffffff;
   border: 1.5px solid #000000;
   border-radius: 1px;
+  /* The image is scaled by the zoom; the handles are not (#54). */
+  transform: scale(calc(1 / var(--view-zoom)));
 }
 
 .handleNW { top: -5px; left: -5px; cursor: nwse-resize; }
@@ -50,10 +52,7 @@
 .handleE { right: -5px; top: calc(50% - 5px); cursor: ew-resize; }
 
 .cropActionBar {
-  position: absolute;
-  bottom: -44px;
-  left: 50%;
-  transform: translateX(-50%);
+  max-width: 100%;
   background: var(--surface-2);
   border: 1px solid var(--control-border);
   border-radius: var(--radius-md);
@@ -62,7 +61,6 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  z-index: 50;
   pointer-events: auto;
   white-space: nowrap;
 }
@@ -115,4 +113,41 @@
 
 .btnApply:hover {
   background: var(--accent-hover);
+}
+
+/* Phone (#54): the controls on one row, and the size of the box on a short line under them. */
+@media (max-width: 599px) {
+  .cropActionBar {
+    flex-wrap: wrap;
+    justify-content: center;
+    row-gap: 2px;
+  }
+
+  .cropDimLabel {
+    order: 1;
+    flex-basis: 100%;
+    text-align: center;
+  }
+}
+
+/*
+ * Touch (#54): each handle's target is --touch-target square, centred on the
+ * handle; the bar's controls are full-size targets.
+ */
+@media (pointer: coarse) {
+  .handle::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: var(--touch-target);
+    height: var(--touch-target);
+    transform: translate(-50%, -50%);
+  }
+
+  .ratioSelect,
+  .btnCancel,
+  .btnApply {
+    min-height: var(--touch-target);
+  }
 }

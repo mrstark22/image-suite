@@ -631,14 +631,14 @@ const CROP_GEOMETRY =
 /** The inline styles allowed: each is a value known only at run time. */
 const RUN_TIME_STYLES: Record<string, RegExp[]> = {
   // The slider's filled part follows its value.
-  'src/components/shared/Slider.tsx': [/^style=\{\{ background: `linear-gradient\(.*\$\{percentage\}%.*`,? \}\}$/],
+  'src/components/shared/Slider.tsx': [/^style=\{\{ backgroundImage: `linear-gradient\(.*\$\{percentage\}%.*`,? \}\}$/],
   // The progress bar's fill follows the fraction done.
   'src/components/shared/Progress.tsx': [/^style=\{\{ width: `\$\{percent\}%` \}\}$/],
   // A trace layer's swatch is that layer's colour.
   'src/components/panels/VectorizationPanel.tsx': [/^style=\{\{ backgroundColor: layer\.color \}\}$/],
   // The image follows the pan and zoom; the before/after divider follows the split.
   'src/components/canvas/PreviewCanvas.tsx': [
-    /^style=\{\{ transform: `translate\(\$\{pan\.x\}px, \$\{pan\.y\}px\) scale\(\$\{zoom\}\)` \}\}$/,
+    /^style=\{\{ transform: `translate\(\$\{pan\.x\}px, \$\{pan\.y\}px\) scale\(\$\{zoom\}\)`, '--view-zoom': zoom \} as React\.CSSProperties\}$/,
     /^style=\{\{ left: `\$\{splitPosition \* 100\}%` \}\}$/,
   ],
   // The crop box, and the four dimmed areas around it, follow the crop being drawn.
@@ -679,11 +679,11 @@ describe('inline styles (#55)', () => {
       // The backdrop closes the dialog; Escape does the same. The second stops clicks inside from reaching it.
       'src/components/shared/Dialog.tsx <div> onClick': 'Escape',
       // Panning the canvas: no keyboard path yet (#81).
-      'src/components/canvas/PreviewCanvas.tsx <div> onMouseDown': '#81; the split divider also has arrow keys',
+      'src/components/canvas/PreviewCanvas.tsx <div> onPointerDown': '#81; the split divider also has arrow keys',
       // Orbiting the 3D view: no keyboard path yet (#81).
-      'src/components/canvas/DepthViewer3D.tsx <div> onMouseDown': '#81',
+      'src/components/canvas/DepthViewer3D.tsx <div> onPointerDown': '#81',
       // Moving and sizing the crop box: no keyboard path yet (#79). Enter applies, Escape cancels.
-      'src/components/canvas/CanvasCropOverlay.tsx <div> onMouseDown': '#79',
+      'src/components/canvas/CanvasCropOverlay.tsx <div> onPointerDown': '#79',
     };
     const found = new Set<string>();
     for (const file of MIGRATED) {

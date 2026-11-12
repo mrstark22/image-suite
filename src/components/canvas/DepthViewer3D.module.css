@@ -7,6 +7,8 @@
   overflow: hidden;
   user-select: none;
   cursor: grab;
+  /* The view handles touch itself (#54): one finger orbits, two pinch and pan. */
+  touch-action: none;
 }
 
 .viewerContainer:active {
@@ -88,4 +90,43 @@
   color: var(--text-2);
   pointer-events: none;
   letter-spacing: 0.2px;
+}
+
+/* Phone (#54): the HUD buttons keep their icons; their names stay for screen readers. */
+@media (max-width: 599px) {
+  .hudBadge {
+    display: none;
+  }
+
+  .hudOverlay {
+    justify-content: flex-end;
+  }
+
+  /* At the top, under the buttons: the canvas's zoom bar has the bottom corner. */
+  .hudHint {
+    top: 72px;
+    bottom: auto;
+    width: max-content;
+    max-width: calc(100% - 24px);
+    text-align: center;
+  }
+
+  .hudBtn span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+}
+
+/* Touch (#54) */
+@media (pointer: coarse) {
+  .hudBtn {
+    min-width: var(--touch-target);
+    min-height: var(--touch-target);
+    justify-content: center;
+  }
 }

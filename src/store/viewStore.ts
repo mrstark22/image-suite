@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { fitView, zoomAbout, type Point, type Size } from '../lib/viewport';
+import { clampZoom, fitView, zoomAbout, type Point, type Size, type View } from '../lib/viewport';
 
 export type CanvasTool = 'pan' | 'crop';
 
@@ -30,6 +30,8 @@ interface ViewState {
   /** Multiplies the zoom by `factor`, keeping the point at `anchor` (from the container's centre) still. */
   zoomBy: (factor: number, anchor?: Point) => void;
   setPan: (pan: Point) => void;
+  /** Sets the zoom (clamped) and pan together, as a pinch does (#54). */
+  setView: (view: View) => void;
   setSplitPosition: (pos: number) => void;
   /** Actual size: 100 %, centred. */
   resetViewport: () => void;
@@ -59,6 +61,8 @@ export const useViewStore = create<ViewState>((set, get) => ({
     set((state) => ({ ...zoomAbout({ zoom: state.zoom, pan: state.pan }, factor, anchor), fitted: false })),
 
   setPan: (pan) => set({ pan, fitted: false }),
+
+  setView: (view) => set({ zoom: clampZoom(view.zoom), pan: view.pan, fitted: false }),
 
   setSplitPosition: (splitPosition) => set({ splitPosition: Math.min(Math.max(splitPosition, 0), 1) }),
 

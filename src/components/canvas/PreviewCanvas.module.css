@@ -9,6 +9,8 @@
   align-items: center;
   justify-content: center;
   cursor: grab;
+  /* The canvas handles touch itself (#54): the page must not pan or zoom instead. */
+  touch-action: none;
 }
 
 .canvasContainerPan {
@@ -112,4 +114,28 @@
 .splitLabelAfter {
   right: 16px;
   color: var(--text);
+}
+
+/* Touch (#54): the divider's grip is a full-size target. */
+@media (pointer: coarse) {
+  .splitHandle {
+    width: var(--touch-target);
+    height: var(--touch-target);
+  }
+}
+
+/* The crop tool's bar, at the top of the canvas below the ruler (#54). */
+.cropBarHost {
+  position: absolute;
+  top: calc(24px + var(--space-2));
+  left: var(--space-2);
+  right: var(--space-2);
+  display: flex;
+  justify-content: center;
+  z-index: 55;
+  pointer-events: none;
+}
+
+.cropBarHost:empty {
+  display: none;
 }

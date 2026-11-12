@@ -2,6 +2,8 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { RotateCcw, Box, Compass, Layers, Grid } from 'lucide-react';
 import { useDocumentStore } from '../../store/documentStore';
 import { DEFAULT_DEPTH } from '../../lib/document';
+import { ActivePointers, type PointerPair } from '../../lib/gestures';
+import { DEFAULT_CAMERA, dollyBy, orbitBy, panBy, pinchCamera, type OrbitCamera } from '../../lib/orbit-camera';
 import styles from './DepthViewer3D.module.css';
 
 interface DepthViewer3DProps {
@@ -34,31 +36,25 @@ export const DepthViewer3D: React.FC<DepthViewer3DProps> = ({
   const depthConfig = useDocumentStore((s) => s.doc?.depth ?? DEFAULT_DEPTH);
 
   // Camera Orbit State
-  const [camera, setCamera] = useState({
-    azimuth: 45,    // degrees
-    elevation: 35,  // degrees
-    distance: 2.6,
-    panX: 0,
-    panY: 0,
-  });
+  const [camera, setCamera] = useState<OrbitCamera>(DEFAULT_CAMERA);
 
   const [showToolpaths, setShowToolpaths] = useState(false);
   const [wireframeMode, setWireframeMode] = useState(false);
 
-  const isDraggingRef = useRef(false);
-  const isPanningRef = useRef(false);
-  const lastMouseRef = useRef({ x: 0, y: 0 });
+  // The pointers down on the view and the gesture they make (#54). Pointer
+  // capture keeps a drag going when it leaves the view, and ends it wherever
+  // it is released.
+  const pointersRef = useRef(new ActivePointers());
+  const gestureRef = useRef<
+    | { kind: 'orbit' | 'pan'; pointerId: number; x: number; y: number }
+    | { kind: 'pinch'; start: PointerPair; camera: OrbitCamera }
+    | null
+  >(null);
 
   // Reset Camera View
   const handleResetCamera = useCallback(() => {
     needsRenderRef.current = true;
-    setCamera({
-      azimuth: 45,
-      elevation: 35,
-      distance: 2.6,
-      panX: 0,
-      panY: 0,
-    });
+    setCamera(DEFAULT_CAMERA);
   }, []);
 
   // Top-Down View
@@ -555,43 +551,50 @@ export const DepthViewer3D: React.FC<DepthViewer3DProps> = ({
     };
   }, [camera, depthConfig, width, height, showToolpaths, wireframeMode]);
 
-  // Mouse Interaction Handlers
-  const handleMouseDown = (e: React.MouseEvent) => {
-    if (e.button === 0) {
-      isDraggingRef.current = true;
-    } else if (e.button === 2) {
-      isPanningRef.current = true;
-    }
-    lastMouseRef.current = { x: e.clientX, y: e.clientY };
-  };
-
-  const handleMouseMove = (e: React.MouseEvent) => {
-    if (!isDraggingRef.current && !isPanningRef.current) return;
-
-    const dx = e.clientX - lastMouseRef.current.x;
-    const dy = e.clientY - lastMouseRef.current.y;
-    lastMouseRef.current = { x: e.clientX, y: e.clientY };
-
-    if (isDraggingRef.current) {
-      needsRenderRef.current = true;
-      setCamera((prev) => ({
-        ...prev,
-        azimuth: (prev.azimuth - dx * 0.4) % 360,
-        elevation: Math.max(10, Math.min(88, prev.elevation + dy * 0.4)),
-      }));
-    } else if (isPanningRef.current) {
-      needsRenderRef.current = true;
-      setCamera((prev) => ({
-        ...prev,
-        panX: prev.panX + dx * 0.003 * prev.distance,
-        panY: prev.panY - dy * 0.003 * prev.distance,
-      }));
+  // Pointer Interaction Handlers: mouse, pen and touch take the same path.
+  const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    // The HUD's buttons are inside the view; they are not drags.
+    if ((e.target as Element).closest('button')) return;
+    const pointers = pointersRef.current;
+    if (e.pointerType === 'mouse' && e.button !== 0 && e.button !== 2) return;
+    pointers.down(e.pointerId, { x: e.clientX, y: e.clientY });
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+    const pair = pointers.pair();
+    if (pair) {
+      gestureRef.current = { kind: 'pinch', start: pair, camera };
+    } else {
+      const kind = e.pointerType === 'mouse' && e.button === 2 ? 'pan' : 'orbit';
+      gestureRef.current = { kind, pointerId: e.pointerId, x: e.clientX, y: e.clientY };
     }
   };
 
-  const handleMouseUp = () => {
-    isDraggingRef.current = false;
-    isPanningRef.current = false;
+  const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!pointersRef.current.move(e.pointerId, { x: e.clientX, y: e.clientY })) return;
+    const gesture = gestureRef.current;
+    if (!gesture) return;
+    if (gesture.kind === 'pinch') {
+      const pair = pointersRef.current.pair();
+      if (!pair) return;
+      needsRenderRef.current = true;
+      setCamera(pinchCamera(gesture.camera, gesture.start, pair));
+      return;
+    }
+    if (gesture.pointerId !== e.pointerId) return;
+    const dx = e.clientX - gesture.x;
+    const dy = e.clientY - gesture.y;
+    gesture.x = e.clientX;
+    gesture.y = e.clientY;
+    needsRenderRef.current = true;
+    setCamera((prev) => (gesture.kind === 'orbit' ? orbitBy(prev, dx, dy) : panBy(prev, dx, dy)));
+  };
+
+  const handlePointerEnd = (e: React.PointerEvent<HTMLDivElement>) => {
+    const pointers = pointersRef.current;
+    if (!pointers.has(e.pointerId)) return;
+    pointers.up(e.pointerId);
+    // Lifting one finger of a pinch carries on as an orbit with the other.
+    const rest = gestureRef.current?.kind === 'pinch' ? pointers.first() : null;
+    gestureRef.current = rest ? { kind: 'orbit', pointerId: rest.id, x: rest.at.x, y: rest.at.y } : null;
   };
 
   // Non-passive wheel event listener to avoid [Intervention] preventDefault browser errors
@@ -602,11 +605,7 @@ export const DepthViewer3D: React.FC<DepthViewer3DProps> = ({
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
       needsRenderRef.current = true;
-      const zoomFactor = e.deltaY * 0.0015;
-      setCamera((prev) => ({
-        ...prev,
-        distance: Math.max(0.8, Math.min(6.0, prev.distance * (1 + zoomFactor))),
-      }));
+      setCamera((prev) => dollyBy(prev, 1 + e.deltaY * 0.0015));
     };
 
     container.addEventListener('wheel', onWheel, { passive: false });
@@ -619,9 +618,10 @@ export const DepthViewer3D: React.FC<DepthViewer3DProps> = ({
     <div
       ref={containerRef}
       className={styles.viewerContainer}
-      onMouseDown={handleMouseDown}
-      onMouseMove={handleMouseMove}
-      onMouseUp={handleMouseUp}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerEnd}
+      onPointerCancel={handlePointerEnd}
       onContextMenu={(e) => e.preventDefault()}
     >
       <canvas ref={canvasRef} className={styles.webglCanvas} />
@@ -673,7 +673,7 @@ export const DepthViewer3D: React.FC<DepthViewer3DProps> = ({
       </div>
 
       <div className={styles.hudHint}>
-        Left-Click Drag: Orbit • Right-Click Drag: Pan • Scroll: Zoom
+        Drag: Orbit • Right-Drag or Two Fingers: Pan • Scroll or Pinch: Zoom
       </div>
     </div>
   );
