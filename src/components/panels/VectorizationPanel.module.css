@@ -97,3 +97,11 @@
 .iconButtonDanger:hover {
   color: var(--danger);
 }
+
+/* Touch (#54) */
+@media (pointer: coarse) {
+  .iconButton {
+    min-width: var(--touch-target);
+    min-height: var(--touch-target);
+  }
+}

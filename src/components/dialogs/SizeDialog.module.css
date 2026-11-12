@@ -67,3 +67,10 @@
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
 }
+
+/* Touch (#54) */
+@media (pointer: coarse) {
+  .input {
+    min-height: var(--touch-target);
+  }
+}

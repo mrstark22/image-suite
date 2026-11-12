@@ -60,3 +60,10 @@
   flex: 1;
   min-width: 0;
 }
+
+/* Touch (#54) */
+@media (pointer: coarse) {
+  .toggle {
+    min-height: var(--touch-target);
+  }
+}

@@ -159,3 +159,150 @@
 .navBtn:last-child {
   margin-left: auto;
 }
+
+.inspectorHeaderRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+/* Tablet (#54): folds the panel away, and the strip that is left unfolds it. */
+.collapseBtn,
+.stripBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  color: var(--text-2);
+  border-radius: var(--radius-md);
+}
+
+.collapseBtn:hover,
+.stripBtn:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.inspectorStrip {
+  width: var(--rail-width-tablet);
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) 0;
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  z-index: 25;
+}
+
+.stripLabel {
+  writing-mode: vertical-rl;
+  font-size: var(--text-md);
+  font-weight: var(--weight-medium);
+  color: var(--text-2);
+}
+
+/* Phone (#54): the step's hint and panel inside the bottom sheet. */
+.sheetHint {
+  font-size: var(--text-sm);
+  color: var(--text-2);
+  line-height: 1.4;
+  padding: 0 var(--space-4) var(--space-2);
+}
+
+.sheetBody > * {
+  width: 100%;
+  height: auto;
+  border-left: none;
+}
+
+/* Phone (#54): Back, the step select and Next in one compact bar. */
+.stepBar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+
+.stepBarBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--touch-target);
+  height: var(--touch-target);
+  flex-shrink: 0;
+  color: var(--text);
+  border: 1px solid var(--control-border);
+  border-radius: var(--radius-md);
+}
+
+.stepBarBtn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.stepBarSelect {
+  flex: 1;
+  min-width: 0;
+  height: var(--touch-target);
+  font-size: var(--text-lg);
+  font-weight: var(--weight-medium);
+}
+
+/* Tablet (#54): the rail keeps only the step numbers; the names stay for screen readers. */
+@media (min-width: 600px) and (max-width: 1023px) {
+  .rail {
+    width: var(--rail-width-tablet);
+    padding: var(--space-3) var(--space-1);
+  }
+
+  .railJob,
+  .railHint {
+    display: none;
+  }
+
+  .railStep {
+    justify-content: center;
+    padding: 6px 0;
+  }
+
+  .railLabel {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+
+  .railNumber {
+    width: 24px;
+    height: 24px;
+    font-size: var(--text-sm);
+  }
+
+  .inspector {
+    width: var(--panel-width-tablet);
+  }
+}
+
+/* Touch (#54): every shell control at least --touch-target in both directions. */
+@media (pointer: coarse) {
+  .railStep,
+  .navBtn {
+    min-height: var(--touch-target);
+  }
+
+  .collapseBtn,
+  .stripBtn {
+    width: var(--touch-target);
+    height: var(--touch-target);
+  }
+}

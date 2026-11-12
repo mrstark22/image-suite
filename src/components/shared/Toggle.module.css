@@ -47,3 +47,15 @@
   font-size: 10px;
   color: var(--text-3);
 }
+
+/* Touch (#54): the whole row is the target, since the label toggles the box. */
+@media (pointer: coarse) {
+  .row {
+    min-height: var(--touch-target);
+  }
+
+  .checkbox {
+    width: 20px;
+    height: 20px;
+  }
+}
