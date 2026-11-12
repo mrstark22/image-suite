@@ -38,7 +38,11 @@ import { useUIStore, firstSteps } from '../../src/store/uiStore';
 import { useViewStore } from '../../src/store/viewStore';
 import { runCommand } from '../../src/lib/shortcuts';
 import { decodedImage, resetStores } from '../helpers/documents';
-import { mount, press, type Mounted } from '../helpers/dom';
+import { click, fakeViewport, mount, press, type Mounted } from '../helpers/dom';
+import { App } from '../../src/App';
+
+// The schedulers start the worker, which jsdom cannot run; the shell does not need them.
+vi.mock('../../src/lib/schedulers', () => ({ startSchedulers: () => undefined }));
 
 let mounted: Mounted | null = null;
 
@@ -323,5 +327,46 @@ describe('orbiting the 3D view from the keyboard (#81)', () => {
     act(() => reset.focus());
     press('ArrowRight');
     expect(readout()).toMatch(/^Camera 45° around/);
+  });
+});
+
+describe('the zoom bar and the 3D orbit view (#82)', () => {
+  /** Opens an image in the relief job with the depth view mode `viewMode`, and mounts the app. */
+  function reliefApp(viewMode: '3d-interactive' | 'grayscale', width: number): HTMLElement {
+    fakeViewport(width);
+    useUIStore.setState({ job: 'relief', stepByJob: firstSteps() });
+    openCanvas();
+    mounted?.unmount();
+    const doc = useDocumentStore.getState().doc!;
+    useDocumentStore.setState({ doc: { ...doc, depth: { ...doc.depth, viewMode } } });
+    mounted = mount(<App />);
+    return mounted.container;
+  }
+
+  const zoomButtons = (root: HTMLElement) =>
+    [...root.querySelectorAll('button')].filter((b) => /^(Zoom In|Zoom Out|Fit to Screen|Actual Size)/.test(b.title));
+
+  for (const width of [1440, 390]) {
+    it(`at ${width} px: no zoom bar over the orbit view, which has its own zoom keys`, () => {
+      const root = reliefApp('3d-interactive', width);
+      expect(root.querySelector('[aria-label="3D relief view"]')).not.toBeNull();
+      expect(zoomButtons(root)).toEqual([]);
+    });
+
+    it(`at ${width} px: the zoom bar is back, and zooms, on the flat relief`, () => {
+      const root = reliefApp('grayscale', width);
+      expect(root.querySelector('[aria-label="3D relief view"]')).toBeNull();
+      expect(zoomButtons(root)).toHaveLength(4);
+      const before = useViewStore.getState().zoom;
+      click(zoomButtons(root).find((b) => b.title.startsWith('Zoom In'))!);
+      expect(useViewStore.getState().zoom).toBeGreaterThan(before);
+    });
+  }
+
+  it('the crop tool shows the flat relief, so the zoom bar is shown with it', () => {
+    const root = reliefApp('3d-interactive', 1440);
+    act(() => useViewStore.setState({ canvasTool: 'crop' }));
+    expect(root.querySelector('[aria-label="3D relief view"]')).toBeNull();
+    expect(zoomButtons(root)).toHaveLength(4);
   });
 });
