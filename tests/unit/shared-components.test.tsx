@@ -118,6 +118,17 @@ describe('Toggle', () => {
     click(one(container, 'label span'));
     expect(onChange).toHaveBeenCalledWith(true);
   });
+
+  it('a note describes the checkbox without becoming part of its name', () => {
+    const { container } = render(
+      <Toggle label="Invert Z-Axis Height" note="Light = Highest" checked={false} onChange={() => {}} />,
+    );
+    const box = one<HTMLInputElement>(container, 'input[type=checkbox]');
+    expect(accessibleName(box)).toBe('Invert Z-Axis Height');
+    const describedBy = box.getAttribute('aria-describedby');
+    expect(describedBy).toBeTruthy();
+    expect(document.getElementById(describedBy!)?.textContent).toBe('Light = Highest');
+  });
 });
 
 describe('Section', () => {
@@ -131,6 +142,33 @@ describe('Section', () => {
     const heading = one(container, 'h3');
     expect(section.getAttribute('aria-labelledby')).toBe(heading.id);
     expect(accessibleName(section)).toBe('Image File');
+  });
+
+  it('a collapsible section is toggled by a button in its heading that says whether it is open', () => {
+    function Harness() {
+      const [open, setOpen] = React.useState(false);
+      return (
+        <Section title="Levels & Gamma" collapse={{ open, onToggle: () => setOpen(!open) }} actions={<button>Reset</button>}>
+          <input aria-label="Gamma" />
+        </Section>
+      );
+    }
+    const { container } = render(<Harness />);
+    const toggle = one<HTMLButtonElement>(container, 'h3 button');
+    expect(toggle.type).toBe('button');
+    expect(accessibleName(toggle)).toBe('Levels & Gamma');
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    const content = document.getElementById(toggle.getAttribute('aria-controls')!)!;
+    expect(content.hidden).toBe(true);
+    expect(container.querySelector('input')).toBeNull();
+    // Activated as a native button: Enter and Space both click it.
+    click(toggle);
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    expect(content.hidden).toBe(false);
+    expect(content.querySelector('input')).not.toBeNull();
+    // The section is still named by its title, and the actions sit outside the toggle.
+    expect(accessibleName(one(container, 'section'))).toBe('Levels & Gamma');
+    expect(toggle.querySelectorAll('button')).toHaveLength(0);
   });
 });
 
@@ -278,6 +316,70 @@ describe('DocumentSlider: one undo step per change', () => {
     setInputValue(field, '9');
     press('Enter', {}, field);
     expect(useDocumentStore.getState().past).toHaveLength(2);
+  });
+
+  function resettableSlider() {
+    return render(
+      <DocumentSlider
+        label="Brightness"
+        value={currentDoc().steps.tonal.brightness}
+        min={-100}
+        max={100}
+        update={(v) => setTonal({ brightness: v })}
+        reset={setTonal({ brightness: 0 })}
+      />,
+    );
+  }
+
+  it('Delete or Backspace on the track resets it, as one undo step', () => {
+    for (const key of ['Delete', 'Backspace']) {
+      useDocumentStore.getState().edit(setTonal({ brightness: 40 }));
+      const before = useDocumentStore.getState().past.length;
+      const { container, unmount } = resettableSlider();
+      const range = one<HTMLInputElement>(container, 'input[type=range]');
+      expect(range.getAttribute('aria-keyshortcuts')).toBe('Delete');
+      range.focus();
+      press(key, {}, range);
+      expect(currentDoc().steps.tonal.brightness, key).toBe(0);
+      expect(useDocumentStore.getState().past.length, key).toBe(before + 1);
+      unmount();
+    }
+  });
+
+  it('Delete during a drag whose pointerup never arrived ends the drag: the reset is its own step', () => {
+    const { container } = resettableSlider();
+    const range = one<HTMLInputElement>(container, 'input[type=range]');
+    act(() => {
+      range.dispatchEvent(new Event('pointerdown', { bubbles: true }));
+    });
+    setInputValue(range, '30');
+    press('Delete', {}, range);
+    expect(currentDoc().steps.tonal.brightness).toBe(0);
+    expect(useDocumentStore.getState().past).toHaveLength(2);
+    useDocumentStore.getState().undo();
+    expect(currentDoc().steps.tonal.brightness).toBe(30);
+  });
+
+  it('a slider with no default, or a disabled one, ignores Delete', () => {
+    const { container, rerender } = brightnessSlider();
+    const range = one<HTMLInputElement>(container, 'input[type=range]');
+    expect(range.hasAttribute('aria-keyshortcuts')).toBe(false);
+    useDocumentStore.getState().edit(setTonal({ brightness: 40 }));
+    press('Delete', {}, range);
+    expect(currentDoc().steps.tonal.brightness).toBe(40);
+    rerender(
+      <DocumentSlider
+        label="Brightness"
+        value={40}
+        min={-100}
+        max={100}
+        update={(v) => setTonal({ brightness: v })}
+        reset={setTonal({ brightness: 0 })}
+        disabled
+      />,
+    );
+    press('Delete', {}, one(container, 'input[type=range]'));
+    expect(currentDoc().steps.tonal.brightness).toBe(40);
   });
 
   it('each arrow-key change on the track is its own undo step', () => {
