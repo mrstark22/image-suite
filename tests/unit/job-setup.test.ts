@@ -8,10 +8,10 @@ import { MACHINES, MATERIALS, applyMaterial, machineById, materialById } from '.
 import { chooseMaterial } from '../../src/lib/job-setup';
 import { lightBurnSettings, lineIntervalMm, photoImageMode } from '../../src/lib/lightburn-settings';
 import { DEFAULT_DITHER, DEFAULT_TONAL, createDocument, defaultSteps, sameValue, setCrop, setDepth, setScale, setVector } from '../../src/lib/document';
-import { useDocumentStore } from '../../src/store/documentStore';
+import { hasUnsavedEdits, useDocumentStore } from '../../src/store/documentStore';
 import { useUIStore } from '../../src/store/uiStore';
 import type { DitherAlgorithm } from '../../src/types/dither';
-import { currentDoc, openPhoto, resetStores } from '../helpers/documents';
+import { currentDoc, decodedImage, openPhoto, resetStores } from '../helpers/documents';
 
 const docs = () => useDocumentStore.getState();
 
@@ -69,6 +69,31 @@ describe('machines and materials', () => {
     chooseMaterial('leather');
     expect(useUIStore.getState().materialId).toBe('leather');
     expect(docs().doc).toBeNull();
+  });
+
+  it('a material chosen before an image opens is that image\'s starting point, not an edit (review of #77)', () => {
+    chooseMaterial('dark-walnut');
+    openPhoto();
+    expect(currentDoc().steps.dither.algorithm).toBe('floyd-steinberg');
+    expect(currentDoc().steps.tonal.gamma).toBe(1.3);
+    // Part of the document as loaded: nothing to undo, nothing unsaved.
+    expect(docs().past).toHaveLength(0);
+    expect(hasUnsavedEdits()).toBe(false);
+  });
+
+  it('the chosen material stays the starting point of every image opened after it', () => {
+    openPhoto();
+    chooseMaterial('leather');
+    docs().open(decodedImage(300, 200));
+    expect(currentDoc().steps.dither.algorithm).toBe('bayer-4');
+    expect(currentDoc().steps.tonal.gamma).toBe(0.9);
+  });
+
+  it('after "Not chosen", images open with the plain defaults', () => {
+    chooseMaterial('leather');
+    chooseMaterial(null);
+    openPhoto();
+    expect(currentDoc().steps).toEqual(defaultSteps());
   });
 
   it('"Not chosen" edits nothing', () => {
