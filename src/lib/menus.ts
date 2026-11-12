@@ -100,7 +100,8 @@ export const MENUS: readonly Menu[] = [
         {
           id: 'overlay',
           label: 'Trace Overlay',
-          enabled: () => useRenderStore.getState().vectorResult !== null,
+          // The 3D orbit view does not draw the overlay either.
+          enabled: () => useRenderStore.getState().vectorResult !== null && canvasIsFlat(),
           checked: () => ui().showVectorOverlay,
           run: () => ui().toggleVectorOverlay(),
         },

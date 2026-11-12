@@ -165,11 +165,13 @@ describe('menus', () => {
   });
 
   // The view items that the relief's 3D orbit view does not draw (review of #77).
-  const FLAT_ONLY = ['zoom-in', 'zoom-out', 'fit', 'actual-size', 'split', 'invert', 'rulers', 'guide-circle', 'guide-rounded', 'guide-oval'];
+  const FLAT_ONLY = ['zoom-in', 'zoom-out', 'fit', 'actual-size', 'split', 'invert', 'overlay', 'rulers', 'guide-circle', 'guide-rounded', 'guide-oval'];
 
   it('in the 3D orbit view, the view items it does not draw are disabled, and their shortcuts do nothing', () => {
     docs().open(decodedImage(900, 600));
     docs().edit(setScale(0.1));
+    // A trace made earlier, so Trace Overlay applies on the flat canvas.
+    useRenderStore.setState({ vectorResult: TRACE });
     ui().setJob('relief');
     const flat = () => items.filter((i) => FLAT_ONLY.includes(i.id) && i.enabled()).map((i) => i.id).sort();
     expect(flat()).toEqual([...FLAT_ONLY].sort());
