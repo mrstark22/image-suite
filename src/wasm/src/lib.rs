@@ -93,7 +93,12 @@ pub extern "C" fn prepare_source(
     }
     let source = unsafe { std::slice::from_raw_parts(src, src_w * src_h * 4) };
     let out = unsafe { std::slice::from_raw_parts_mut(out_ptr, out_len) };
-    let crop = Crop { x: crop_x, y: crop_y, width: crop_w, height: crop_h };
+    let crop = Crop {
+        x: crop_x,
+        y: crop_y,
+        width: crop_w,
+        height: crop_h,
+    };
     prepare(source, src_w, crop, dst_w, dst_h, out);
     out_ptr
 }

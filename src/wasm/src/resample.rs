@@ -163,7 +163,10 @@ pub fn prepare(src: &[u8], src_w: usize, crop: Crop, dst_w: usize, dst_h: usize,
     // Consecutive output rows share source rows at their edges, so the last
     // two rows resampled across are kept rather than computed again.
     let mut linear_row = vec![0.0f32; crop.width * 3];
-    let mut rows: [(usize, Vec<f32>); 2] = [(usize::MAX, vec![0.0f32; dst_w * 3]), (usize::MAX, vec![0.0f32; dst_w * 3])];
+    let mut rows: [(usize, Vec<f32>); 2] = [
+        (usize::MAX, vec![0.0f32; dst_w * 3]),
+        (usize::MAX, vec![0.0f32; dst_w * 3]),
+    ];
     let mut next_slot = 0;
     let mut acc = vec![0.0f32; dst_w * 3];
 
@@ -182,7 +185,11 @@ pub fn prepare(src: &[u8], src_w: usize, crop: Crop, dst_w: usize, dst_h: usize,
                         let (r, g, b) = if a == 255 {
                             (src[s], src[s + 1], src[s + 2])
                         } else {
-                            (flatten(src[s], a), flatten(src[s + 1], a), flatten(src[s + 2], a))
+                            (
+                                flatten(src[s], a),
+                                flatten(src[s + 1], a),
+                                flatten(src[s + 2], a),
+                            )
                         };
                         linear_row[x * 3] = decode[r as usize];
                         linear_row[x * 3 + 1] = decode[g as usize];
@@ -240,7 +247,11 @@ mod tests {
         for c in 0..=255u32 {
             for a in 0..=255u32 {
                 let exact = c as f64 * a as f64 / 255.0 + 255.0 * (1.0 - a as f64 / 255.0);
-                assert_eq!(flatten(c as u8, a as u8) as f64, exact.round(), "c {c} a {a}");
+                assert_eq!(
+                    flatten(c as u8, a as u8) as f64,
+                    exact.round(),
+                    "c {c} a {a}"
+                );
             }
         }
     }
@@ -259,7 +270,19 @@ mod tests {
             }
         }
         let mut out = vec![0u8; 4 * 4 * 4];
-        prepare(&src, w, Crop { x: 0, y: 0, width: w, height: h }, 4, 4, &mut out);
+        prepare(
+            &src,
+            w,
+            Crop {
+                x: 0,
+                y: 0,
+                width: w,
+                height: h,
+            },
+            4,
+            4,
+            &mut out,
+        );
         for p in out.chunks(4) {
             assert!((p[0] as i32 - 188).abs() <= 1, "{}", p[0]);
             assert_eq!(p[3], 255);

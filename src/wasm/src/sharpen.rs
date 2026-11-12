@@ -22,10 +22,18 @@ pub fn kernel_extent(sigma: f32) -> usize {
 fn gaussian_weights(sigma: f32) -> Vec<f32> {
     let extent = kernel_extent(sigma) as isize;
     let two_sigma_sq = 2.0 * sigma * sigma;
-    (-extent..=extent).map(|d| (-((d * d) as f32) / two_sigma_sq).exp()).collect()
+    (-extent..=extent)
+        .map(|d| (-((d * d) as f32) / two_sigma_sq).exp())
+        .collect()
 }
 
-pub fn apply_unsharp_mask(pixels: &mut [u8], width: usize, height: usize, amount: f32, radius: f32) {
+pub fn apply_unsharp_mask(
+    pixels: &mut [u8],
+    width: usize,
+    height: usize,
+    amount: f32,
+    radius: f32,
+) {
     let sigma = sigma_for_radius(radius);
     // A blur of no width is the image itself: nothing to sharpen.
     if width == 0 || height == 0 || amount <= 0.0 || sigma <= 0.0 {
@@ -84,8 +92,10 @@ mod tests {
 
     #[test]
     fn the_kernel_follows_sigma_with_no_clamp() {
-        assert_eq!(kernel_extent(sigma_for_radius(1.5)), 4); // sigma 1.2, as before the rework
-        assert_eq!(kernel_extent(sigma_for_radius(20.0)), 48); // sigma 16
+        // sigma 1.2, as before the rework
+        assert_eq!(kernel_extent(sigma_for_radius(1.5)), 4);
+        // sigma 16
+        assert_eq!(kernel_extent(sigma_for_radius(20.0)), 48);
         // Doubling the radius doubles sigma: no constant term to break the scaling.
         assert_eq!(sigma_for_radius(6.0), 2.0 * sigma_for_radius(3.0));
     }
