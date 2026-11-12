@@ -299,6 +299,8 @@ export const useRenderStore = create<RenderState>((set, get) => ({
       // Not a trace, so not traced with any settings.
       tracedInputs: null,
       tracedRemoval: null,
+      // Nor can it be out of date: a flag left by an earlier change would block its export.
+      isVectorStale: false,
       autoTrace: false,
       vectorResult: {
         layers,

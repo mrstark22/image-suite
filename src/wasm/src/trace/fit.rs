@@ -50,6 +50,8 @@ const MAX_LINE_BEND_PX: f64 = 0.1;
 /// pass, in pixels: marching squares cuts a pixel-aligned corner 0.35 px
 /// inside the tip, and a corner at other angles a little more or less.
 const BLUNT_CORNER_PX: f64 = 0.45;
+/// A closed path shorter than this, in pixels, is not fitted: see `fit_path`.
+const MIN_FITTED_LOOP_PX: f64 = 16.0;
 /// Points closer than this are merged before fitting.
 const MIN_SPACING_PX: f64 = 0.02;
 
@@ -87,6 +89,20 @@ pub fn fit_path(pts: &[P], fixed: &[bool], closed: bool, opt: &FitOptions) -> Op
     }
 
     let n = q.len();
+    // A loop only a few pixels round (a speck, a dot of a stipple) has too few
+    // points to tell corners, lines and curves apart: fitted, a single pixel
+    // came out as a line there and back. Its traced boundary is returned as
+    // it is, which is exact (review of #84).
+    if closed {
+        let perimeter: f64 = (0..n).map(|i| q[i].dist(q[(i + 1) % n])).sum();
+        if perimeter < MIN_FITTED_LOOP_PX {
+            return Some(FitPath {
+                start: q[0],
+                segs: q[1..].iter().map(|&p| Seg::Line(p)).collect(),
+                closed: true,
+            });
+        }
+    }
     let tol = opt.tolerance.max(1e-3);
     let turning = turning_angles(&q, closed);
 

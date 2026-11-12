@@ -550,3 +550,51 @@ fn memory_estimate_is_the_larger_phase_not_the_sum() {
         "tracing in colour is the larger"
     );
 }
+
+/// Specks of one to three pixels come out as small closed outlines of the
+/// right place and size, not as a line there and back or a tangle (review
+/// of #84). Their boundaries are too short to fit curves to.
+#[test]
+fn tiny_shapes_are_outlined_not_mangled() {
+    use super::geom::{dist_to_segment, signed_area2};
+    for side in [1usize, 2, 3] {
+        for (ox, oy) in [(10.0, 10.0), (10.2, 10.1)] {
+            // One pixel off the grid is four faint pixels: what is left above
+            // the threshold is a fraction of it, which is not the tracer's doing.
+            if side == 1 && ox != 10.0 {
+                continue;
+            }
+            let s = side as f64;
+            let img = render(40, 40, |x, y| {
+                (ox..ox + s).contains(&x) && (oy..oy + s).contains(&y)
+            });
+            for shapes in [Shapes::Outline, Shapes::Auto] {
+                let res = trace(&img, 40, 40, &cfg(shapes));
+                let paths = all_paths(&res);
+                assert_eq!(paths.len(), 1, "{side} px at ({ox}, {oy})");
+                assert!(paths[0].path.closed);
+                let pts = sample(&paths[0].path);
+                let area = signed_area2(&pts).abs() / 2.0;
+                assert!(
+                    area > 0.45 * s * s && area < 1.2 * s * s,
+                    "{side} px at ({ox}, {oy}): area {area}"
+                );
+                let c = [
+                    P::new(ox, oy),
+                    P::new(ox + s, oy),
+                    P::new(ox + s, oy + s),
+                    P::new(ox, oy + s),
+                ];
+                for q in pts {
+                    let d = (0..4)
+                        .map(|k| dist_to_segment(q, c[k], c[(k + 1) % 4]))
+                        .fold(f64::MAX, f64::min);
+                    assert!(
+                        d < 0.6,
+                        "{side} px at ({ox}, {oy}): {q:?} is {d} from the edge"
+                    );
+                }
+            }
+        }
+    }
+}

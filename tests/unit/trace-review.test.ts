@@ -20,6 +20,7 @@ import { nativeTarget } from '../../src/lib/render-target';
 import { loadPixels, startTestPipeline, type TestPipeline } from '../helpers/pipeline';
 import { resetStores } from '../helpers/documents';
 import { loadWasm, runTrace, type Wasm } from '../helpers/wasm';
+import { parseTrace } from '../../src/lib/trace-call';
 import type { VectorResult } from '../../src/types/vector';
 
 let wasm: Wasm;
@@ -498,5 +499,24 @@ describe('fourth review of #84', () => {
     const doc = createDocument('d', { sourceId: 's', name: 's.png', widthPx: 40, heightPx: 40, format: 'rgba8', hasAlpha: false, fileDpi: null }, 0.1);
     const recipe = recipeFromDocument(setVector({ palette: [{ color: '#fff', removed: false, mergeInto: null }] })(doc), 'bad');
     expect(() => applyRecipe(recipe)).toThrow(/not a colour/);
+  });
+});
+
+describe('fifth review of #84', () => {
+  it('1: a test grid made while an earlier change was pending can still be exported', async () => {
+    store().open(await loadPixels(pipeline.api, colourBlocks(80, 40, [[255, 255, 255], [0, 0, 0]]), 80, 40), 0.1);
+    await pipeline.settled();
+    render().setAutoTrace(false);
+    store().edit(setTonal({ contrast: 30 }));
+    expect(render().isVectorStale).toBe(true);
+    render().addVectorLayer(render().vectorResult!.layers[0]);
+    expect(render().isVectorStale).toBe(false);
+    expect(traceIsCurrent()).toBe(true);
+  });
+
+  it('5: a need too large to count is reported in words, not as a number of megabytes', () => {
+    expect(() => parseTrace('{"error":"memory","bytes":18446744073709551615}', 10)).toThrow('This image is too large to trace on this device.');
+    expect(() => parseTrace('{"error":"memory","bytes":0}', 10)).toThrow('This image is too large to trace on this device.');
+    expect(() => parseTrace('{"error":"memory","bytes":1520000000}', 10)).toThrow(/about 1520 MB/);
   });
 });

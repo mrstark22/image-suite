@@ -82,8 +82,12 @@ interface RawTrace {
 export function parseTrace(json: string, pxPerMm: number): VectorResult {
   const parsed = JSON.parse(json) as RawTrace | RawTraceError;
   if ('error' in parsed) {
+    // The tracer reports no usable figure when the need is beyond what it can count.
+    const known = parsed.bytes > 0 && parsed.bytes < 2 ** 40;
     throw new TooLargeError(
-      `Not enough memory on this device to trace this image (it needs about ${Math.ceil(parsed.bytes / 1e6)} MB).`
+      known
+        ? `Not enough memory on this device to trace this image (it needs about ${Math.ceil(parsed.bytes / 1e6)} MB).`
+        : 'This image is too large to trace on this device.'
     );
   }
   const raw = parsed;
