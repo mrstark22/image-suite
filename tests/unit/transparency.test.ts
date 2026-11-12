@@ -233,3 +233,34 @@ function alphaUnderTargetPixel(x: number, y: number, tw: number, th: number): nu
   }
   return total;
 }
+
+describe('background removal', () => {
+  // Removal sets the background's alpha to 0 and keeps its colour. Its pixels
+  // stand in for the source stage, after step 2, so they must be flattened too.
+  function removed(): ArrayBuffer {
+    const out = new Uint8Array(LOGO);
+    for (let i = 0; i < out.length; i += 4) {
+      if (out[i + 3] === 0) [out[i], out[i + 1], out[i + 2]] = [130, 90, 60];
+    }
+    return out.buffer;
+  }
+
+  it('flattens the removed background onto white for the dither, trace and relief', async () => {
+    const reference = await outputsFor('white', ON_WHITE, nativeTarget);
+    const { hasAlpha } = await api.putSource('photo', removed(), W, H);
+    const doc = docFor('photo', hasAlpha);
+    const target = nativeTarget(doc);
+    const req = (d: ImageDocument) => ({ doc: d, target, haveSourceKey: 'x', sourceStagePixels: removed() });
+
+    for (const algorithm of DITHERS) {
+      const result = await api.renderPreview(req(setDither({ algorithm })(doc)));
+      expect(firstDifference(new Uint8Array(result.final.pixels), reference.dither.get(algorithm)!)).toBe(-1);
+    }
+    const trace = await api.traceDocument({ doc, target, sourceStagePixels: removed() });
+    expect(traceGeometry(trace)).toEqual(traceGeometry(reference.trace));
+    for (const source of RELIEFS) {
+      const result = await api.renderRelief(req(setDepth({ source })(doc)));
+      expect(firstDifference(new Uint16Array(result.depth.heightMapBuffer), reference.relief.get(source)!)).toBe(-1);
+    }
+  });
+});

@@ -131,8 +131,31 @@ export class PipelineEngine {
       if (options.sourceStagePixels.byteLength !== bytes) {
         throw new Error('The replacement source pixels do not match the render target.');
       }
-      owned = this.allocate(bytes, target);
-      new Uint8Array(wasm.memory.buffer, owned, bytes).set(new Uint8Array(options.sourceStagePixels));
+      const removal = this.allocate(bytes, target);
+      try {
+        new Uint8Array(wasm.memory.buffer, removal, bytes).set(new Uint8Array(options.sourceStagePixels));
+        // The removal made the background transparent after step 2 ran, so
+        // flatten it the same way: at the same size and uncropped,
+        // `prepare_source` is step 2 alone (#18).
+        owned = this.core.wasm.prepare_source(
+          removal,
+          target.widthPx,
+          target.heightPx,
+          0,
+          0,
+          target.widthPx,
+          target.heightPx,
+          target.widthPx,
+          target.heightPx
+        );
+      } finally {
+        wasm.deallocate(removal, bytes);
+      }
+      if (!owned) {
+        throw new TooLargeError(
+          `Not enough memory on this device to render ${target.widthPx} × ${target.heightPx} px (${megapixels(target.widthPx, target.heightPx)} MP).`
+        );
+      }
       input = owned;
     } else if (options.cache) {
       input = this.cachedSourceStage(doc, target).ptr;
