@@ -523,6 +523,44 @@ describe('Trace step: progress and cancel', () => {
     }
   });
 
+  it('cancelling a trace started by a settings change leaves the old paths marked stale; cancelling a re-trace of the same settings does not', async () => {
+    const finishers: Array<(result: VectorResult) => void> = [];
+    const traceDocument = vi.fn(() => new Promise<VectorResult>((resolve) => finishers.push(resolve)));
+    const pipeline = {
+      traceDocument,
+      renderPreview: () => new Promise(() => {}),
+      releaseSource: () => Promise.resolve(),
+    } as unknown as Pipeline;
+    useUIStore.setState({ job: 'vector' });
+    useRenderStore.setState({ autoTrace: true });
+    const disconnect = connectSchedulers(createSchedulers(() => pipeline), () => pipeline);
+    try {
+      useDocumentStore.getState().open(decodedImage(4, 4), 10);
+      await settle(() => finishers[0](twoLayers()));
+      const { container } = render(<VectorizationPanel />);
+      expect(button(container, /^Update Vectors$/)).toBeTruthy();
+
+      // Same settings, traced again, cancelled: the paths shown still match them.
+      click(button(container, /^Update Vectors$/));
+      click(button(container, /^Cancel$/));
+      expect(useRenderStore.getState().isVectorStale).toBe(false);
+      expect(container.querySelector('[data-tone=warning]')).toBeNull();
+      await settle(() => finishers[1](twoLayers()));
+
+      // A settings change starts a trace (auto-trace back on); cancelled, the old paths are stale.
+      click(button(container, /^Update Vectors$/));
+      await settle(() => finishers[2](twoLayers()));
+      act(() => useDocumentStore.getState().edit(setVector({ threshold: 90 })));
+      expect(traceDocument).toHaveBeenCalledTimes(4);
+      click(button(container, /^Cancel$/));
+      expect(useRenderStore.getState().isVectorStale).toBe(true);
+      expect(one(container, '[data-tone=warning]').textContent).toContain('settings changed');
+      expect(button(container, /^Re-Trace Vectors$/)).toBeTruthy();
+    } finally {
+      disconnect();
+    }
+  });
+
   it('without Cancel, the same trace is committed when it finishes', async () => {
     let finishTrace: (result: VectorResult) => void = () => {};
     const traceDocument = vi.fn(() => new Promise<VectorResult>((resolve) => (finishTrace = resolve)));

@@ -42,6 +42,8 @@ interface RenderState {
   autoTrace: boolean;
   /** True when the tracing settings changed while auto-trace was off. */
   isVectorStale: boolean;
+  /** The tracing settings `vectorResult` was traced with, or null when it was not traced (a test grid overlay). */
+  tracedVector: ImageDocument['vector'] | null;
   /**
    * Increases when the user asks for a trace, so one runs even if nothing
    * changed, and when the user cancels one. The trace scheduler reads it, so
@@ -134,6 +136,7 @@ const EMPTY_RESULTS = {
   vectorResult: null,
   autoTrace: true,
   isVectorStale: false,
+  tracedVector: null,
   isProcessing: false,
   processingDurationMs: 0,
 };
@@ -198,13 +201,22 @@ export const useRenderStore = create<RenderState>((set, get) => ({
     set({ source: { ...source, buffer: backgroundRemoval.original }, backgroundRemoval: null });
   },
 
-  setVectorResult: (vectorResult) => set({ vectorResult, isVectorStale: false }),
+  // Called with a trace's result only while nothing it read has changed, so the
+  // document's tracing settings are the ones it was traced with.
+  setVectorResult: (vectorResult) =>
+    set({ vectorResult, isVectorStale: false, tracedVector: useDocumentStore.getState().doc?.vector ?? null }),
 
   setAutoTrace: (autoTrace) => set({ autoTrace }),
 
   requestTrace: () => set((s) => ({ autoTrace: true, traceRequest: s.traceRequest + 1 })),
 
-  cancelTrace: () => set((s) => ({ autoTrace: false, traceRequest: s.traceRequest + 1, isTracing: false })),
+  // The paths left on screen are stale if the cancelled trace was for changed settings.
+  cancelTrace: () =>
+    set((s) => {
+      const vector = useDocumentStore.getState().doc?.vector;
+      const changed = s.vectorResult !== null && s.tracedVector !== null && !sameValue(vector, s.tracedVector);
+      return { autoTrace: false, traceRequest: s.traceRequest + 1, isTracing: false, isVectorStale: s.isVectorStale || changed };
+    }),
 
   setIsTracing: (isTracing) => set({ isTracing }),
 
@@ -213,6 +225,8 @@ export const useRenderStore = create<RenderState>((set, get) => ({
     if (!vr) {
       const source = get().source;
       set({
+        // Not a trace, so not traced with any settings.
+        tracedVector: null,
         vectorResult: {
           totalPaths: layer.paths.length,
           totalNodes: layer.totalNodes,
@@ -247,7 +261,7 @@ export const useRenderStore = create<RenderState>((set, get) => ({
     set({ vectorResult: smoothVectorResult(vr, tolerance, fitCurves).result });
   },
 
-  clearVectors: () => set({ vectorResult: null, autoTrace: false, isVectorStale: false }),
+  clearVectors: () => set({ vectorResult: null, autoTrace: false, isVectorStale: false, tracedVector: null }),
 
   removeVectorLayer: (layerId) => {
     const vr = get().vectorResult;
