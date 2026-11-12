@@ -224,6 +224,19 @@ describe('DocumentSlider: one undo step per change', () => {
     expect(currentDoc().steps.tonal.brightness).toBe(20);
   });
 
+  it('an arrow key during a drag whose pointerup never arrived ends the drag: the key press is its own step', () => {
+    const { container } = brightnessSlider();
+    const range = one<HTMLInputElement>(container, 'input[type=range]');
+    act(() => {
+      range.dispatchEvent(new Event('pointerdown', { bubbles: true }));
+    });
+    setInputValue(range, '5');
+    // No pointerup: it was released outside the window.
+    press('ArrowRight', {}, range);
+    setInputValue(range, '6');
+    expect(useDocumentStore.getState().past).toHaveLength(2);
+  });
+
   it('each arrow-key change on the track is its own undo step', () => {
     const { container } = brightnessSlider();
     const range = one<HTMLInputElement>(container, 'input[type=range]');
