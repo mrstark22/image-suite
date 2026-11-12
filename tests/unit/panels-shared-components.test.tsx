@@ -119,6 +119,21 @@ describe('Export step: progress and cancel', () => {
     expect(cancelExport).toHaveBeenCalledTimes(1);
   });
 
+  it('a failed export is shown as an error alert with the reason, and nothing is downloaded', async () => {
+    const exportRaster = vi.fn(() => Promise.reject(new Error('out of memory')));
+    setPipeline({ exportRaster } as unknown as Pipeline);
+    const createObjectURL = vi.fn(() => 'blob:x');
+    URL.createObjectURL = createObjectURL;
+    openWithPreview();
+    const { container } = render(<ExportPanel />);
+    await settle(() => button(container, /Export Prepared Image/).click());
+    expect(exportRaster).toHaveBeenCalledTimes(1);
+    const alert = one(container, '[role=alert]');
+    expect(alert.getAttribute('data-tone')).toBe('error');
+    expect(alert.textContent).toContain('Export failed: out of memory');
+    expect(createObjectURL).not.toHaveBeenCalled();
+  });
+
   it('a stage that cannot report how far it is shows no percentage', () => {
     openWithPreview();
     useRenderStore.setState({ exportProgress: { stage: 'preparing', fraction: 0 } });

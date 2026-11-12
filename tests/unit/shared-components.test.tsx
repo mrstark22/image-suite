@@ -237,6 +237,49 @@ describe('DocumentSlider: one undo step per change', () => {
     expect(useDocumentStore.getState().past).toHaveLength(2);
   });
 
+  it('a drag ends at pointerup on the track: a value typed afterwards is its own step', () => {
+    const { container } = brightnessSlider();
+    const range = one<HTMLInputElement>(container, 'input[type=range]');
+    act(() => {
+      range.dispatchEvent(new Event('pointerdown', { bubbles: true }));
+    });
+    setInputValue(range, '5');
+    // Stop the pointerup at the document, so only the track's own handler
+    // can end the drag, not the window listener that backs it up.
+    const stop = (e: Event) => e.stopPropagation();
+    document.addEventListener('pointerup', stop);
+    try {
+      act(() => {
+        range.dispatchEvent(new Event('pointerup', { bubbles: true }));
+      });
+    } finally {
+      document.removeEventListener('pointerup', stop);
+    }
+    const field = one<HTMLInputElement>(container, 'input[type=number]');
+    field.focus();
+    setInputValue(field, '9');
+    press('Enter', {}, field);
+    expect(useDocumentStore.getState().past).toHaveLength(2);
+  });
+
+  it("a drag released outside the track ends at the window's pointerup", () => {
+    const { container } = brightnessSlider();
+    const range = one<HTMLInputElement>(container, 'input[type=range]');
+    act(() => {
+      range.dispatchEvent(new Event('pointerdown', { bubbles: true }));
+    });
+    setInputValue(range, '5');
+    // Released elsewhere: the track never sees it.
+    act(() => {
+      window.dispatchEvent(new Event('pointerup'));
+    });
+    const field = one<HTMLInputElement>(container, 'input[type=number]');
+    field.focus();
+    setInputValue(field, '9');
+    press('Enter', {}, field);
+    expect(useDocumentStore.getState().past).toHaveLength(2);
+  });
+
   it('each arrow-key change on the track is its own undo step', () => {
     const { container } = brightnessSlider();
     const range = one<HTMLInputElement>(container, 'input[type=range]');
@@ -342,11 +385,12 @@ describe('BottomSheet', () => {
   function dragHandle(handle: HTMLElement, dy: number): void {
     const pointer = (type: string, clientY: number) =>
       act(() => {
-        handle.dispatchEvent(new MouseEvent(type, { bubbles: true, clientY }));
+        handle.dispatchEvent(new MouseEvent(type, { bubbles: true, clientY, detail: 1 }));
       });
     pointer('pointerdown', 300);
     pointer('pointerup', 300 + dy);
-    click(handle);
+    // A pointer's click has detail 1; a click from Enter or Space has detail 0.
+    pointer('click', 300 + dy);
   }
 
   it('dragging the handle up opens the sheet, down closes it, and a short drag acts as a tap', () => {
@@ -362,6 +406,19 @@ describe('BottomSheet', () => {
     // Under the threshold the pointer did not drag: its click is a tap, which toggles.
     dragHandle(handle, 5);
     expect(handle.getAttribute('aria-expanded')).toBe('true');
+  });
+
+  it('a drag released off the handle, so with no click after it, does not swallow the next Enter', () => {
+    const { container } = render(<Harness />);
+    const handle = button(container, /Controls/);
+    act(() => {
+      handle.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, clientY: 300 }));
+      handle.dispatchEvent(new MouseEvent('pointerup', { bubbles: true, clientY: 300 - SHEET_DRAG_THRESHOLD }));
+    });
+    expect(handle.getAttribute('aria-expanded')).toBe('true');
+    // Enter on a button fires a click with detail 0.
+    click(handle);
+    expect(handle.getAttribute('aria-expanded')).toBe('false');
   });
 
   it('the handle is a button that says whether the sheet is open, and opens and closes it', () => {

@@ -49,11 +49,13 @@ export const BottomSheet: React.FC<BottomSheetProps> = ({ title, open, onOpenCha
     }
   };
 
-  const onClick = () => {
-    // The click that ends a drag has already been handled as the drag.
+  const onClick = (e: React.MouseEvent<HTMLButtonElement>) => {
+    // The click that ends a drag has already been handled as the drag. A
+    // click from Enter or Space (detail 0) never is: a drag released off the
+    // handle produces no click, and must not swallow the next key press.
     const d = drag.current;
     drag.current = null;
-    if (d?.moved) return;
+    if (d?.moved && e.detail !== 0) return;
     onOpenChange(!open);
   };
 
