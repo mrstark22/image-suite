@@ -6,6 +6,7 @@ import { openImageFiles, confirmReplaceInBrowser } from '../../lib/open-image';
 import { DEFAULT_DEPTH } from '../../lib/document';
 import { fitsDimensions } from '../../lib/crop';
 import { fromCentre } from '../../lib/viewport';
+import { isTypingTarget } from '../../lib/shortcuts';
 import { useUIStore } from '../../store/uiStore';
 import { DropZone } from '../shared/DropZone';
 import { DepthViewer3D } from './DepthViewer3D';
@@ -100,25 +101,38 @@ export const PreviewCanvas: React.FC = () => {
     return () => container.removeEventListener('wheel', handleWheel);
   }, [container, zoomBy]);
 
-  // Spacebar tracking for hand tool override
+  // Holding Space with the pointer over the canvas pans with any tool. Space
+  // is taken from the page only then, so it does not also press the focused
+  // button; elsewhere it keeps its usual meaning, and it never leaves a text field.
+  const pointerOverCanvasRef = useRef(false);
   useEffect(() => {
+    let held = false;
+    const setHeld = (value: boolean) => {
+      held = value;
+      setIsSpaceHeld(value);
+    };
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.code === 'Space' && !isSpaceHeld && document.activeElement?.tagName !== 'INPUT') {
-        setIsSpaceHeld(true);
-      }
+      if (e.code !== 'Space') return;
+      if (!held && (!pointerOverCanvasRef.current || isTypingTarget(document.activeElement))) return;
+      e.preventDefault();
+      if (!held) setHeld(true);
     };
     const handleKeyUp = (e: KeyboardEvent) => {
-      if (e.code === 'Space') {
-        setIsSpaceHeld(false);
-      }
+      if (e.code !== 'Space' || !held) return;
+      e.preventDefault();
+      setHeld(false);
     };
+    // A key released while the window is not focused never sends keyup.
+    const handleBlur = () => setHeld(false);
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keyup', handleKeyUp);
+    window.addEventListener('blur', handleBlur);
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
+      window.removeEventListener('blur', handleBlur);
     };
-  }, [isSpaceHeld]);
+  }, []);
 
   // Maintain persistent offscreen canvas for original image
   useEffect(() => {
@@ -179,25 +193,35 @@ export const PreviewCanvas: React.FC = () => {
     }
   }, [processedBuffer, previewVersion, dims, isSplitView, splitPosition]);
 
+  const startPan = (e: React.MouseEvent) => {
+    setIsDraggingPan(true);
+    dragStartRef.current = {
+      clientX: e.clientX,
+      clientY: e.clientY,
+      panX: pan.x,
+      panY: pan.y,
+    };
+  };
+
+  // Space+drag pans whatever is under the pointer, so it is taken in the
+  // capture phase, before the crop box or the split handle can claim it.
+  const handleMouseDownCapture = (e: React.MouseEvent) => {
+    if (!isSpaceHeld) return;
+    e.stopPropagation();
+    e.preventDefault();
+    startPan(e);
+  };
+
   // Mouse Down Interaction
   const handleMouseDown = (e: React.MouseEvent) => {
     if (isDraggingSplit) return;
 
     const isPanAction =
-      isSpaceHeld ||
       canvasTool === 'pan' ||
       e.button === 1 || // Middle mouse
       e.button === 2;   // Right click
 
-    if (isPanAction) {
-      setIsDraggingPan(true);
-      dragStartRef.current = {
-        clientX: e.clientX,
-        clientY: e.clientY,
-        panX: pan.x,
-        panY: pan.y,
-      };
-    }
+    if (isPanAction) startPan(e);
   };
 
   const handleMouseMove = useCallback((e: MouseEvent) => {
@@ -277,6 +301,9 @@ export const PreviewCanvas: React.FC = () => {
     <div
       ref={setContainer}
       className={`${styles.canvasContainer} ${styles.canvasContainerPan}`}
+      onMouseEnter={() => (pointerOverCanvasRef.current = true)}
+      onMouseLeave={() => (pointerOverCanvasRef.current = false)}
+      onMouseDownCapture={handleMouseDownCapture}
       onMouseDown={handleMouseDown}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}

@@ -39,3 +39,21 @@ export async function openImageFiles(
 export function confirmReplaceInBrowser(): boolean {
   return window.confirm('Open a new image? Your edits to the current image will be lost.');
 }
+
+/**
+ * Shows the browser's file picker and opens the chosen image. Shared by the
+ * File menu and Ctrl+O; a failure is shown in the error banner.
+ */
+export function openImagePicker(): void {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = 'image/*';
+  input.addEventListener('change', () => {
+    const files = input.files ? Array.from(input.files) : [];
+    openImageFiles(files, confirmReplaceInBrowser).catch((err: unknown) => {
+      const message = err instanceof Error ? err.message : 'Failed to load image file';
+      useRenderStore.getState().setErrorMessage(message);
+    });
+  });
+  input.click();
+}
