@@ -52,7 +52,6 @@ export const PreviewCanvas: React.FC = () => {
     [dimsWidth, dimsHeight]
   );
 
-  // With the source shown there is no before and after to split.
   const isSplitView = useUIStore((s) => s.isSplitView);
   const isInvertedView = useUIStore((s) => s.isInvertedView);
   const showVectorOverlay = useUIStore((s) => s.showVectorOverlay);

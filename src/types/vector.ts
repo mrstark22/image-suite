@@ -11,6 +11,12 @@ export type TraceShapes = 'auto' | 'outline' | 'centerline';
 export interface PaletteEntry {
   /** The colour pixels are matched to, as #rrggbb. */
   color: string;
+  /**
+   * The colour this entry's layer is drawn and exported in, as #rrggbb, when
+   * it differs from the colour matched: recolouring a layer must not change
+   * which pixels belong to it.
+   */
+  drawAs?: string;
   /** Leave this colour out of the trace. */
   removed: boolean;
   /** Trace this colour as part of another entry's layer (its index), or null to keep its own layer. */
@@ -65,8 +71,10 @@ export interface VectorPath {
 export interface VectorLayer {
   id: string;
   name: string;
-  /** #rrggbb */
+  /** The colour the layer is drawn and exported in, as #rrggbb. */
   color: string;
+  /** Colour mode: the image colour this layer traces, when the layer is drawn in another (`PaletteEntry.drawAs`). */
+  sourceColor?: string;
   /** The palette entry this layer traces (colour mode), or null. */
   paletteIndex: number | null;
   paths: VectorPath[];

@@ -14,8 +14,13 @@
 //! 5. fits every path with lines and cubic curves (`fit`, #25).
 //!
 //! Lengths in the settings are millimetres; `px_per_mm` converts them for the
-//! resolution traced, so the preview trace and the full-resolution export
-//! trace treat the drawing the same. Output coordinates are pixels of the
+//! resolution traced, so the settings mean the same in the preview trace and
+//! in the full-resolution export trace. The two are not the same paths: the
+//! fitter's own limits (the shortest straight run, the reach of a corner) are
+//! counted in pixels, because they are limits of what a pixel grid can show.
+//! A trace of more pixels therefore resolves small corners and short straight
+//! runs that the preview trace has to draw as curves, which is the detail
+//! the export is traced again for. Output coordinates are pixels of the
 //! traced image on the pixel-edge grid. Nothing is capped: every shape found
 //! is returned (#29).
 
@@ -206,6 +211,24 @@ pub fn trace(rgba: &[u8], w: usize, h: usize, cfg: &TraceConfig) -> TraceResult 
         }
     }
 
+    // The image ends at its edge. A boundary traced through the last row of
+    // pixels can lie up to half a pixel beyond it, and two fitted lines can
+    // meet further out still; artwork is clamped to the image, so only a
+    // cutline can lie outside it (review of #84).
+    let (max_x, max_y) = (w as f64, h as f64);
+    let inside = |q: geom::P| geom::P::new(q.x.clamp(0.0, max_x), q.y.clamp(0.0, max_y));
+    for layer in layers.iter_mut() {
+        for p in layer.paths.iter_mut() {
+            p.path.start = inside(p.path.start);
+            for seg in p.path.segs.iter_mut() {
+                *seg = match *seg {
+                    Seg::Line(q) => Seg::Line(inside(q)),
+                    Seg::Cubic(a, b, q) => Seg::Cubic(inside(a), inside(b), inside(q)),
+                };
+            }
+        }
+    }
+
     if let Some(union) = union {
         let paths = cutline(&union, w, h, cfg.cutline_mm * ppm, &params.fit);
         layers.push(TracedLayer {
@@ -253,19 +276,25 @@ fn background_colour(seg: &colour::Segmentation, w: usize, h: usize) -> Option<u
 /// WASM arithmetic wraps at about 60 MP.
 pub fn memory_estimate(w: usize, h: usize, cfg: &TraceConfig) -> Option<usize> {
     let n = w as u64 * h as u64;
-    // A layer: its field, the inside mask, component labels, the distance
-    // transform, the skeleton mask and the thinning list, and the background
-    // labels when specks are removed.
-    let mut per_px: u64 = 4 + 1 + 4 + 4 + 1 + 1 + 4;
+    // Tracing a layer: its field, the inside mask, component labels, the
+    // distance transform, the skeleton mask and the thinning list, and the
+    // background labels when specks are removed.
+    let mut tracing: u64 = 4 + 1 + 4 + 4 + 1 + 1 + 4;
     // Boundary data is not counted here: marching squares counts its crossings
     // and reserves for them itself. Reserving a worst case up front would grow
     // WASM memory for good, as it never shrinks.
-    if cfg.denoise_mm > 0.0 {
-        per_px += 4 + 8 * 4; // the denoised copy and the guided filter's buffers
-    }
     if cfg.colour {
-        per_px += 12 + 8 + 1; // Lab, the mixture and the fringe flag of every pixel
+        tracing += 12 + 8 + 1; // Lab, the mixture and the fringe flag of every pixel
     }
+    // Denoising comes first and frees its buffers before anything is traced,
+    // so the two are never held together: the need is the larger of the two,
+    // not their sum (review of #84). The denoised copy is kept while tracing.
+    let mut denoising: u64 = 0;
+    if cfg.denoise_mm > 0.0 {
+        denoising = 4 + 8 * 4; // the denoised copy and the guided filter's buffers
+        tracing += 4;
+    }
+    let per_px = tracing.max(denoising);
     let mut bytes = n.checked_mul(per_px)?;
     if cfg.cutline_mm > 0.0 {
         let s = cutline_scale(w, h) as u64;

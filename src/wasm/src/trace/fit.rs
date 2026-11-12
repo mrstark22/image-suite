@@ -19,7 +19,7 @@
 //!    curve that meets a line or another curve without a corner takes that
 //!    tangent, so the joins are smooth.
 
-use super::geom::{dist_to_segment, P};
+use super::geom::{dist_to_segment, principal_axis, P};
 
 /// A segment of a fitted path; each one starts where the previous one ended.
 #[derive(Clone, Copy, Debug)]
@@ -46,6 +46,10 @@ pub struct FitOptions {
 const MIN_LINE_PX: f64 = 10.0;
 /// Largest bend, in pixels, of a run that is accepted as straight.
 const MAX_LINE_BEND_PX: f64 = 0.1;
+/// How far inside the tip of a right-angled corner its traced boundary can
+/// pass, in pixels: marching squares cuts a pixel-aligned corner 0.35 px
+/// inside the tip, and a corner at other angles a little more or less.
+const BLUNT_CORNER_PX: f64 = 0.45;
 /// Points closer than this are merged before fitting.
 const MIN_SPACING_PX: f64 = 0.02;
 
@@ -220,7 +224,19 @@ pub fn fit_path(pts: &[P], fixed: &[bool], closed: bool, opt: &FitOptions) -> Op
             ) => {
                 let span: f64 = (*i0..*i1).map(|i| seq[i].dist(seq[i + 1])).sum();
                 let mid = seq[(i0 + i1) / 2];
-                span <= 2.5 && intersect(*c1, *u1, *c2, *u2).is_some_and(|x| x.dist(mid) <= 2.0)
+                // A sharp corner drawn on pixels is traced blunted: the
+                // boundary passes a little inside a right angle's tip, and
+                // further inside a more acute one. A curve no further than
+                // that from where the lines meet is such a corner. One further
+                // in is a real rounded corner, and stays a curve unless the
+                // accuracy asked for allows the sharp corner (review of #84).
+                span <= 2.5
+                    && intersect(*c1, *u1, *c2, *u2).is_some_and(|x| {
+                        let (d1, d2) = (x.sub(*c1).unit(), c2.sub(x).unit());
+                        let half_turn = 0.5 * d1.dot(d2).clamp(-1.0, 1.0).acos();
+                        let blunting = BLUNT_CORNER_PX / half_turn.cos().max(0.2);
+                        x.dist(mid) <= opt.tolerance.max(blunting).min(2.0)
+                    })
             }
             _ => false,
         };
@@ -467,7 +483,9 @@ fn find_runs(seq: &[P], a: usize, b: usize, tol: f64) -> Vec<(usize, usize, (P, 
         arc.push(arc.last().unwrap() + seq[i].dist(seq[i - 1]));
     }
     let len = |i: usize, j: usize| arc[j - a] - arc[i - a];
-    let res_tol = tol.max(0.35);
+    // A run is straight within the accuracy asked for, so the setting holds
+    // on lines as it does on curves (review of #84).
+    let res_tol = tol;
     let bend_tol = MAX_LINE_BEND_PX.min(tol.max(0.05));
     let fits = |i: usize, j: usize| line_fit(&seq[i..=j], res_tol, bend_tol);
 
@@ -537,23 +555,10 @@ fn find_runs(seq: &[P], a: usize, b: usize, tol: f64) -> Vec<(usize, usize, (P, 
 /// The total least squares line through `pts` when they are straight: every
 /// point within `res_tol` and no bend above `bend_tol`.
 fn line_fit(pts: &[P], res_tol: f64, bend_tol: f64) -> Option<(P, P)> {
-    let n = pts.len() as f64;
     if pts.len() < 2 {
         return None;
     }
-    let c = pts
-        .iter()
-        .fold(P::new(0.0, 0.0), |s, p| s.add(*p))
-        .scale(1.0 / n);
-    let (mut sxx, mut sxy, mut syy) = (0.0, 0.0, 0.0);
-    for p in pts {
-        let d = p.sub(c);
-        sxx += d.x * d.x;
-        sxy += d.x * d.y;
-        syy += d.y * d.y;
-    }
-    let angle = 0.5 * (2.0 * sxy).atan2(sxx - syy);
-    let mut u = P::new(angle.cos(), angle.sin());
+    let (c, mut u) = principal_axis(pts);
     // Point the direction along the run.
     if pts[pts.len() - 1].sub(pts[0]).dot(u) < 0.0 {
         u = u.scale(-1.0);

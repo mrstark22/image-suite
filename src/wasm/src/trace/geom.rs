@@ -45,6 +45,24 @@ impl P {
     }
 }
 
+/// The centroid of `pts` and the unit direction they are spread along most
+/// (the total least squares line through them). `pts` must not be empty.
+pub fn principal_axis(pts: &[P]) -> (P, P) {
+    let c = pts
+        .iter()
+        .fold(P::new(0.0, 0.0), |s, p| s.add(*p))
+        .scale(1.0 / pts.len() as f64);
+    let (mut sxx, mut sxy, mut syy) = (0.0, 0.0, 0.0);
+    for p in pts {
+        let d = p.sub(c);
+        sxx += d.x * d.x;
+        sxy += d.x * d.y;
+        syy += d.y * d.y;
+    }
+    let angle = 0.5 * (2.0 * sxy).atan2(sxx - syy);
+    (c, P::new(angle.cos(), angle.sin()))
+}
+
 /// Twice the signed area of a closed polygon (positive when it runs clockwise
 /// on screen, with y pointing down).
 pub fn signed_area2(pts: &[P]) -> f64 {

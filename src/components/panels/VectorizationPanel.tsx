@@ -197,9 +197,9 @@ export const VectorizationPanel: React.FC = () => {
             {palette.map((entry, i) => (
               <li key={i} className={styles.paletteItem}>
                 <PaletteSwatch
-                  color={entry.color}
+                  color={entry.drawAs ?? entry.color}
                   label={`Colour ${i + 1}`}
-                  update={(color) => setVector({ palette: editPalette(palette, i, { color }) })}
+                  update={(drawAs) => setVector({ palette: editPalette(palette, i, { drawAs }) })}
                 />
                 <Select<PaletteChoice>
                   label={`What to do with colour ${i + 1}`}

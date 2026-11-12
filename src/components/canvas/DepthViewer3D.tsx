@@ -37,6 +37,10 @@ export const DepthViewer3D: React.FC<DepthViewer3DProps> = ({
 
   // Camera Orbit State
   const [camera, setCamera] = useState<OrbitCamera>(DEFAULT_CAMERA);
+  // The camera as last moved with the keys: what screen readers are told. A
+  // drag or pinch changes the camera on every frame, and announcing each one
+  // would flood the reader, so pointer moves are not announced (review of #84).
+  const [announcedCamera, setAnnouncedCamera] = useState<OrbitCamera>(DEFAULT_CAMERA);
 
   // The view takes focus, and then the arrow keys orbit and + and - zoom (#81).
   const [isFocused, setIsFocused] = useState(false);
@@ -59,6 +63,7 @@ export const DepthViewer3D: React.FC<DepthViewer3DProps> = ({
   const handleResetCamera = useCallback(() => {
     needsRenderRef.current = true;
     setCamera(DEFAULT_CAMERA);
+    setAnnouncedCamera(DEFAULT_CAMERA);
   }, []);
 
   // Top-Down View
@@ -609,6 +614,7 @@ export const DepthViewer3D: React.FC<DepthViewer3DProps> = ({
     e.preventDefault();
     needsRenderRef.current = true;
     setCamera(next);
+    setAnnouncedCamera(next);
   };
 
   // Non-passive wheel event listener to avoid [Intervention] preventDefault browser errors
@@ -703,7 +709,7 @@ export const DepthViewer3D: React.FC<DepthViewer3DProps> = ({
           : 'Drag: Orbit • Right-Drag or Two Fingers: Pan • Scroll or Pinch: Zoom'}
       </div>
       <div className={styles.visuallyHidden} role="status" aria-live="polite">
-        {`Camera ${Math.round(((camera.azimuth % 360) + 360) % 360)}° around, ${Math.round(camera.elevation)}° above the surface, distance ${camera.distance.toFixed(2)}`}
+        {`Camera ${Math.round(((announcedCamera.azimuth % 360) + 360) % 360)}° around, ${Math.round(announcedCamera.elevation)}° above the surface, distance ${announcedCamera.distance.toFixed(2)}`}
       </div>
     </div>
   );

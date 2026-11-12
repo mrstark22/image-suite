@@ -301,7 +301,11 @@ describe('every control in the migrated panels is reachable and named', () => {
     });
     expect(useDocumentStore.getState().gesture).toBeNull();
     expect(useDocumentStore.getState().past.length).toBe(before + 1);
-    expect(useDocumentStore.getState().doc!.vector.palette![1].color).toBe('#404040');
+    // The layer is drawn in the colour chosen; the colour matched in the image is unchanged.
+    const entry = useDocumentStore.getState().doc!.vector.palette![1];
+    expect(entry.drawAs).toBe('#404040');
+    expect(entry.color).toBe('#000000');
+    expect(swatch.value).toBe('#404040');
   });
 
   it('Relief, for every source and view mode', () => {

@@ -1,13 +1,14 @@
 import type { VectorLayer, VectorResult } from '../types/vector';
 
 /**
- * What identifies a layer across traces: a colour layer's colour, otherwise
- * its id (`ink`, `cutline`). Colour layers are numbered by position, and a
+ * What identifies a layer across traces: for a colour layer the image colour
+ * it traces (not the colour it is drawn in), otherwise its id (`ink`,
+ * `cutline`). Colour layers are numbered by position, and a
  * re-clustering can renumber them, so the colour is what the user chose to
  * hide (review of #84).
  */
-export function layerKey(layer: Pick<VectorLayer, 'id' | 'color' | 'paletteIndex'>): string {
-  return layer.paletteIndex === null ? layer.id : `colour ${layer.color.toLowerCase()}`;
+export function layerKey(layer: Pick<VectorLayer, 'id' | 'color' | 'sourceColor' | 'paletteIndex'>): string {
+  return layer.paletteIndex === null ? layer.id : `colour ${(layer.sourceColor ?? layer.color).toLowerCase()}`;
 }
 
 /** How a trace is shown: the layers hidden and the order of the layers, by `layerKey`. */

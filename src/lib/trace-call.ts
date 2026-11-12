@@ -1,5 +1,6 @@
 import type { PaletteEntry, PathKind, VectorConfig, VectorLayer, VectorResult } from '../types/vector';
 import { TooLargeError } from './pipeline-engine';
+import { checkPalette, rgbOfHex } from './trace-palette';
 
 /** The exports `traceImage` needs (a subset of the WASM module's). */
 export interface TraceExports {
@@ -36,7 +37,8 @@ const SHAPES_CODE = { auto: 0, outline: 1, centerline: 2 } as const;
  * The palette as `process_trace` takes it: 4 bytes per entry (red, green,
  * blue, and the index of the layer it joins, or 255 to leave it out). A merge
  * into an entry that is itself removed or merged is followed to the layer it
- * ends in, so no colour is lost by a chain of merges.
+ * ends in, so no colour is lost by a chain of merges. Throws for a colour
+ * that is not `#rrggbb`: it is never traced as some other colour.
  */
 export function encodePalette(palette: PaletteEntry[]): Uint8Array {
   const out = new Uint8Array(palette.length * 4);
@@ -53,10 +55,7 @@ export function encodePalette(palette: PaletteEntry[]): Uint8Array {
     }
   };
   palette.forEach((e, i) => {
-    const hex = /^#?([0-9a-f]{6})$/i.exec(e.color)?.[1] ?? '000000';
-    out[i * 4] = parseInt(hex.slice(0, 2), 16);
-    out[i * 4 + 1] = parseInt(hex.slice(2, 4), 16);
-    out[i * 4 + 2] = parseInt(hex.slice(4, 6), 16);
+    out.set(rgbOfHex(e.color), i * 4);
     out[i * 4 + 3] = finalTarget(i);
   });
   return out;
@@ -154,7 +153,9 @@ export function traceImageAt(
   config: VectorConfig
 ): VectorResult {
   if (!(pxPerMm > 0)) throw new Error('Set the size of the image before tracing.');
-  const palette = config.colorMode === 'color' && config.palette ? encodePalette(config.palette) : new Uint8Array(0);
+  const fixed = config.colorMode === 'color' ? config.palette : null;
+  if (fixed) checkPalette(fixed);
+  const palette = fixed ? encodePalette(fixed) : new Uint8Array(0);
   const palPtr = palette.length > 0 ? wasm.try_allocate(palette.length) : 0;
   if (palette.length > 0 && !palPtr) throw new TooLargeError('Not enough memory on this device to trace this image.');
   try {
@@ -181,7 +182,17 @@ export function traceImageAt(
     if (!out) throw new Error('The tracer could not trace this image.');
     // Read the view now: tracing may have grown memory.
     const json = new TextDecoder().decode(new Uint8Array(wasm.memory.buffer, out, wasm.get_trace_json_len()));
-    return parseTrace(json, pxPerMm);
+    const result = parseTrace(json, pxPerMm);
+    // A layer is drawn in its entry's own colour when one was chosen; the
+    // tracer only sees the colour to match.
+    for (const layer of result.layers) {
+      const drawAs = layer.paletteIndex === null ? undefined : fixed?.[layer.paletteIndex]?.drawAs;
+      if (drawAs !== undefined) {
+        layer.sourceColor = layer.color;
+        layer.color = drawAs;
+      }
+    }
+    return result;
   } finally {
     if (palPtr) wasm.deallocate(palPtr, palette.length);
   }

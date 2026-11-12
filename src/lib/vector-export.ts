@@ -1,4 +1,5 @@
 import type { VectorLayer, VectorPath, VectorResult } from '../types/vector';
+import { rgbOfHex } from './trace-palette';
 
 /**
  * SVG and DXF export of a trace at its physical size (#30). Paths are traced
@@ -56,25 +57,59 @@ function requireScale(result: VectorResult): number {
   return result.pxPerMm;
 }
 
+/** The parameters in (0, 1) where one coordinate of a cubic Bézier turns round. */
+function cubicTurns(p0: number, p1: number, p2: number, p3: number): number[] {
+  // The derivative is a quadratic: a t² + b t + c.
+  const a = -p0 + 3 * p1 - 3 * p2 + p3;
+  const b = 2 * (p0 - 2 * p1 + p2);
+  const c = p1 - p0;
+  const roots: number[] = [];
+  if (Math.abs(a) < 1e-12) {
+    if (Math.abs(b) > 1e-12) roots.push(-c / b);
+  } else {
+    const disc = b * b - 4 * a * c;
+    if (disc >= 0) {
+      const r = Math.sqrt(disc);
+      roots.push((-b + r) / (2 * a), (-b - r) / (2 * a));
+    }
+  }
+  return roots.filter((t) => t > 0 && t < 1);
+}
+
+const cubicAt = (p0: number, p1: number, p2: number, p3: number, t: number) => {
+  const m = 1 - t;
+  return m * m * m * p0 + 3 * m * m * t * p1 + 3 * m * t * t * p2 + t * t * t * p3;
+};
+
 /**
  * The page of an export, in millimetres: the image, grown to take in any
  * path that lies outside it (a cutline around artwork that reaches the edge
  * of the image). `x` and `y` are negative when the page starts left of or
- * above the image (review of #84).
+ * above the image (review of #84). Curves count by where they run, not by
+ * their control points, which lie outside the curve; the tracer keeps
+ * artwork inside the image, so a file without a cutline is the image's size.
  */
 export function tracePageMm(result: VectorResult): { x: number; y: number; widthMm: number; heightMm: number } {
   const ppm = requireScale(result);
   let [x0, y0, x1, y1] = [0, 0, result.dimensions.width, result.dimensions.height];
   for (const layer of shown(result)) {
     for (const p of layer.paths) {
+      let cur: Pt = { x: 0, y: 0 };
+      const take = (x: number, y: number) => {
+        x0 = Math.min(x0, x);
+        y0 = Math.min(y0, y);
+        x1 = Math.max(x1, x);
+        y1 = Math.max(y1, y);
+      };
       for (const c of cmdsOf(p)) {
-        const pts = c.op === 'C' ? [c.c1, c.c2, c.p] : c.op === 'Z' ? [] : [c.p];
-        for (const q of pts) {
-          x0 = Math.min(x0, q.x);
-          y0 = Math.min(y0, q.y);
-          x1 = Math.max(x1, q.x);
-          y1 = Math.max(y1, q.y);
+        if (c.op === 'Z') continue;
+        if (c.op === 'C') {
+          const from = cur;
+          for (const t of cubicTurns(from.x, c.c1.x, c.c2.x, c.p.x)) take(cubicAt(from.x, c.c1.x, c.c2.x, c.p.x, t), from.y);
+          for (const t of cubicTurns(from.y, c.c1.y, c.c2.y, c.p.y)) take(from.x, cubicAt(from.y, c.c1.y, c.c2.y, c.p.y, t));
         }
+        take(c.p.x, c.p.y);
+        cur = c.p;
       }
     }
   }
@@ -246,8 +281,7 @@ export function layerColourIndexes(colors: string[], first: number[] = []): numb
   const out = new Array<number>(colors.length);
   const order = [...first, ...colors.map((_, i) => i).filter((i) => !first.includes(i))];
   for (const i of order) {
-    const m = /^#?([0-9a-f]{6})$/i.exec(colors[i])?.[1] ?? '000000';
-    const rgb = [0, 2, 4].map((k) => parseInt(m.slice(k, k + 2), 16));
+    const rgb = rgbOfHex(colors[i]);
     let best = 0;
     let bestD = Infinity;
     for (const [aci, c] of ACI) {

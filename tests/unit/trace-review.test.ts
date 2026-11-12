@@ -7,7 +7,8 @@ import { useDocumentStore } from '../../src/store/documentStore';
 import { traceIsCurrent, useRenderStore } from '../../src/store/renderStore';
 import { generateTestGridVector } from '../../src/lib/test-grid-generator';
 import { useUIStore } from '../../src/store/uiStore';
-import { setTonal, setVector } from '../../src/lib/document';
+import { applyRecipe, recipeFromDocument, setTonal, setVector } from '../../src/lib/document';
+import { editPalette, paletteFromResult } from '../../src/lib/trace-palette';
 import { adjustCropBox, cropBoxForKey } from '../../src/lib/crop';
 import { traceForExport, vectorFile } from '../../src/lib/vector-file-export';
 import { layerColourIndexes, parsePathData, tracePageMm, traceToDxf, traceToSvg } from '../../src/lib/vector-export';
@@ -399,5 +400,103 @@ describe('third review of #84', () => {
     expect(sized.x + sized.width).toBe(400);
     expect(sized.y + sized.height).toBe(300);
     expect(sized.height).toBe(201);
+  });
+});
+
+describe('fourth review of #84', () => {
+  /** A `w` x `h` white image with `ink(x, y)` painted in `colour`s, hard-edged. */
+  function paint(w: number, h: number, shapes: Array<{ colour: [number, number, number]; ink: (x: number, y: number) => boolean }>): Uint8Array {
+    const img = new Uint8Array(w * h * 4).fill(255);
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const hit = shapes.find((s) => s.ink(x + 0.5, y + 0.5));
+        if (hit) img.set(hit.colour, (y * w + x) * 4);
+      }
+    }
+    return img;
+  }
+
+  it('1: a file without a cutline measures the image, even when artwork runs off its edge', () => {
+    // A 3 px line running off the right and top edges, as in the review.
+    const dist = (x: number, y: number) => Math.abs((x - 150) * 90 - (y + 20) * 80) / Math.hypot(90, 80);
+    const img = paint(200, 120, [{ colour: [0, 0, 0], ink: (x, y) => dist(x, y) < 1.5 }]);
+    for (const shapes of ['outline', 'auto', 'centerline'] as const) {
+      const result = runTrace(wasm, img, 200, 120, { shapes });
+      expect(result.totalPaths).toBeGreaterThan(0);
+      expect(tracePageMm(result)).toEqual({ x: 0, y: 0, widthMm: 20, heightMm: 12 });
+      expect(traceToSvg(result)).toContain('width="20mm" height="12mm" viewBox="0 0 20 12"');
+    }
+  });
+
+  it('1: the page takes in a curve by where it runs, not by its control points', () => {
+    const result: VectorResult = {
+      layers: [
+        {
+          id: 'cutline', name: 'Cutline', color: '#ff0000', paletteIndex: null, visible: true, totalNodes: 2,
+          // An arch from (0, 0) to (100, 0) whose control points are at y = -40: it peaks at y = -30.
+          paths: [{ id: 'c', kind: 'cut', isClosed: false, nodeCount: 2, d: 'M 0 0 C 0 -40 100 -40 100 0' }],
+        },
+      ],
+      palette: [], totalPaths: 1, totalNodes: 2, dimensions: { width: 100, height: 50 }, pxPerMm: 10,
+    };
+    const page = tracePageMm(result);
+    expect(page.y).toBeCloseTo(-3, 6);
+    expect(page.heightMm).toBeCloseTo(8, 6);
+  });
+
+  it('3: recolouring a palette colour changes the colour of its layer, not which pixels are in it', () => {
+    const disc = (cx: number, cy: number) => (x: number, y: number) => Math.hypot(x - cx, y - cy) < 14;
+    const img = paint(120, 60, [
+      { colour: [0, 0, 0], ink: disc(30, 30) },
+      { colour: [3, 2, 255], ink: disc(90, 30) },
+    ]);
+    const auto = runTrace(wasm, img, 120, 60, { colorMode: 'color', colorCount: 3, shapes: 'outline' });
+    const blueIndex = auto.palette.indexOf('#0302ff');
+    expect(blueIndex).toBeGreaterThanOrEqual(0);
+    const blue = auto.layers.find((l) => l.paletteIndex === blueIndex)!;
+
+    const palette = editPalette(paletteFromResult(auto)!, blueIndex, { drawAs: '#ff0000' });
+    expect(palette[blueIndex]).toEqual({ color: '#0302ff', drawAs: '#ff0000', removed: false, mergeInto: null });
+    const recoloured = runTrace(wasm, img, 120, 60, { colorMode: 'color', colorCount: 3, shapes: 'outline', palette });
+    const red = recoloured.layers.find((l) => l.paletteIndex === blueIndex)!;
+    expect(red.color).toBe('#ff0000');
+    expect(red.paths.map((p) => p.d)).toEqual(blue.paths.map((p) => p.d));
+    // Every other layer is as it was: the blue disc has not joined the black layer.
+    for (const layer of auto.layers.filter((l) => l !== blue)) {
+      const same = recoloured.layers.find((l) => l.paletteIndex === layer.paletteIndex)!;
+      expect(same.color).toBe(layer.color);
+      expect(same.paths.length).toBe(layer.paths.length);
+    }
+    expect(traceToSvg(recoloured)).toContain('stroke="#ff0000"');
+  });
+
+  it('3: a layer hidden before it was recoloured stays hidden', async () => {
+    store().open(await loadPixels(pipeline.api, colourBlocks(120, 40, [[255, 255, 255], [0, 0, 0], [30, 60, 220]]), 120, 40), 0.1);
+    store().edit(setVector({ colorMode: 'color', colorCount: 3, shapes: 'outline' }));
+    await pipeline.settled();
+    const shown = render().vectorResult!;
+    const blue = shown.layers.find((l) => l.color !== '#000000' && l.color !== '#ffffff' && l.paletteIndex !== null)!;
+    render().toggleVectorLayer(blue.id);
+    store().edit(setVector({ palette: editPalette(paletteFromResult(shown)!, blue.paletteIndex!, { drawAs: '#00ff00' }) }));
+    await pipeline.settled();
+    const green = render().vectorResult!.layers.find((l) => l.color === '#00ff00')!;
+    expect(green.sourceColor).toBe(blue.color);
+    expect(green.visible).toBe(false);
+  });
+
+  it('7: a palette colour that is not #rrggbb is refused, by the tracer and by a recipe', () => {
+    const img = paint(40, 40, [{ colour: [0, 0, 0], ink: (x) => x < 20 }]);
+    for (const color of ['#fff', 'red', 'ffffff']) {
+      const palette = [{ color, removed: false, mergeInto: null }];
+      expect(() => runTrace(wasm, img, 40, 40, { colorMode: 'color', palette })).toThrow(/not a colour/);
+    }
+    expect(() =>
+      runTrace(wasm, img, 40, 40, { colorMode: 'color', palette: [{ color: '#ffffff', drawAs: 'blue', removed: false, mergeInto: null }] })
+    ).toThrow(/not a colour/);
+    expect(() => layerColourIndexes(['#12345'])).toThrow(/not a colour/);
+
+    const doc = createDocument('d', { sourceId: 's', name: 's.png', widthPx: 40, heightPx: 40, format: 'rgba8', hasAlpha: false, fileDpi: null }, 0.1);
+    const recipe = recipeFromDocument(setVector({ palette: [{ color: '#fff', removed: false, mergeInto: null }] })(doc), 'bad');
+    expect(() => applyRecipe(recipe)).toThrow(/not a colour/);
   });
 });

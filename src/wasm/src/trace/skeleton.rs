@@ -21,7 +21,7 @@
 //!    end, or to the image edge when the stroke runs off the image.
 
 use super::contour::Field;
-use super::geom::P;
+use super::geom::{principal_axis, P};
 use std::collections::{HashMap, HashSet};
 
 /// Thins `mask` (true for stroke pixels) in place to a one-pixel skeleton,
@@ -541,10 +541,11 @@ pub fn chains_of(
     }
 
     // Centre each point across the stroke, and extend the ends.
-    for ch in chains.iter_mut() {
-        centre_chain(ch, w, h, dt, field);
-    }
-    place_junctions(&mut chains, w, h, dt);
+    let centred: Vec<Vec<bool>> = chains
+        .iter_mut()
+        .map(|ch| centre_chain(ch, w, h, dt, field))
+        .collect();
+    place_junctions(&mut chains, &centred, w, h, dt);
     chains.retain(|c| c.pts.len() >= 2);
     chains
 }
@@ -554,7 +555,16 @@ pub fn chains_of(
 /// outside it. The thinned junction's own pixels are not centred, so left
 /// alone a straight bar would dip towards a stem joining it (review of #84).
 /// Every chain that passes through or ends at the junction gets the same point.
-fn place_junctions(chains: &mut [Chain], w: usize, h: usize, dt: &[f32]) {
+///
+/// `centred[c][i]` says whether point `i` of chain `c` was centred across the
+/// stroke. Around a junction the points cannot be (a line across the stroke
+/// there runs into the other branch), and on a slanted stroke the thinned
+/// pixels lean into the joining branch by a pixel or more. So only centred
+/// points describe a branch's line, and the uncentred points between a
+/// junction and the first centred point are dropped: each branch runs
+/// straight from the junction to where its centre is known (review of #84).
+fn place_junctions(chains: &mut [Chain], centred: &[Vec<bool>], w: usize, h: usize, dt: &[f32]) {
+    let mut drop: Vec<Vec<bool>> = chains.iter().map(|c| vec![false; c.pts.len()]).collect();
     let mut groups: HashMap<(u64, u64), Vec<(usize, usize)>> = HashMap::new();
     for (ci, ch) in chains.iter().enumerate() {
         for (pi, &f) in ch.fixed.iter().enumerate() {
@@ -598,8 +608,12 @@ fn place_junctions(chains: &mut [Chain], w: usize, h: usize, dt: &[f32]) {
                     if d > far {
                         break;
                     }
-                    if d >= near {
+                    // Within the junction itself (closer than the stroke's
+                    // half width) no point is on a single branch.
+                    if centred[ci][idx] && d >= near {
                         pts.push(ch.pts[idx]);
+                    } else if !ch.fixed[idx] && pts.is_empty() {
+                        drop[ci][idx] = true;
                     }
                     k += dir;
                 }
@@ -607,19 +621,8 @@ fn place_junctions(chains: &mut [Chain], w: usize, h: usize, dt: &[f32]) {
                     continue;
                 }
                 // Total least squares line through the points.
-                let c = pts
-                    .iter()
-                    .fold(P::new(0.0, 0.0), |s, p| s.add(*p))
-                    .scale(1.0 / pts.len() as f64);
-                let (mut sxx, mut sxy, mut syy) = (0.0, 0.0, 0.0);
-                for p in &pts {
-                    let d = p.sub(c);
-                    sxx += d.x * d.x;
-                    sxy += d.x * d.y;
-                    syy += d.y * d.y;
-                }
-                let angle = 0.5 * (2.0 * sxy).atan2(sxx - syy);
-                let nrm = P::new(-angle.sin(), angle.cos());
+                let (c, u) = principal_axis(&pts);
+                let nrm = P::new(-u.y, u.x);
                 let proj = nrm.dot(c);
                 a11 += nrm.x * nrm.x;
                 a12 += nrm.x * nrm.y;
@@ -640,6 +643,18 @@ fn place_junctions(chains: &mut [Chain], w: usize, h: usize, dt: &[f32]) {
         for &(ci, pi) in members {
             chains[ci].pts[pi] = p;
         }
+    }
+    for (ch, drop) in chains.iter_mut().zip(&drop) {
+        let mut k = 0;
+        ch.pts.retain(|_| {
+            k += 1;
+            !drop[k - 1]
+        });
+        k = 0;
+        ch.fixed.retain(|_| {
+            k += 1;
+            !drop[k - 1]
+        });
     }
 }
 
@@ -690,10 +705,13 @@ fn crossing(field: &Field, p: P, dir: P, max: f64) -> Option<f64> {
     None
 }
 
-fn centre_chain(ch: &mut Chain, w: usize, h: usize, dt: &[f32], field: &Field) {
+/// Centres each point of `ch` across the stroke and extends its free ends.
+/// Returns, for each point, whether it was centred.
+fn centre_chain(ch: &mut Chain, w: usize, h: usize, dt: &[f32], field: &Field) -> Vec<bool> {
     let n = ch.pts.len();
+    let mut centred = vec![false; n];
     if n < 2 {
-        return;
+        return centred;
     }
     let half_width_near = |p: P| -> f64 {
         let x = (p.x.floor() as isize).clamp(0, w as isize - 1) as usize;
@@ -708,6 +726,8 @@ fn centre_chain(ch: &mut Chain, w: usize, h: usize, dt: &[f32], field: &Field) {
             orig[i.clamp(0, n as isize - 1) as usize]
         }
     };
+    // The stroke's edges on both sides of each point, across the stroke.
+    let mut across: Vec<Option<(P, f64, f64)>> = vec![None; n];
     for i in 0..n {
         if ch.fixed[i] {
             continue;
@@ -724,27 +744,62 @@ fn centre_chain(ch: &mut Chain, w: usize, h: usize, dt: &[f32], field: &Field) {
             crossing(field, p, nrm, max),
             crossing(field, p, nrm.scale(-1.0), max),
         ) {
-            // Reject crossings that run into another branch: both sides should be near the half width.
-            if (a - b).abs() <= hw + 1.0 && a + b <= 2.0 * (2.0 * hw + 1.5) {
-                ch.pts[i] = p.add(nrm.scale(0.5 * (a - b)));
+            // A thinned pixel can sit anywhere across a thin stroke, so how
+            // far off centre it is says nothing; the width is what is checked.
+            if a + b <= 2.0 * (2.0 * hw + 1.5) {
+                across[i] = Some((nrm, a, b));
+            }
+        }
+    }
+    // Beside a junction one side runs on into the joining branch, which reads
+    // as a wider stroke and would pull the point towards that branch. Such a
+    // point is wider than the stroke is along the rest of the chain: it is
+    // left uncentred, and `place_junctions` deals with it (review of #84).
+    let mut all: Vec<f64> = across.iter().flatten().map(|&(_, a, b)| a + b).collect();
+    all.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    let usual = all.get(all.len() / 2).copied().unwrap_or(0.0);
+    for i in 0..n {
+        if let Some((nrm, a, b)) = across[i] {
+            if a + b <= 1.15 * usual + 0.5 {
+                ch.pts[i] = orig[i].add(nrm.scale(0.5 * (a - b)));
                 ch.widths.push(a + b);
+                centred[i] = true;
             }
         }
     }
     if ch.closed {
-        return;
+        return centred;
     }
     // Extend the free ends along their tangents.
     for end in [0usize, 1] {
-        let (i, j) = if end == 0 {
-            (0, (n - 1).min(3))
-        } else {
-            (n - 1, n.saturating_sub(4))
-        };
+        let i = if end == 0 { 0 } else { n - 1 };
         if ch.fixed[i] {
             continue;
         }
-        let p = ch.pts[i];
+        // The last few points of a free end are often not centred (there is
+        // no stroke beyond them to measure across). The end starts from the
+        // nearest centred point instead, so it leaves along the stroke's
+        // centre and not from a thinned pixel beside it.
+        let inward = |k: usize, by: usize| -> usize {
+            if end == 0 {
+                (k + by).min(n - 1)
+            } else {
+                k.saturating_sub(by)
+            }
+        };
+        let k = (0..6usize.min(n))
+            .map(|by| inward(i, by))
+            .find(|&k| centred[k] || ch.fixed[k])
+            .unwrap_or(i);
+        let j = inward(k, 3);
+        let p = ch.pts[k];
+        for by in 0..6usize.min(n) {
+            let t = inward(i, by);
+            if t == k {
+                break;
+            }
+            ch.pts[t] = p;
+        }
         let dir = p.sub(ch.pts[j]).unit();
         if dir.len() == 0.0 {
             continue;
@@ -762,6 +817,7 @@ fn centre_chain(ch: &mut Chain, w: usize, h: usize, dt: &[f32], field: &Field) {
             ch.pts[i] = p.add(dir.scale(reach));
         }
     }
+    centred
 }
 
 #[cfg(test)]

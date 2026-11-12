@@ -265,7 +265,8 @@ export const ExportPanel: React.FC = () => {
           )}
           {vectorSource === 'full-resolution' && (
             <div className={`${styles.controlNote} ${styles.stackGap}`}>
-              The files are traced again from the full-resolution image, so they can hold detail the preview cannot.
+              The files are traced again from the full-resolution image, so they hold detail the preview cannot: small
+              corners and short straight edges can come out crisper than they look on screen.
             </div>
           )}
           {vectorSource === 'preview-background-removed' && (

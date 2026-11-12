@@ -383,3 +383,170 @@ fn speck_inside_a_pinhole_leaves_no_hole() {
     let r = trace(&px, 80, 80, &c);
     assert_eq!(all_paths(&r).len(), 1, "only the square's outline remains");
 }
+
+/// Worst distance of the traced centrelines of a T, drawn `width` px wide and
+/// turned by `deg` about the image centre, from the true centre lines.
+fn rotated_t_error(width: f64, deg: f64) -> f64 {
+    use super::geom::dist_to_segment;
+    let (s, c) = deg.to_radians().sin_cos();
+    let turn = |p: P| {
+        P::new(
+            60.0 + (p.x - 60.0) * c - (p.y - 60.0) * s,
+            60.0 + (p.x - 60.0) * s + (p.y - 60.0) * c,
+        )
+    };
+    // Bar from (25, 40) to (95, 40), stem from (60, 40) to (60, 95), before turning.
+    let (b0, b1) = (turn(P::new(25.0, 40.0)), turn(P::new(95.0, 40.0)));
+    let (s0, s1) = (turn(P::new(60.0, 40.0)), turn(P::new(60.0, 95.0)));
+    let hw = width / 2.0;
+    let img = render(120, 120, |x, y| {
+        let p = P::new(x, y);
+        dist_to_segment(p, b0, b1) < hw || dist_to_segment(p, s0, s1) < hw
+    });
+    let res = trace(&img, 120, 120, &cfg(Shapes::Auto));
+    let paths = all_paths(&res);
+    assert!(
+        !paths.is_empty() && paths.iter().all(|p| p.kind == Kind::Stroke),
+        "{deg}°: strokes"
+    );
+    // The strokes have round caps, so a centreline may run on into a cap.
+    let (c0, c1, c2) = (
+        turn(P::new(25.0 - hw, 40.0)),
+        turn(P::new(95.0 + hw, 40.0)),
+        turn(P::new(60.0, 95.0 + hw)),
+    );
+    paths
+        .iter()
+        .flat_map(|p| sample(&p.path))
+        .map(|q| dist_to_segment(q, c0, c1).min(dist_to_segment(q, s0, c2)))
+        .fold(0.0, f64::max)
+}
+
+/// A junction on strokes at any angle: the centrelines stay on the strokes'
+/// centres through the junction (review of #84). The thinned pixels around a
+/// junction are not centred, and on a slanted stroke they lean into the stem.
+#[test]
+fn t_junction_is_centred_at_any_angle() {
+    for width in [4.0, 6.5, 8.0] {
+        let mut worst: f64 = 0.0;
+        for k in 0..24 {
+            let deg = -43.0 + 86.0 * k as f64 / 23.0;
+            let e = rotated_t_error(width, deg);
+            worst = worst.max(e);
+        }
+        assert!(worst < 0.35, "width {width}: worst {worst}");
+    }
+}
+
+/// A thin ring is centred all the way round, including where the chain closes.
+#[test]
+fn thin_ring_is_centred_all_round() {
+    for (cx, cy) in [(50.0, 50.0), (50.3, 49.6), (49.5, 50.5)] {
+        let img = render(100, 100, |x, y| ((x - cx).hypot(y - cy) - 33.0).abs() < 1.2);
+        let res = trace(&img, 100, 100, &cfg(Shapes::Auto));
+        let paths = all_paths(&res);
+        assert_eq!(paths.len(), 1);
+        assert!(paths[0].path.closed && paths[0].kind == Kind::Stroke);
+        let worst = sample(&paths[0].path)
+            .iter()
+            .map(|q| (q.dist(P::new(cx, cy)) - 33.0).abs())
+            .fold(0.0, f64::max);
+        assert!(worst < 0.35, "centre ({cx}, {cy}): radial error {worst}");
+    }
+}
+
+/// Artwork that runs off the image ends at the image's edge: no point of a
+/// fill or a stroke lies outside it, so a file without a cutline measures
+/// the image exactly (review of #84).
+#[test]
+fn shapes_cut_by_the_edge_stay_inside_the_image() {
+    use super::geom::dist_to_segment;
+    let (w, h) = (200usize, 120usize);
+    let img = render(w, h, |x, y| {
+        let p = P::new(x, y);
+        dist_to_segment(p, P::new(150.0, -20.0), P::new(230.0, 70.0)) < 1.5
+            || dist_to_segment(p, P::new(-10.0, 100.0), P::new(60.0, 140.0)) < 9.0
+    });
+    for shapes in [Shapes::Outline, Shapes::Auto, Shapes::Centreline] {
+        let res = trace(&img, w, h, &cfg(shapes));
+        let paths = all_paths(&res);
+        assert!(!paths.is_empty());
+        for p in paths {
+            let mut pts = vec![p.path.start];
+            for s in &p.path.segs {
+                match *s {
+                    Seg::Line(q) => pts.push(q),
+                    Seg::Cubic(a, b, q) => pts.extend([a, b, q]),
+                }
+            }
+            for q in pts {
+                assert!(
+                    q.x >= 0.0 && q.y >= 0.0 && q.x <= w as f64 && q.y <= h as f64,
+                    "{q:?} is outside the image"
+                );
+            }
+        }
+    }
+}
+
+/// Worst distance from the traced outline of a rounded rectangle, turned by
+/// `deg`, to its true boundary.
+fn rounded_rect_error(radius: f64, deg: f64, tolerance_px: f64) -> f64 {
+    let (s, c) = deg.to_radians().sin_cos();
+    // Signed distance to a 50 x 30 rectangle with rounded corners, centred at (50, 50).
+    let sd = move |x: f64, y: f64| {
+        let (dx, dy) = (x - 50.0, y - 50.0);
+        let (u, v) = (dx * c + dy * s, -dx * s + dy * c);
+        let (qx, qy) = (u.abs() - (25.0 - radius), v.abs() - (15.0 - radius));
+        qx.max(0.0).hypot(qy.max(0.0)) + qx.max(qy).min(0.0) - radius
+    };
+    let img = render(100, 100, |x, y| sd(x, y) < 0.0);
+    let mut cf = cfg(Shapes::Outline);
+    cf.tolerance_mm = tolerance_px / cf.px_per_mm;
+    let res = trace(&img, 100, 100, &cf);
+    let paths = all_paths(&res);
+    assert_eq!(paths.len(), 1);
+    sample(&paths[0].path)
+        .iter()
+        .map(|q| sd(q.x, q.y).abs())
+        .fold(0.0, f64::max)
+}
+
+/// The Accuracy setting is the largest deviation: a small rounded corner is
+/// not replaced by a sharp one further from the edge than that, and straight
+/// runs are held to it too (review of #84).
+#[test]
+fn rounded_corners_stay_within_the_accuracy() {
+    for deg in [0.0, 11.0, 27.0, 38.0] {
+        for (radius, tol) in [(2.2, 0.5), (3.0, 0.5), (2.2, 0.2), (1.5, 0.3)] {
+            let e = rounded_rect_error(radius, deg, tol);
+            // A tenth of a pixel for the anti-aliased boundary itself.
+            assert!(
+                e <= tol + 0.1,
+                "radius {radius} at {deg}°, accuracy {tol}: off by {e}"
+            );
+        }
+    }
+}
+
+/// The memory asked for is what is held at once: denoising's buffers are
+/// freed before tracing starts, so they are not added to the tracing buffers
+/// (review of #84).
+#[test]
+fn memory_estimate_is_the_larger_phase_not_the_sum() {
+    let n = 5000 * 4000;
+    let mut c = cfg(Shapes::Auto);
+    assert_eq!(memory_estimate(5000, 4000, &c), Some(n * 19));
+    c.denoise_mm = 0.1;
+    assert_eq!(
+        memory_estimate(5000, 4000, &c),
+        Some(n * 36),
+        "denoising is the larger"
+    );
+    c.colour = true;
+    assert_eq!(
+        memory_estimate(5000, 4000, &c),
+        Some(n * 44),
+        "tracing in colour is the larger"
+    );
+}

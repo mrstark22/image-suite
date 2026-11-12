@@ -1,5 +1,20 @@
 import type { PaletteEntry, VectorResult } from '../types/vector';
 
+/** The red, green and blue of `color`, which must be `#rrggbb`. Anything else is an error, never a stand-in colour. */
+export function rgbOfHex(color: string): [number, number, number] {
+  const hex = /^#([0-9a-f]{6})$/i.exec(color)?.[1];
+  if (!hex) throw new Error(`"${color}" is not a colour in the form #rrggbb.`);
+  return [parseInt(hex.slice(0, 2), 16), parseInt(hex.slice(2, 4), 16), parseInt(hex.slice(4, 6), 16)];
+}
+
+/** Throws unless every colour of `palette` is `#rrggbb`. */
+export function checkPalette(palette: PaletteEntry[]): void {
+  for (const e of palette) {
+    rgbOfHex(e.color);
+    if (e.drawAs !== undefined) rgbOfHex(e.drawAs);
+  }
+}
+
 /** What happens to one palette colour: its own layer, left out, or merged into another colour's layer. */
 export type PaletteChoice = 'keep' | 'remove' | `merge:${number}`;
 
@@ -29,14 +44,17 @@ export function paletteChoiceOptions(palette: PaletteEntry[], i: number): Array<
 }
 
 /**
- * `palette` with entry `i` changed: a new colour, or a new choice. Colours
+ * `palette` with entry `i` changed: the colour its layer is drawn in, or a
+ * new choice. The colour matched in the image stays as it is, so recolouring
+ * a layer does not move pixels between layers (review of #84). Colours
  * merged into an entry that is then removed or merged elsewhere follow it, so
  * a merge never points at a colour without a layer of its own.
  */
-export function editPalette(palette: PaletteEntry[], i: number, change: { color: string } | PaletteChoice): PaletteEntry[] {
+export function editPalette(palette: PaletteEntry[], i: number, change: { drawAs: string } | PaletteChoice): PaletteEntry[] {
   const next = palette.map((e) => ({ ...e }));
   if (typeof change === 'object') {
-    next[i].color = change.color;
+    if (change.drawAs.toLowerCase() === next[i].color.toLowerCase()) delete next[i].drawAs;
+    else next[i].drawAs = change.drawAs;
     return next;
   }
   const target = change.startsWith('merge:') ? Number(change.slice(6)) : null;
