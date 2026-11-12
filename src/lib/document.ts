@@ -68,19 +68,19 @@ export const DEFAULT_DITHER: DitherConfig = {
 };
 
 export const DEFAULT_VECTOR: VectorConfig = {
-  mode: 'outline',
-  colorCount: 4,
+  colorMode: 'mono',
+  shapes: 'auto',
   threshold: 128,
-  rdpTolerance: 1.0,
-  curveFitting: true,
-  bezierTolerance: 1.0,
   invert: false,
-  minPathArea: 4,
-  denoise: 0.0,
-  cannyLow: 30,
-  cannyHigh: 80,
-  strokeWidth: 1.0,
-  groupLayers: true,
+  colorCount: 4,
+  palette: null,
+  maxStrokeWidthMm: 0.8,
+  toleranceMm: 0.05,
+  cornerAngle: 60,
+  minAreaMm2: 0,
+  denoiseMm: 0,
+  cutline: false,
+  cutlineOffsetMm: 2,
 };
 
 export const DEFAULT_DEPTH: DepthConfig = {
@@ -253,11 +253,16 @@ export function applyRecipe(recipe: EditRecipe): DocumentUpdate {
       if (step.type === 'color') Object.assign(color, step.params);
       if (step.type === 'detail') Object.assign(detail, step.params);
       if (step.type === 'dither') Object.assign(dither, step.params);
-      if (step.type === 'vectorize') Object.assign(vector, step.params);
+      // Only settings the tracer still has: a recipe saved before phase 2 carries old ones (#32).
+      if (step.type === 'vectorize') Object.assign(vector, knownKeys(step.params, DEFAULT_VECTOR));
       if (step.type === 'depth') Object.assign(depth, step.params);
     }
     return { ...d, steps: { ...d.steps, tonal, color, detail, dither }, vector, depth };
   };
+}
+
+function knownKeys<T extends object>(params: Partial<T>, defaults: T): Partial<T> {
+  return Object.fromEntries(Object.entries(params).filter(([k]) => k in defaults)) as Partial<T>;
 }
 
 /** The document's steps and settings as a recipe, in pipeline order. */

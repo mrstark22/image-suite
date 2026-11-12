@@ -45,7 +45,7 @@ export const JOB_HINT: Record<Job, string> = {
 };
 
 export const FLOWS: Record<Job, readonly StepId[]> = {
-  vector: [...SHARED_STEPS, 'trace', 'export'],
+  vector: [...SHARED_STEPS, 'adjust', 'trace', 'export'],
   photo: [...SHARED_STEPS, 'adjust', 'dither', 'export'],
   relief: [...SHARED_STEPS, 'relief', 'export'],
 };
@@ -78,12 +78,11 @@ export function previousStep(job: Job, step: StepId): StepId | null {
 
 /**
  * What the canvas shows in `job`: what that job's output is made from. The
- * trace reads the crop before adjustments, so the vector job shows that
- * rather than an adjusted or dithered image it would not trace.
+ * trace reads the adjusted image (#23), which the preview renders without the
+ * dither in the vector job; the relief reads the crop before adjustments.
  */
 export function canvasImage(job: Job): 'processed' | 'source' | 'relief' {
   if (job === 'relief') return 'relief';
-  if (job === 'vector') return 'source';
   return 'processed';
 }
 

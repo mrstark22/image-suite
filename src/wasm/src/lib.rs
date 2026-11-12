@@ -1,6 +1,6 @@
 //! Image Suite WebAssembly Core Module in Pure Native Rust
 //! High-performance image processing, tonal LUT, CLAHE, adaptive thresholding,
-//! sharpening, advanced dithering, vectorization, and 3D depth/heightmap relief for precision manufacturing.
+//! sharpening, dithering, tracing, and 3D depth/heightmap relief for precision manufacturing.
 
 // The exported functions are a C ABI called from JavaScript with pointers into
 // this module's own linear memory. They cannot be marked `unsafe` without
@@ -15,7 +15,7 @@ mod resample;
 mod sharpen;
 mod threshold;
 mod tonal;
-mod vector;
+mod trace;
 
 #[cfg(test)]
 mod tests;
@@ -27,7 +27,7 @@ use resample::{prepare, Crop};
 use sharpen::apply_unsharp_mask;
 use threshold::apply_adaptive_threshold;
 use tonal::{apply_tonal_and_color, ColorParams, TonalParams};
-use vector::{vectorize_to_json_string, VectorConfig};
+use trace::{PaletteEntry, Shapes, TraceConfig};
 
 #[allow(static_mut_refs)]
 static mut LAST_JSON_BUF: Vec<u8> = Vec::new();
@@ -227,46 +227,74 @@ pub extern "C" fn process_pipeline(
     }
 }
 
-/// Full vectorization pipeline executed in Rust WebAssembly
+/// Traces the RGBA8 image at `ptr` (`width` x `height`) to vector paths and
+/// returns them as JSON (see `trace::to_json`); its length is given by
+/// `get_trace_json_len`. Lengths are in millimetres, converted with
+/// `px_per_mm`, the image's pixels per millimetre.
+///
+/// `palette` points at `palette_len` entries of 4 bytes each (red, green,
+/// blue, and the index of the entry whose layer the colour joins, or 255 to
+/// leave it out); with `palette_len` 0 the colours are found with k-means.
 #[no_mangle]
-pub extern "C" fn process_vector(
+pub extern "C" fn process_trace(
     ptr: *const u8,
     width: usize,
     height: usize,
-    mode: u32,
-    color_count: usize,
-    threshold: u32,
-    rdp_tolerance: f32,
-    curve_fitting: u32,
-    min_path_area: f32,
-    denoise: f32,
-    canny_low: f32,
-    canny_high: f32,
+    px_per_mm: f64,
+    colour_mode: u32,
+    shapes: u32,
+    threshold: f32,
     invert: u32,
-    bezier_tolerance: f32,
+    colour_count: u32,
+    palette: *const u8,
+    palette_len: usize,
+    tolerance_mm: f64,
+    corner_angle_deg: f64,
+    max_stroke_mm: f64,
+    min_area_mm2: f64,
+    denoise_mm: f64,
+    cutline_mm: f64,
 ) -> *const u8 {
-    if ptr.is_null() || width == 0 || height == 0 {
+    if ptr.is_null() || width == 0 || height == 0 || !(px_per_mm > 0.0) {
         return std::ptr::null();
     }
-
-    let size = width * height * 4;
-    let pixels = unsafe { std::slice::from_raw_parts(ptr, size) };
-
-    let cfg = VectorConfig {
-        mode,
-        color_count,
-        threshold: threshold as u8,
-        rdp_tolerance,
-        curve_fitting: curve_fitting != 0,
-        min_path_area,
-        denoise,
-        canny_low,
-        canny_high,
-        invert: invert != 0,
-        bezier_tolerance,
+    let pixels = unsafe { std::slice::from_raw_parts(ptr, width * height * 4) };
+    let palette = if palette.is_null() || palette_len == 0 {
+        Vec::new()
+    } else {
+        let bytes = unsafe { std::slice::from_raw_parts(palette, palette_len * 4) };
+        bytes
+            .chunks_exact(4)
+            .map(|e| PaletteEntry {
+                rgb: [e[0], e[1], e[2]],
+                target: if e[3] == 255 {
+                    None
+                } else {
+                    Some(e[3] as usize)
+                },
+            })
+            .collect()
     };
-
-    let json = vectorize_to_json_string(pixels, width, height, &cfg);
+    let cfg = TraceConfig {
+        colour: colour_mode != 0,
+        shapes: match shapes {
+            1 => Shapes::Outline,
+            2 => Shapes::Centreline,
+            _ => Shapes::Auto,
+        },
+        threshold,
+        invert: invert != 0,
+        colour_count: colour_count as usize,
+        palette,
+        px_per_mm,
+        tolerance_mm,
+        corner_angle_deg,
+        max_stroke_mm,
+        min_area_mm2,
+        denoise_mm,
+        cutline_mm,
+    };
+    let json = trace::to_json(&trace::trace(pixels, width, height, &cfg));
 
     #[allow(static_mut_refs)]
     unsafe {
@@ -275,9 +303,9 @@ pub extern "C" fn process_vector(
     }
 }
 
-/// Returns the byte length of the last generated vector JSON buffer
+/// Returns the byte length of the JSON written by the last `process_trace`.
 #[no_mangle]
-pub extern "C" fn get_vector_json_len() -> usize {
+pub extern "C" fn get_trace_json_len() -> usize {
     #[allow(static_mut_refs)]
     unsafe {
         LAST_JSON_BUF.len()

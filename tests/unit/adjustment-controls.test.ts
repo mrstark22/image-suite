@@ -70,7 +70,7 @@ const EVERYTHING_ADJUSTED: DocumentUpdate = combine(
     adaptiveConstant: 5,
   }),
   setDither({ algorithm: 'atkinson', serpentine: false, matrixScale: 2 }),
-  setVector({ mode: 'centerline', invert: true }),
+  setVector({ shapes: 'centerline', invert: true }),
   setDepth({ invertZ: true })
 );
 

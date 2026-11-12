@@ -15,6 +15,11 @@ export interface DocumentRenderRequest {
   haveSourceKey: string | null;
   /** Background removal's replacement for the `source`-stage render (stopgap until phase 5). */
   sourceStagePixels?: ArrayBuffer;
+  /**
+   * How far the preview runs: `final` (with the dither) by default, or
+   * `prepared` in the vector job, which shows the image the trace reads.
+   */
+  stage?: 'prepared' | 'final';
 }
 
 /** The `source`-stage render a result was made from, sent when the main thread does not have it. */

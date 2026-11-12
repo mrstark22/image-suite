@@ -103,20 +103,7 @@ export function generateTestGridVector(options: TestGridOptions): VectorLayer {
 
       const d = `M ${x.toFixed(2)} ${y.toFixed(2)} L ${(x + boxPx).toFixed(2)} ${y.toFixed(2)} L ${(x + boxPx).toFixed(2)} ${(y + boxPx).toFixed(2)} L ${x.toFixed(2)} ${(y + boxPx).toFixed(2)} Z`;
 
-      paths.push({
-        id: `grid-box-${r}-${c}`,
-        color: '#ff0000',
-        isClosed: true,
-        nodeCount: 4,
-        svgPathData: d,
-        segments: [
-          { type: 'M', points: [{ x, y }] },
-          { type: 'L', points: [{ x: x + boxPx, y }] },
-          { type: 'L', points: [{ x: x + boxPx, y: y + boxPx }] },
-          { type: 'L', points: [{ x, y: y + boxPx }] },
-          { type: 'Z', points: [] },
-        ],
-      });
+      paths.push({ id: `grid-box-${r}-${c}`, kind: 'cut', isClosed: true, nodeCount: 4, d });
     }
   }
 
@@ -124,6 +111,7 @@ export function generateTestGridVector(options: TestGridOptions): VectorLayer {
     id: `material-test-grid-${Date.now()}`,
     name: 'Material Test Grid (Cut)',
     color: '#ff0000',
+    paletteIndex: null,
     visible: true,
     totalNodes: paths.length * 4,
     paths,

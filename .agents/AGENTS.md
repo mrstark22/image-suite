@@ -58,7 +58,7 @@ The exported functions take long positional argument lists. Their order is writt
 2. **Heavy work runs in the worker**, not on the main thread.
 3. **Transfer, do not copy**: pass `ArrayBuffer`s as transferables; never encode images as Base64.
 4. **Free WASM memory**: every `allocate` has a `deallocate` in a `finally` block, and views are re-read after any call that can grow memory.
-5. **Physical units**: anything measured in the real world is stored in millimetres. Raster export renders at the source's full resolution and writes the document's DPI (#17); the trace and heightmap exports stay preview-sized until phases 2 and 4.
+5. **Physical units**: anything measured in the real world is stored in millimetres. Raster export renders at the source's full resolution and writes the document's DPI (#17); vector exports trace again at full resolution and are written in millimetres (#23, #30); the heightmap export stays preview-sized until phase 4.
 
 ## Tests
 

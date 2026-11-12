@@ -5,16 +5,15 @@ import type { PreviewSource } from '../lib/crop';
 import { MM_PER_INCH } from '../lib/document-size';
 import { sameValue } from '../lib/document';
 import type { ExportProgress, SourceStage } from '../types/worker-messages';
-import { generateCutlineLayer } from '../lib/cutline-generator';
-import { smoothVectorResult } from '../lib/vector-smoother';
 import { useDocumentStore } from './documentStore';
 
 /**
  * Results derived from the document, and the status of producing them. None
  * of this is undoable: it is recomputed from the document.
  *
- * Trace edits (cutlines, node smoothing, removing or hiding vector layers) act
- * on the trace result here, so they are not undoable until phase 2 (#32).
+ * Hiding a layer is a view setting and acts on the trace result here. What is
+ * traced (colours, merges and removals, the cutline) is in the document's
+ * tracing settings, so it is undoable (#32).
  */
 /** Background removal's result: replaces the `source`-stage render it was computed from. */
 interface BackgroundRemoval {
@@ -91,12 +90,9 @@ interface RenderState {
    */
   cancelTrace: () => void;
   setIsTracing: (tracing: boolean) => void;
+  /** Shows `layer` (a test grid's cut paths) as the vector result, in place of any trace. */
   addVectorLayer: (layer: VectorLayer) => void;
-  /** Adds a cutline around the image. Refuses (returns false) while the size is not set. */
-  generateCutline: (offsetMm?: number, smoothness?: number) => boolean;
-  smoothVectors: (tolerance?: number, fitCurves?: boolean) => void;
   clearVectors: () => void;
-  removeVectorLayer: (layerId: string) => void;
   toggleVectorLayer: (layerId: string) => void;
   setIsProcessing: (processing: boolean) => void;
   setErrorMessage: (message: string | null) => void;
@@ -221,54 +217,24 @@ export const useRenderStore = create<RenderState>((set, get) => ({
   setIsTracing: (isTracing) => set({ isTracing }),
 
   addVectorLayer: (layer) => {
-    const vr = get().vectorResult;
-    if (!vr) {
-      const source = get().source;
-      set({
-        // Not a trace, so not traced with any settings.
-        tracedVector: null,
-        vectorResult: {
-          totalPaths: layer.paths.length,
-          totalNodes: layer.totalNodes,
-          svgString: '',
-          dimensions: { width: source?.width ?? 1000, height: source?.height ?? 1000 },
-          layers: [layer],
-        },
-      });
-      return;
-    }
-    const layers = [layer, ...vr.layers.filter((l) => l.id !== layer.id)];
-    set({ vectorResult: { ...vr, layers, ...summed(layers) } });
-  },
-
-  generateCutline: (offsetMm = 2.0, smoothness = 3) => {
     const source = get().source;
     const dpi = previewDpi();
-    if (!source || dpi === null) return false;
-    const layer = generateCutlineLayer(source.buffer, source.width, source.height, {
-      offsetMm,
-      dpi,
-      smoothness,
-      color: '#ff0000',
+    const layers = [layer];
+    set({
+      // Not a trace, so not traced with any settings.
+      tracedVector: null,
+      autoTrace: false,
+      vectorResult: {
+        layers,
+        palette: [],
+        ...summed(layers),
+        dimensions: { width: source?.width ?? 1000, height: source?.height ?? 1000 },
+        pxPerMm: dpi === null ? null : dpi / MM_PER_INCH,
+      },
     });
-    get().addVectorLayer(layer);
-    return true;
-  },
-
-  smoothVectors: (tolerance = 1.5, fitCurves = true) => {
-    const vr = get().vectorResult;
-    if (!vr) return;
-    set({ vectorResult: smoothVectorResult(vr, tolerance, fitCurves).result });
   },
 
   clearVectors: () => set({ vectorResult: null, autoTrace: false, isVectorStale: false, tracedVector: null }),
-
-  removeVectorLayer: (layerId) => {
-    const vr = get().vectorResult;
-    if (!vr) return;
-    const layers = vr.layers.filter((l) => l.id !== layerId);
-    set({ vectorResult: layers.length === 0 ? null : { ...vr, layers, ...summed(layers) } });
-  },
 
   toggleVectorLayer: (layerId) => {
     const vr = get().vectorResult;

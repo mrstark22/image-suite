@@ -437,22 +437,22 @@ export const PreviewCanvas: React.FC = () => {
 
         {/* Vector Path Overlay */}
         {showVectorOverlay && vectorResult && (
+          // Drawn in the overlay colour, not the layer's (black ink would vanish on a
+          // dark image); a cutline keeps its red. Paths are in traced pixels.
           <svg
             className={styles.svgOverlay}
-            viewBox={`0 0 ${dims.width} ${dims.height}`}
+            viewBox={`0 0 ${vectorResult.dimensions.width} ${vectorResult.dimensions.height}`}
           >
             {vectorResult.layers.map((layer) =>
               layer.visible ? (
-                <g
-                  key={layer.id}
-                  stroke={layer.color}
-                  fill="none"
-                  strokeWidth="1.5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
+                <g key={layer.id} fill="none" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                   {layer.paths.map((p) => (
-                    <path key={p.id} d={p.svgPathData} />
+                    <path
+                      key={p.id}
+                      d={p.d}
+                      className={p.kind === 'cut' ? styles.cutPath : styles.tracePath}
+                      vectorEffect="non-scaling-stroke"
+                    />
                   ))}
                 </g>
               ) : null

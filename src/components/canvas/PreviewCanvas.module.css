@@ -154,3 +154,12 @@
   clip: rect(0 0 0 0);
   white-space: nowrap;
 }
+
+/* Traced paths over the image (#25, #27) */
+.tracePath {
+  stroke: var(--overlay);
+}
+
+.cutPath {
+  stroke: #ff0000;
+}

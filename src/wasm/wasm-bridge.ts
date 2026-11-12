@@ -5,7 +5,8 @@
 
 import initWasm from './pkg/image_suite_wasm.wasm?init';
 import wasmUrl from './pkg/image_suite_wasm.wasm?url';
-import type { VectorConfig, VectorResult, VectorLayer } from '../types/vector';
+import type { VectorConfig, VectorResult } from '../types/vector';
+import { traceImage, type TraceExports } from '../lib/trace-call';
 import type { DepthConfig, DepthResult } from '../types/depth';
 
 export interface WasmPipelineParams {
@@ -110,23 +111,8 @@ export interface WasmExports {
     ditherScale: number,
     ditherInverted: number
   ) => void;
-  process_vector: (
-    ptr: number,
-    width: number,
-    height: number,
-    mode: number,
-    colorCount: number,
-    threshold: number,
-    rdpTolerance: number,
-    curveFitting: number,
-    minPathArea: number,
-    denoise: number,
-    cannyLow: number,
-    cannyHigh: number,
-    invert: number,
-    bezierTolerance: number
-  ) => number;
-  get_vector_json_len: () => number;
+  process_trace: TraceExports['process_trace'];
+  get_trace_json_len: () => number;
   process_depth: (
     ptr: number,
     width: number,
@@ -269,95 +255,9 @@ export class RustWasmEngine {
     );
   }
 
-  public vectorize(
-    inputBuffer: ArrayBuffer,
-    width: number,
-    height: number,
-    config: VectorConfig
-  ): VectorResult {
-    if (!this.exports) {
-      throw new Error('Rust WebAssembly engine is not initialized');
-    }
-
-    const byteLength = width * height * 4;
-    const ptr = this.exports.allocate(byteLength);
-    if (!ptr) {
-      throw new Error('Failed to allocate WebAssembly memory for vectorization');
-    }
-
-    try {
-      const wasmMem = new Uint8Array(this.exports.memory.buffer, ptr, byteLength);
-      wasmMem.set(new Uint8Array(inputBuffer));
-
-      const modeCode =
-        config.mode === 'centerline'
-          ? 1
-          : config.mode === 'multi-color'
-          ? 2
-          : config.mode === 'edge-detect'
-          ? 3
-          : 0;
-
-      const outPtr = this.exports.process_vector(
-        ptr,
-        width,
-        height,
-        modeCode,
-        config.colorCount || 4,
-        config.threshold ?? 128,
-        config.rdpTolerance ?? 1.0,
-        config.curveFitting ? 1 : 0,
-        config.minPathArea ?? 25,
-        config.denoise ?? 2.0,
-        config.cannyLow ?? 30,
-        config.cannyHigh ?? 80,
-        config.invert ? 1 : 0,
-        config.bezierTolerance ?? 1.0
-      );
-
-      const outLen = this.exports.get_vector_json_len();
-      if (!outPtr || outLen === 0) {
-        return {
-          layers: [],
-          totalPaths: 0,
-          totalNodes: 0,
-          svgString: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}"></svg>`,
-          dimensions: { width, height },
-        };
-      }
-
-      const jsonBytes = new Uint8Array(this.exports.memory.buffer, outPtr, outLen);
-      const jsonStr = new TextDecoder().decode(jsonBytes);
-      const parsed = JSON.parse(jsonStr);
-
-      const layers: VectorLayer[] = parsed.layers || [];
-      const totalPaths = layers.reduce((sum, l) => sum + (l.paths ? l.paths.length : 0), 0);
-      const totalNodes = layers.reduce(
-        (sum, l) => sum + (l.paths ? l.paths.reduce((s, p) => s + (p.nodeCount || 0), 0) : 0),
-        0
-      );
-
-      const svgString = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}">
-${layers
-  .map(
-    (l) =>
-      `  <g id="${l.id}" stroke="${l.color}" fill="none" stroke-width="${config.strokeWidth || 1}">\n` +
-      l.paths.map((p) => `    <path id="${p.id}" d="${p.svgPathData}" />`).join('\n') +
-      '\n  </g>'
-  )
-  .join('\n')}
-</svg>`;
-
-      return {
-        layers,
-        totalPaths,
-        totalNodes,
-        svgString,
-        dimensions: { width, height },
-      };
-    } finally {
-      this.exports.deallocate(ptr, byteLength);
-    }
+  /** Traces an RGBA8 image (see `traceImage`). */
+  public trace(pixels: ArrayBuffer, width: number, height: number, pxPerMm: number, config: VectorConfig): VectorResult {
+    return traceImage(this.wasm, pixels, width, height, pxPerMm, config);
   }
 
   public processDepth(

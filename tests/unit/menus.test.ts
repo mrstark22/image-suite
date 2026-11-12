@@ -138,12 +138,11 @@ describe('menus', () => {
     expect(enabled).toEqual(['open', 'shortcuts', 'test-card', 'theme']);
   });
 
-  it('Split View is disabled in the vector job, whose canvas has no before and after', () => {
+  it('Split View works in the vector job, whose canvas shows the adjusted image the trace reads (#23)', () => {
     docs().open(decodedImage(900, 600));
     const split = items.find((i) => i.id === 'split')!;
-    expect(split.enabled()).toBe(true);
     ui().setJob('vector');
-    expect(split.enabled()).toBe(false);
+    expect(split.enabled()).toBe(true);
   });
 
   it('Trace Overlay is disabled until there is a trace', () => {

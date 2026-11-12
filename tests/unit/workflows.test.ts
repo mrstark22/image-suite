@@ -87,7 +87,7 @@ describe('flows', () => {
   it('the canvas shows what each job\'s output is made from', () => {
     // Photo: the processed image, dither included. Vector: the crop before
     // adjustments, which is what the trace reads. Relief: the relief.
-    expect(JOBS.map(canvasImage)).toEqual(['source', 'processed', 'relief']);
+    expect(JOBS.map(canvasImage)).toEqual(['processed', 'processed', 'relief']);
     expect(JOBS.filter(showsRelief)).toEqual(['relief']);
     expect(JOBS.filter(traces)).toEqual(['vector']);
   });

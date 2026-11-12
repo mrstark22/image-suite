@@ -193,9 +193,8 @@ export function isAvailable(command: ShortcutCommand): boolean {
       return docs.gesture !== null || docs.future.length > 0;
     case 'export':
       return docs.doc !== null;
-    // The vector job's canvas shows the image the trace reads: there is no before and after.
     case 'toggleSplit':
-      return ui.job !== 'vector' && canvasIsFlat();
+      return canvasIsFlat();
     case 'zoomIn':
     case 'zoomOut':
     case 'fit':

@@ -46,7 +46,7 @@ describe('Material Test Grid Generator Suite', () => {
     expect(vectorLayer.paths.length).toBe(16);
     expect(vectorLayer.color).toBe('#ff0000');
     expect(vectorLayer.totalNodes).toBe(64);
-    expect(vectorLayer.paths[0].svgPathData).toContain('M');
-    expect(vectorLayer.paths[0].svgPathData).toContain('Z');
+    expect(vectorLayer.paths[0].d).toContain('M');
+    expect(vectorLayer.paths[0].d).toContain('Z');
   });
 });

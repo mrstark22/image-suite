@@ -139,7 +139,7 @@ async function outputsFor(
 
 /** Every traced path's SVG data, in order, so two traces compare by geometry. */
 function traceGeometry(trace: VectorResult): string[] {
-  return trace.layers.flatMap((layer) => layer.paths.map((p) => p.svgPathData));
+  return trace.layers.flatMap((layer) => layer.paths.map((p) => p.d));
 }
 
 /**

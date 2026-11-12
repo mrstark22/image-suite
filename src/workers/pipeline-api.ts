@@ -133,7 +133,7 @@ export class PipelineWorkerApi {
     const engine = await this.engine();
     const start = performance.now();
     const options = { cache: true, sourceStagePixels: req.sourceStagePixels };
-    const final = engine.render(req.doc, req.target, 'final', options);
+    const final = engine.render(req.doc, req.target, req.stage ?? 'final', options);
     const result: PreviewRenderResult = {
       key: sourceStageKey(req.doc, req.target),
       final,
@@ -164,13 +164,23 @@ export class PipelineWorkerApi {
     return Comlink.transfer(result, transferables(depth.heightMapBuffer, result.sourceStage));
   }
 
-  /** Traces the `source` stage at the request's target with the document's tracing settings. */
+  /**
+   * Traces the document at the request's target: the `prepared` stage, so
+   * every adjustment applies to the trace (#23), with the document's tracing
+   * settings. The live trace uses the preview target; export traces at the
+   * source's full resolution. Refuses while the size is not set, as the
+   * tracing settings are lengths in millimetres.
+   */
   public async traceDocument(req: TraceRequest): Promise<VectorResult> {
     await this.exportIdle;
     const engine = await this.engine();
     const core = await this.core();
-    const source = engine.render(req.doc, req.target, 'source', { cache: true, sourceStagePixels: req.sourceStagePixels });
-    return core.vectorize(source.pixels, req.target.widthPx, req.target.heightPx, req.doc.vector);
+    const prepared = engine.render(req.doc, req.target, 'prepared', {
+      cache: true,
+      sourceStagePixels: req.sourceStagePixels,
+    });
+    if (prepared.pxPerMm === null) throw new Error('Set the size of the image before tracing.');
+    return core.trace(prepared.pixels, req.target.widthPx, req.target.heightPx, prepared.pxPerMm, req.doc.vector);
   }
 
   /**

@@ -37,6 +37,8 @@ function renderRequest(doc: ImageDocument): DocumentRenderRequest {
     target: previewTarget(doc),
     haveSourceKey: render().source?.key ?? null,
     sourceStagePixels: removalFor(doc),
+    // The vector job shows the image the trace reads: adjusted, not dithered (#23).
+    stage: traces(useUIStore.getState().job) ? 'prepared' : 'final',
   };
 }
 
@@ -84,12 +86,31 @@ export function createSchedulers(pipeline: () => Pipeline): Schedulers {
   });
 
   const trace = new RenderScheduler({
-    // Phase 1 traces the unadjusted render of the crop, as before (#23 changes that).
+    // Traces the adjusted image (#23): everything before the dither.
     select: (doc: ImageDocument) =>
-      [doc.source, doc.steps.crop, doc.vector, render().traceRequest, render().backgroundRemoval] as const,
+      [
+        doc.source,
+        doc.mmPerPx,
+        doc.steps.crop,
+        doc.steps.tonal,
+        doc.steps.color,
+        doc.steps.detail,
+        doc.vector,
+        render().traceRequest,
+        render().backgroundRemoval,
+      ] as const,
     // Waits for a gesture to end, so a slider drag does not trace every step.
-    enabled: () =>
-      traces(ui().job) && render().autoTrace && useDocumentStore.getState().gesture === null && notExporting(),
+    // Tracing settings are in millimetres, so nothing traces until the size is set.
+    enabled: () => {
+      const docState = useDocumentStore.getState();
+      return (
+        traces(ui().job) &&
+        render().autoTrace &&
+        docState.gesture === null &&
+        docState.doc?.mmPerPx != null &&
+        notExporting()
+      );
+    },
     buildRequest: (doc: ImageDocument): TraceRequest => ({
       doc,
       target: previewTarget(doc),
@@ -170,6 +191,9 @@ export function connectSchedulers(schedulers: Schedulers, pipeline: () => Pipeli
       if (showsRelief(state.job) !== showsRelief(prev.job)) {
         schedulers.preview.rerun();
         schedulers.relief.rerun();
+      } else if (traces(state.job) !== traces(prev.job)) {
+        // Into or out of the vector job: the preview stops or starts at the dither.
+        schedulers.preview.rerun();
       }
       schedulers.trace.refresh();
     }),

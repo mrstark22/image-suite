@@ -238,10 +238,10 @@ To fix as each piece is ported. Verified in the audit unless marked.
 - Clarity is inverted: positive values flatten midtones (`src/wasm/src/tonal.rs:93`).
 - CLAHE darkens the bottom and right bands when the image is not divisible by the grid (`src/wasm/src/clahe.rs`). Reported, reproduced by the audit.
 - The dither threshold slider is a brightness bias that speckles pure white and black (`src/wasm/src/dither.rs:68`). Reported.
-- Tracing uses the unadjusted render of the crop, ignoring adjustments (the trace scheduler in `src/lib/schedulers.ts`; #23).
-- K-means seeds from evenly spaced pixel positions, which often coincide (`src/wasm/src/vector.rs:843`).
-- "Optimize & Smooth Nodes" throws on WASM trace output (`src/lib/vector-smoother.ts:27`).
-- Tracing stops silently at 4,000 contours (`src/wasm/src/vector.rs:153`). Reported.
+- Tracing uses the unadjusted render of the crop, ignoring adjustments (the trace scheduler in `src/lib/schedulers.ts`; #23). Fixed in #23: the trace reads the `prepared` stage, and export traces again at full resolution (`src/lib/vector-file-export.ts`).
+- K-means seeds from evenly spaced pixel positions, which often coincide (`src/wasm/src/vector.rs:843`). Fixed in #28: `vector.rs` is replaced by `src/wasm/src/trace/`, whose colour step uses k-means++ in CIELAB (`trace/colour.rs`).
+- "Optimize & Smooth Nodes" throws on WASM trace output (`src/lib/vector-smoother.ts:27`). Fixed in #32: the smoother is removed; curve fitting is part of the tracer (`trace/fit.rs`).
+- Tracing stops silently at 4,000 contours (`src/wasm/src/vector.rs:153`). Reported. Fixed in #29: the tracer has no caps (`tests/unit/tracer-geometry.test.ts`, "nothing is truncated").
 - Checkboxes, preset chips and reset buttons in the adjustments panel are not undoable. Reported. Fixed in #15 (part 2) and #21: every control changes the document through `edit` or a gesture in `src/store/documentStore.ts`, and `tests/unit/undo-every-control.test.ts` undoes each kind of edit.
 - Stale worker results can overwrite the current preview. Reported. Fixed in #19: the schedulers in `src/lib/render-scheduler.ts` commit a result only if nothing it read has changed.
 - Relief: transparent pixels count as ink, so a logo on a transparent background gives a flat map (`src/wasm/src/depth.rs:40`). Reported. Fixed by flattening transparency in the core: since #16 the relief reads the flattened `source` stage; #18 adds its test.

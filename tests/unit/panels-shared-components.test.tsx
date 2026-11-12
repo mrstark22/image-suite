@@ -38,7 +38,7 @@ import { useRenderStore } from '../../src/store/renderStore';
 import { useUIStore } from '../../src/store/uiStore';
 import { setDepth, setDetail, setDither, setVector } from '../../src/lib/document';
 import type { DitherAlgorithm } from '../../src/types/dither';
-import type { VectorMode, VectorResult } from '../../src/types/vector';
+import type { TraceColorMode, TraceShapes, VectorResult } from '../../src/types/vector';
 import type { DepthSource, DepthViewMode } from '../../src/types/depth';
 import type { PreviewSource } from '../../src/lib/crop';
 import { decodedImage, resetStores } from '../helpers/documents';
@@ -255,22 +255,35 @@ describe('every control in the migrated panels is reachable and named', () => {
     }
   });
 
-  it('Trace, in every mode, with a result, and while tracing', () => {
+  it('Trace, in every mode, with a result, a fixed palette, and while tracing', () => {
     openWithPreview();
     useRenderStore.setState({ vectorResult: twoLayers(), isTracing: true, isVectorStale: true });
-    const modes: VectorMode[] = ['outline', 'multi-color', 'edge-detect', 'centerline'];
+    const colorModes: TraceColorMode[] = ['mono', 'color'];
+    const shapes: TraceShapes[] = ['auto', 'outline', 'centerline'];
     const { container, rerender } = render(<VectorizationPanel />);
-    for (const mode of modes) {
-      useDocumentStore.getState().edit(setVector({ mode }));
-      rerender(<VectorizationPanel />);
-      expect(inaccessibleControls(container), mode).toEqual([]);
+    for (const colorMode of colorModes) {
+      for (const shape of shapes) {
+        useDocumentStore.getState().edit(setVector({ colorMode, shapes: shape, cutline: shape === 'outline' }));
+        rerender(<VectorizationPanel />);
+        expect(inaccessibleControls(container), `${colorMode} ${shape}`).toEqual([]);
+      }
     }
-    // Exactly one mode card says it is chosen: the last mode set. The visible
+    // The palette of the result is listed with a named colour picker and choice per colour.
+    expect(container.querySelectorAll('input[type=color]')).toHaveLength(2);
+    useDocumentStore.getState().edit(
+      setVector({
+        palette: [
+          { color: '#ffffff', removed: true, mergeInto: null },
+          { color: '#000000', removed: false, mergeInto: null },
+        ],
+      })
+    );
+    rerender(<VectorizationPanel />);
+    expect(inaccessibleControls(container), 'fixed palette').toEqual([]);
+    // Exactly one card of each group says it is chosen: the last set. The visible
     // layer's Show button is the other pressed button.
     const pressed = [...container.querySelectorAll('[aria-pressed=true]')].map((b) => accessibleName(b));
-    expect(pressed).toEqual([expect.stringMatching(/^Centerline/), 'Show Outline']);
-    // Each layer's buttons say which layer they act on.
-    expect(button(container, /^Delete Outline$/)).toBeTruthy();
+    expect(pressed).toEqual([expect.stringMatching(/^Colour/), expect.stringMatching(/^Centreline/), 'Show Outline']);
     expect(button(container, /^Show Cutline$/).getAttribute('aria-pressed')).toBe('false');
   });
 
@@ -412,16 +425,18 @@ function twoLayers(): VectorResult {
     id,
     name,
     color: '#000000',
+    paletteIndex: null,
     paths: [],
     visible,
     totalNodes: 0,
   });
   return {
     layers: [layer('a', 'Outline', true), layer('b', 'Cutline', false)],
+    palette: ['#ffffff', '#000000'],
     totalPaths: 0,
     totalNodes: 0,
-    svgString: '',
     dimensions: { width: 4, height: 4 },
+    pxPerMm: 1,
   };
 }
 
@@ -508,7 +523,7 @@ describe('Trace step: progress and cancel', () => {
       expect(container.querySelector('[role=progressbar]')).toBeNull();
 
       // Asked for again before the cancelled run has left the worker.
-      click(button(container, /Trace Vectors/));
+      click(button(container, /^Trace$/));
       expect(traceDocument).toHaveBeenCalledTimes(1);
       expect(container.querySelector('[role=progressbar]')).not.toBeNull();
 
@@ -541,24 +556,24 @@ describe('Trace step: progress and cancel', () => {
       useDocumentStore.getState().open(decodedImage(4, 4), 10);
       await settle(() => finishers[0](twoLayers()));
       const { container } = render(<VectorizationPanel />);
-      expect(button(container, /^Update Vectors$/)).toBeTruthy();
+      expect(button(container, /^Update Trace$/)).toBeTruthy();
 
       // Same settings, traced again, cancelled: the paths shown still match them.
-      click(button(container, /^Update Vectors$/));
+      click(button(container, /^Update Trace$/));
       click(button(container, /^Cancel$/));
       expect(useRenderStore.getState().isVectorStale).toBe(false);
       expect(container.querySelector('[data-tone=warning]')).toBeNull();
       await settle(() => finishers[1](twoLayers()));
 
       // A settings change starts a trace (auto-trace back on); cancelled, the old paths are stale.
-      click(button(container, /^Update Vectors$/));
+      click(button(container, /^Update Trace$/));
       await settle(() => finishers[2](twoLayers()));
       act(() => useDocumentStore.getState().edit(setVector({ threshold: 90 })));
       expect(traceDocument).toHaveBeenCalledTimes(4);
       click(button(container, /^Cancel$/));
       expect(useRenderStore.getState().isVectorStale).toBe(true);
       expect(one(container, '[data-tone=warning]').textContent).toContain('settings changed');
-      expect(button(container, /^Re-Trace Vectors$/)).toBeTruthy();
+      expect(button(container, /^Trace Again$/)).toBeTruthy();
     } finally {
       disconnect();
     }

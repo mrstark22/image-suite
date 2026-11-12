@@ -1,280 +1,276 @@
-import React, { useState } from 'react';
-import {
-  Eye,
-  EyeOff,
-  Layers,
-  Play,
-  Trash2,
-  RotateCcw,
-  Scissors,
-  Sparkles,
-} from 'lucide-react';
+import React from 'react';
+import { Eye, EyeOff, Layers, Palette, Play, RotateCcw, Scissors, Trash2 } from 'lucide-react';
 import { useDocumentStore } from '../../store/documentStore';
 import { useRenderStore } from '../../store/renderStore';
-import { DocumentSlider, Slider } from '../shared/Slider';
+import { useUIStore } from '../../store/uiStore';
+import { DocumentSlider } from '../shared/Slider';
 import { Button } from '../shared/Button';
 import { Section } from '../shared/Section';
 import { Toggle } from '../shared/Toggle';
+import { Select, type SelectOption } from '../shared/Select';
 import { Progress } from '../shared/Progress';
 import { StatusMessage } from '../shared/StatusMessage';
 import { DEFAULT_VECTOR, resetVector, setVector } from '../../lib/document';
-import type { VectorMode } from '../../types/vector';
+import { editPalette, paletteChoice, paletteChoiceOptions, paletteFromResult, type PaletteChoice } from '../../lib/trace-palette';
+import type { TraceColorMode, TraceShapes } from '../../types/vector';
 import panelStyles from './Panels.module.css';
 import styles from './VectorizationPanel.module.css';
 
-const VECTOR_MODES: Array<{ id: VectorMode; title: string; desc: string }> = [
-  { id: 'outline', title: 'Outline Trace', desc: 'Closed cut paths for laser & pocketing' },
-  { id: 'multi-color', title: 'Multi-Color', desc: 'K-Means color segmentation into layers' },
-  { id: 'edge-detect', title: 'Edge Detect', desc: 'Canny & Sobel gradients for outlines' },
-  { id: 'centerline', title: 'Centerline', desc: 'Single-stroke paths for V-carving' },
+const COLOR_MODES: Array<{ id: TraceColorMode; title: string; desc: string }> = [
+  { id: 'mono', title: 'Black & White', desc: 'One layer: everything darker than the threshold' },
+  { id: 'color', title: 'Colour', desc: 'One layer per colour, separated in a perceptual space' },
+];
+
+const SHAPE_MODES: Array<{ id: TraceShapes; title: string; desc: string }> = [
+  { id: 'auto', title: 'Auto', desc: 'Thin lines get one centre path; filled shapes get an outline' },
+  { id: 'outline', title: 'Outline', desc: 'Every shape is traced around its edge' },
+  { id: 'centerline', title: 'Centreline', desc: 'Every shape is traced along its middle' },
 ];
 
 /**
- * Tracing settings (in the document, undoable) and the trace result with its
- * edits (in renderStore, not undoable until phase 2, #32).
+ * The trace step. Every setting is in the document (undoable) and is read by
+ * the tracer; lengths are in millimetres, so tracing waits until the size is
+ * set. Hiding a layer is a view setting and is not undoable.
  */
 export const VectorizationPanel: React.FC = () => {
   const vector = useDocumentStore((s) => s.doc?.vector ?? DEFAULT_VECTOR);
   const sizeSet = useDocumentStore((s) => s.doc?.mmPerPx != null);
   const edit = useDocumentStore((s) => s.edit);
   const vectorResult = useRenderStore((s) => s.vectorResult);
-  const autoTrace = useRenderStore((s) => s.autoTrace);
   const isVectorStale = useRenderStore((s) => s.isVectorStale);
   const isTracing = useRenderStore((s) => s.isTracing);
+  const autoTrace = useRenderStore((s) => s.autoTrace);
   const setAutoTrace = useRenderStore((s) => s.setAutoTrace);
   const requestTrace = useRenderStore((s) => s.requestTrace);
   const cancelTrace = useRenderStore((s) => s.cancelTrace);
   const clearVectors = useRenderStore((s) => s.clearVectors);
   const toggleVectorLayer = useRenderStore((s) => s.toggleVectorLayer);
-  const removeVectorLayer = useRenderStore((s) => s.removeVectorLayer);
-  const generateCutline = useRenderStore((s) => s.generateCutline);
-  const smoothVectors = useRenderStore((s) => s.smoothVectors);
+  const setSizeDialogOpen = useUIStore((s) => s.setSizeDialogOpen);
 
-  const [cutlineOffsetMm, setCutlineOffsetMm] = useState<number>(2.0);
-  const [cutlineSmoothness, setCutlineSmoothness] = useState<number>(3);
-  const [smoothTolerance, setSmoothTolerance] = useState<number>(1.5);
-  const [fitCurves, setFitCurves] = useState<boolean>(true);
-
-  const handleTraceNow = () => requestTrace();
+  // The palette shown: the fixed one, or the colours the last trace found.
+  const palette = vector.palette ?? (vectorResult ? paletteFromResult(vectorResult) : null);
+  const strokes = vectorResult?.layers.reduce((n, l) => n + l.paths.filter((p) => p.kind === 'stroke').length, 0) ?? 0;
+  const fills = vectorResult?.layers.reduce((n, l) => n + l.paths.filter((p) => p.kind === 'fill').length, 0) ?? 0;
 
   return (
     <div className={panelStyles.panel}>
-      {/* Panel Header */}
       <div className={panelStyles.panelHeader}>
-        <span className={panelStyles.panelTitle}>Vector Engine</span>
+        <span className={panelStyles.panelTitle}>Trace</span>
         <div className={styles.headerActions}>
           {vectorResult && (
-            <Button variant="link" icon={<Trash2 size={12} />} onClick={clearVectors} title="Clear all vector paths">
+            <Button variant="link" icon={<Trash2 size={12} />} onClick={clearVectors} title="Clear the traced paths">
               Clear
             </Button>
           )}
-          <Button
-            variant="link"
-            icon={<RotateCcw size={12} />}
-            onClick={() => edit(resetVector)}
-            title="Reset parameters to default"
-          >
+          <Button variant="link" icon={<RotateCcw size={12} />} onClick={() => edit(resetVector)} title="Reset the tracing settings">
             Reset
           </Button>
         </div>
       </div>
 
-      {/* Primary Action & Auto-Trace Toggle */}
       <div className={styles.actionBar}>
-        <Button variant="primary" icon={<Play size={13} />} onClick={handleTraceNow}>
-          {vectorResult ? (isVectorStale ? 'Re-Trace Vectors' : 'Update Vectors') : 'Trace Vectors'}
-        </Button>
+        {!sizeSet ? (
+          <>
+            <StatusMessage tone="info">
+              Tracing settings are in millimetres, so set the size of the image first.
+            </StatusMessage>
+            <Button variant="primary" onClick={() => setSizeDialogOpen(true)}>
+              Set Size…
+            </Button>
+          </>
+        ) : (
+          <Button variant="primary" icon={<Play size={13} />} onClick={requestTrace}>
+            {vectorResult ? (isVectorStale ? 'Trace Again' : 'Update Trace') : 'Trace'}
+          </Button>
+        )}
         {isVectorStale && vectorResult && !isTracing && (
           <StatusMessage tone="warning">The settings changed since the last trace.</StatusMessage>
         )}
         {isTracing && <Progress label="Tracing" fraction={null} onCancel={cancelTrace} />}
-
-        <Toggle label="Auto-trace on change" checked={autoTrace} onChange={setAutoTrace} />
+        <Toggle label="Trace again on every change" checked={autoTrace} onChange={setAutoTrace} />
       </div>
 
-      {/* Trace Mode Selection */}
-      <Section title="Trace Mode">
-        <div className={panelStyles.gridCards}>
-          {VECTOR_MODES.map((mode) => {
-            const isActive = vector.mode === mode.id;
-            return (
-              <button
-                key={mode.id}
-                type="button"
-                className={`${panelStyles.cardButton} ${isActive ? panelStyles.cardButtonActive : ''}`}
-                aria-pressed={isActive}
-                onClick={() => edit(setVector({ mode: mode.id }))}
-              >
-                <span className={panelStyles.cardTitle}>{mode.title}</span>
-                <span className={panelStyles.cardDesc}>{mode.desc}</span>
-              </button>
-            );
-          })}
+      <Section title="Colours">
+        <div className={panelStyles.gridCards} role="group" aria-label="Colours">
+          {COLOR_MODES.map((m) => (
+            <button
+              key={m.id}
+              type="button"
+              className={`${panelStyles.cardButton} ${vector.colorMode === m.id ? panelStyles.cardButtonActive : ''}`}
+              aria-pressed={vector.colorMode === m.id}
+              onClick={() => edit(setVector({ colorMode: m.id }))}
+            >
+              <span className={panelStyles.cardTitle}>{m.title}</span>
+              <span className={panelStyles.cardDesc}>{m.desc}</span>
+            </button>
+          ))}
         </div>
-      </Section>
-
-      {/* Detection Parameters */}
-      <Section title="Detection Settings">
-        {vector.mode === 'multi-color' && (
-          <DocumentSlider
-            label="Palette Colors (K-Means)"
-            value={vector.colorCount}
-            min={2}
-            max={12}
-            step={1}
-            update={(v) => setVector({ colorCount: Math.round(v) })}
-            reset={setVector({ colorCount: 4 })}
-          />
-        )}
-
-        {vector.mode === 'edge-detect' && (
+        {vector.colorMode === 'mono' ? (
           <>
             <DocumentSlider
-              label="Canny Low Threshold"
-              value={vector.cannyLow}
-              min={10}
-              max={120}
-              update={(v) => setVector({ cannyLow: v })}
-              reset={setVector({ cannyLow: 30 })}
-            />
-            <DocumentSlider
-              label="Canny High Threshold"
-              value={vector.cannyHigh}
-              min={40}
-              max={220}
-              update={(v) => setVector({ cannyHigh: v })}
-              reset={setVector({ cannyHigh: 80 })}
-            />
-          </>
-        )}
-
-        {(vector.mode === 'outline' || vector.mode === 'centerline') && (
-          <>
-            <DocumentSlider
-              label="Binarization Threshold"
+              label="Threshold"
               value={vector.threshold}
-              min={0}
-              max={255}
-              update={(v) => setVector({ threshold: v })}
-              reset={setVector({ threshold: 128 })}
+              min={1}
+              max={254}
+              update={(v) => setVector({ threshold: Math.round(v) })}
+              reset={setVector({ threshold: DEFAULT_VECTOR.threshold })}
             />
             <Toggle
-              label="Invert Detection"
+              label="Trace the light areas"
               checked={vector.invert}
               onChange={(checked) => edit(setVector({ invert: checked }))}
             />
           </>
-        )}
-      </Section>
-
-      {/* Simplification & Noise Filter */}
-      <Section title="Path Optimization">
-        <DocumentSlider
-          label="Pre-Filter Denoise"
-          value={vector.denoise ?? 0.0}
-          min={0}
-          max={6}
-          step={0.5}
-          unit="px"
-          update={(v) => setVector({ denoise: v })}
-          reset={setVector({ denoise: 0.0 })}
-        />
-
-        <DocumentSlider
-          label="Speckle Area Filter"
-          value={vector.minPathArea}
-          min={0}
-          max={100}
-          step={1}
-          unit="px²"
-          update={(v) => setVector({ minPathArea: v })}
-          reset={setVector({ minPathArea: 4 })}
-        />
-
-        <DocumentSlider
-          label="Curve Smoothness (RDP)"
-          value={vector.rdpTolerance}
-          min={0.4}
-          max={6.0}
-          step={0.1}
-          unit="px"
-          update={(v) => setVector({ rdpTolerance: v })}
-          reset={setVector({ rdpTolerance: 1.0 })}
-        />
-
-        <Toggle
-          label="Bézier Curve Fitting"
-          checked={vector.curveFitting}
-          onChange={(checked) => edit(setVector({ curveFitting: checked }))}
-        />
-      </Section>
-
-      {/* Laser Contour Cutline Generator */}
-      <Section title="Contour Cutline (Offset Path)" icon={<Scissors size={13} />}>
-        <p className={styles.featureDesc}>
-          Extracts subject boundary and expands by +offset for laser cutlines (Red #FF0000).
-        </p>
-
-        <Slider
-          label="Boundary Offset"
-          value={cutlineOffsetMm}
-          min={0.0}
-          max={20.0}
-          step={0.5}
-          unit="mm"
-          onChange={setCutlineOffsetMm}
-          onReset={() => setCutlineOffsetMm(2.0)}
-        />
-
-        <Slider
-          label="Curve Smoothing"
-          value={cutlineSmoothness}
-          min={1}
-          max={10}
-          step={1}
-          onChange={setCutlineSmoothness}
-          onReset={() => setCutlineSmoothness(3)}
-        />
-
-        {!sizeSet && <p className={styles.featureDesc}>Set the size to use this.</p>}
-        <Button
-          icon={<Scissors size={13} />}
-          disabled={!sizeSet}
-          onClick={() => generateCutline(cutlineOffsetMm, cutlineSmoothness)}
-        >
-          Generate Cutline (+{cutlineOffsetMm}mm)
-        </Button>
-      </Section>
-
-      {/* Node Reduction & Spline Smoothing (Active Vectors) */}
-      {vectorResult && (
-        <Section title="Node Reduction & Splines" icon={<Sparkles size={13} />}>
-          <p className={styles.featureDesc}>
-            Simplifies dense point clouds into smooth arcs to eliminate CNC stuttering.
-          </p>
-
-          <Slider
-            label="Tolerance"
-            value={smoothTolerance}
-            min={0.5}
-            max={5.0}
-            step={0.2}
-            unit="px"
-            onChange={setSmoothTolerance}
-            onReset={() => setSmoothTolerance(1.5)}
+        ) : vector.palette === null ? (
+          <DocumentSlider
+            label="Number of colours"
+            value={vector.colorCount}
+            min={2}
+            max={16}
+            update={(v) => setVector({ colorCount: Math.round(v) })}
+            reset={setVector({ colorCount: DEFAULT_VECTOR.colorCount })}
           />
+        ) : null}
+      </Section>
 
-          <Toggle label="Fit Cubic Bézier Curves" checked={fitCurves} onChange={setFitCurves} />
-
-          <Button icon={<Sparkles size={13} />} onClick={() => smoothVectors(smoothTolerance, fitCurves)}>
-            Optimize & Smooth Nodes
-          </Button>
+      {vector.colorMode === 'color' && palette && (
+        <Section
+          title="Palette"
+          icon={<Palette size={13} />}
+          actions={
+            vector.palette ? (
+              <Button variant="link" onClick={() => edit(setVector({ palette: null }))}>
+                Find automatically
+              </Button>
+            ) : undefined
+          }
+        >
+          {!vector.palette && (
+            <p className={styles.featureDesc}>
+              Found automatically. Change, merge or remove a colour to fix the palette.
+            </p>
+          )}
+          <ul className={styles.paletteList}>
+            {palette.map((entry, i) => (
+              <li key={i} className={styles.paletteItem}>
+                <input
+                  type="color"
+                  className={styles.swatch}
+                  value={entry.color}
+                  aria-label={`Colour ${i + 1}`}
+                  onChange={(e) => edit(setVector({ palette: editPalette(palette, i, { color: e.target.value }) }))}
+                />
+                <Select<PaletteChoice>
+                  label={`What to do with colour ${i + 1}`}
+                  labelHidden
+                  value={paletteChoice(entry)}
+                  options={paletteChoiceOptions(palette, i) as SelectOption<PaletteChoice>[]}
+                  onChange={(choice) => edit(setVector({ palette: editPalette(palette, i, choice) }))}
+                />
+              </li>
+            ))}
+          </ul>
         </Section>
       )}
 
-      {/* Layer List */}
+      <Section title="Shapes">
+        <div className={panelStyles.gridCards} role="group" aria-label="Shapes">
+          {SHAPE_MODES.map((m) => (
+            <button
+              key={m.id}
+              type="button"
+              className={`${panelStyles.cardButton} ${vector.shapes === m.id ? panelStyles.cardButtonActive : ''}`}
+              aria-pressed={vector.shapes === m.id}
+              onClick={() => edit(setVector({ shapes: m.id }))}
+            >
+              <span className={panelStyles.cardTitle}>{m.title}</span>
+              <span className={panelStyles.cardDesc}>{m.desc}</span>
+            </button>
+          ))}
+        </div>
+        {vector.shapes === 'auto' && (
+          <DocumentSlider
+            label="Widest line traced as one path"
+            value={vector.maxStrokeWidthMm}
+            min={0.1}
+            max={5}
+            step={0.05}
+            unit="mm"
+            disabled={!sizeSet}
+            update={(v) => setVector({ maxStrokeWidthMm: v })}
+            reset={setVector({ maxStrokeWidthMm: DEFAULT_VECTOR.maxStrokeWidthMm })}
+          />
+        )}
+      </Section>
+
+      <Section title="Paths">
+        <DocumentSlider
+          label="Accuracy (largest deviation)"
+          value={vector.toleranceMm}
+          min={0.01}
+          max={0.5}
+          step={0.01}
+          unit="mm"
+          disabled={!sizeSet}
+          update={(v) => setVector({ toleranceMm: v })}
+          reset={setVector({ toleranceMm: DEFAULT_VECTOR.toleranceMm })}
+        />
+        <DocumentSlider
+          label="Corner angle"
+          value={vector.cornerAngle}
+          min={20}
+          max={150}
+          unit="°"
+          update={(v) => setVector({ cornerAngle: Math.round(v) })}
+          reset={setVector({ cornerAngle: DEFAULT_VECTOR.cornerAngle })}
+        />
+        <DocumentSlider
+          label="Drop specks and holes smaller than"
+          value={vector.minAreaMm2}
+          min={0}
+          max={5}
+          step={0.05}
+          unit="mm²"
+          disabled={!sizeSet}
+          update={(v) => setVector({ minAreaMm2: v })}
+          reset={setVector({ minAreaMm2: DEFAULT_VECTOR.minAreaMm2 })}
+        />
+        <DocumentSlider
+          label="Smooth noise first (radius)"
+          value={vector.denoiseMm}
+          min={0}
+          max={1}
+          step={0.05}
+          unit="mm"
+          disabled={!sizeSet}
+          update={(v) => setVector({ denoiseMm: v })}
+          reset={setVector({ denoiseMm: DEFAULT_VECTOR.denoiseMm })}
+        />
+      </Section>
+
+      <Section title="Cutline" icon={<Scissors size={13} />}>
+        <Toggle
+          label="Add a cutline around everything traced"
+          checked={vector.cutline}
+          onChange={(checked) => edit(setVector({ cutline: checked }))}
+        />
+        {vector.cutline && (
+          <DocumentSlider
+            label="Distance outside the shapes"
+            value={vector.cutlineOffsetMm}
+            min={0.5}
+            max={20}
+            step={0.5}
+            unit="mm"
+            disabled={!sizeSet}
+            update={(v) => setVector({ cutlineOffsetMm: v })}
+            reset={setVector({ cutlineOffsetMm: DEFAULT_VECTOR.cutlineOffsetMm })}
+          />
+        )}
+      </Section>
+
       {vectorResult && vectorResult.layers.length > 0 && (
-        <Section title={`Vector Layers (${vectorResult.layers.length})`} icon={<Layers size={13} />}>
+        <Section title={`Layers (${vectorResult.layers.length})`} icon={<Layers size={13} />}>
           <ul className={styles.layerList}>
             {vectorResult.layers.map((layer) => (
               <li key={layer.id} className={styles.layerItem}>
@@ -283,10 +279,9 @@ export const VectorizationPanel: React.FC = () => {
                   <span className={styles.layerDot} style={{ backgroundColor: layer.color }} />
                   <span className={styles.layerName}>{layer.name}</span>
                   <span className={styles.layerCounts}>
-                    ({layer.paths.length} paths • {layer.totalNodes} nodes)
+                    ({layer.paths.length} paths, {layer.totalNodes} nodes)
                   </span>
                 </div>
-
                 <div className={styles.layerActions}>
                   <button
                     type="button"
@@ -294,18 +289,9 @@ export const VectorizationPanel: React.FC = () => {
                     onClick={() => toggleVectorLayer(layer.id)}
                     aria-label={`Show ${layer.name}`}
                     aria-pressed={layer.visible}
-                    title={layer.visible ? 'Hide layer' : 'Show layer'}
+                    title={layer.visible ? 'Hide layer (it is left out of the files)' : 'Show layer'}
                   >
                     {layer.visible ? <Eye size={13} aria-hidden="true" /> : <EyeOff size={13} aria-hidden="true" />}
-                  </button>
-                  <button
-                    type="button"
-                    className={`${styles.iconButton} ${styles.iconButtonDanger}`}
-                    onClick={() => removeVectorLayer(layer.id)}
-                    aria-label={`Delete ${layer.name}`}
-                    title="Delete layer"
-                  >
-                    <Trash2 size={13} aria-hidden="true" />
                   </button>
                 </div>
               </li>
@@ -314,26 +300,31 @@ export const VectorizationPanel: React.FC = () => {
         </Section>
       )}
 
-      {/* Statistics & Export */}
       {vectorResult ? (
-        <Section title="Vector Telemetry">
+        <Section title="Result">
           <div className={panelStyles.readoutBox}>
             <div className={panelStyles.readoutRow}>
-              <span>Total Paths:</span>
-              <strong>{vectorResult.totalPaths}</strong>
+              <span>Outlines</span>
+              <strong>{fills}</strong>
             </div>
             <div className={panelStyles.readoutRow}>
-              <span>Total Nodes:</span>
+              <span>Centre paths</span>
+              <strong>{strokes}</strong>
+            </div>
+            <div className={panelStyles.readoutRow}>
+              <span>Nodes</span>
               <strong>{vectorResult.totalNodes}</strong>
             </div>
           </div>
         </Section>
       ) : (
-        <div className={panelStyles.emptyNote}>
-          <span>
-            Click <strong>Trace Vectors</strong> above to generate toolpaths.
-          </span>
-        </div>
+        sizeSet && (
+          <div className={panelStyles.emptyNote}>
+            <span>
+              Press <strong>Trace</strong> above to trace the image.
+            </span>
+          </div>
+        )
       )}
     </div>
   );

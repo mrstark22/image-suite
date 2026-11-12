@@ -71,7 +71,7 @@ const EVERYTHING_ADJUSTED: DocumentUpdate = combine(
   setColor({ saturation: 20, vibrance: 10, temperature: 5, tint: -5 }),
   setDetail({ clahe: true, adaptiveThreshold: true, unsharpStrength: 40, unsharpRadiusMm: 0.5 }),
   setDither({ algorithm: 'atkinson', serpentine: false, matrixScale: 2 }),
-  setVector({ mode: 'centerline', invert: true, curveFitting: false, threshold: 90 }),
+  setVector({ shapes: 'centerline', invert: true, cutline: true, threshold: 90 }),
   setDepth({ invertZ: true, viewMode: 'heatmap', material: 'slate', source: 'distance-transform', bevelStyle: 'dome' })
 );
 
@@ -118,9 +118,11 @@ const CLICK_EDITS: EditCase[] = [
   { name: 'serpentine checkbox', from: 'fresh', update: setDither({ serpentine: false }) },
   { name: 'dither reset', from: 'adjusted', update: resetDither },
   // Vectorization panel and tool subheader
-  { name: 'trace mode button or select', from: 'fresh', update: setVector({ mode: 'multi-color' }) },
+  { name: 'trace colours button', from: 'fresh', update: setVector({ colorMode: 'color' }) },
+  { name: 'trace shapes button', from: 'fresh', update: setVector({ shapes: 'outline' }) },
+  { name: 'palette colour or choice', from: 'fresh', update: setVector({ palette: [{ color: '#ff0000', removed: false, mergeInto: null }] }) },
   { name: 'trace invert checkbox', from: 'fresh', update: setVector({ invert: true }) },
-  { name: 'curve fitting checkbox', from: 'fresh', update: setVector({ curveFitting: false }) },
+  { name: 'cutline checkbox', from: 'fresh', update: setVector({ cutline: true }) },
   { name: 'trace reset', from: 'adjusted', update: resetVector },
   // Depth panel
   { name: 'relief source button', from: 'fresh', update: setDepth({ source: 'ai-estimation' }) },
