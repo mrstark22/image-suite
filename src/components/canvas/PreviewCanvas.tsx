@@ -306,7 +306,7 @@ export const PreviewCanvas: React.FC = () => {
   return (
     <div
       ref={setContainer}
-      className={`${styles.canvasContainer} ${styles.canvasContainerPan}`}
+      className={`${styles.canvasContainer} ${styles.canvasContainerPan} ${isDragOverCanvas ? styles.dragOver : ''}`}
       onMouseEnter={() => (pointerOverCanvasRef.current = true)}
       onMouseLeave={() => (pointerOverCanvasRef.current = false)}
       onMouseDownCapture={handleMouseDownCapture}
@@ -315,10 +315,6 @@ export const PreviewCanvas: React.FC = () => {
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
       onContextMenu={(e) => e.preventDefault()}
-      style={{
-        outline: isDragOverCanvas ? '2px dashed var(--canvas-text)' : 'none',
-        outlineOffset: '-4px',
-      }}
     >
       {/* Interactive Physical Canvas Rulers (mm, in, px) */}
       <CanvasRulers />
@@ -331,12 +327,9 @@ export const PreviewCanvas: React.FC = () => {
       )}
 
       <div
-        className={styles.canvasWrapper}
-        style={{
-          transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
-          transformOrigin: 'center center',
-          filter: isInvertedView ? 'invert(1) hue-rotate(180deg)' : 'none',
-        }}
+        // The pan and zoom are the run-time values; the inverted view is a class.
+        className={`${styles.canvasWrapper} ${isInvertedView ? styles.invertedView : ''}`}
+        style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})` }}
       >
         <canvas ref={canvasRef} className={styles.mainCanvas} />
 
@@ -345,7 +338,6 @@ export const PreviewCanvas: React.FC = () => {
           <svg
             className={styles.svgOverlay}
             viewBox={`0 0 ${dims.width} ${dims.height}`}
-            style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none' }}
           >
             {vectorResult.layers.map((layer) =>
               layer.visible ? (
@@ -369,9 +361,8 @@ export const PreviewCanvas: React.FC = () => {
         {/* Substrate Shape Mask Guide */}
         {substrateMask !== 'none' && (
           <svg
-            className={styles.svgOverlay}
+            className={`${styles.svgOverlay} ${styles.maskOverlay}`}
             viewBox={`0 0 ${dims.width} ${dims.height}`}
-            style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 25 }}
           >
             {substrateMask === 'circle' && (
               <circle
