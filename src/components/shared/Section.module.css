@@ -27,3 +27,36 @@
   display: inline-flex;
   color: var(--text-2);
 }
+
+/* A collapsible section's title is a button. */
+.toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  text-transform: inherit;
+  letter-spacing: inherit;
+  text-align: left;
+}
+
+.toggle:hover {
+  color: var(--text);
+}
+
+.chevron {
+  display: inline-flex;
+  color: var(--text-3);
+}
+
+.collapsed .header {
+  margin-bottom: 0;
+}
+
+.grow {
+  flex: 1;
+  min-width: 0;
+}
