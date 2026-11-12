@@ -265,7 +265,10 @@ describe('every control in the migrated panels is reachable and named', () => {
       rerender(<VectorizationPanel />);
       expect(inaccessibleControls(container), mode).toEqual([]);
     }
-    expect(container.querySelectorAll('[aria-pressed=true]').length).toBeGreaterThanOrEqual(1);
+    // Exactly one mode card says it is chosen: the last mode set. The visible
+    // layer's Show button is the other pressed button.
+    const pressed = [...container.querySelectorAll('[aria-pressed=true]')].map((b) => accessibleName(b));
+    expect(pressed).toEqual([expect.stringMatching(/^Centerline/), 'Show Outline']);
     // Each layer's buttons say which layer they act on.
     expect(button(container, /^Delete Outline$/)).toBeTruthy();
     expect(button(container, /^Show Cutline$/).getAttribute('aria-pressed')).toBe('false');
