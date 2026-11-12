@@ -12,11 +12,13 @@ export function combine(...updates: DocumentUpdate[]): DocumentUpdate {
   return (d) => updates.reduce((acc, u) => u(acc), d);
 }
 
-export type AdjustmentPresetId = 'auto-levels' | 'laser-prep' | 'shadow-lift' | 'high-contrast' | 'slate-invert';
+export type AdjustmentPresetId = 'laser-prep' | 'shadow-lift' | 'high-contrast' | 'slate-invert';
 
-/** The quick tonal presets: each chip is one edit. */
+/**
+ * The quick tonal presets: each chip is one edit. Auto Levels is not here: it
+ * reads the image (auto-levels.ts).
+ */
 export const ADJUSTMENT_PRESETS: Record<AdjustmentPresetId, DocumentUpdate> = {
-  'auto-levels': setTonal({ blackPoint: 15, whitePoint: 245, midtones: 5, contrast: 15 }),
   'laser-prep': combine(
     setTonal({ contrast: 30, clarity: 35, midtones: 10, highlights: -15, shadows: 20, grayscaleMode: 'rec709' }),
     setDetail({ unsharpStrength: 60, unsharpRadiusMm: DEFAULT_DETAIL.unsharpRadiusMm })

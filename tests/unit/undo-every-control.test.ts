@@ -37,6 +37,7 @@ import {
   type AdjustmentPresetId,
   type AdjustmentSection,
 } from '../../src/lib/adjustment-edits';
+import { autoLevels } from '../../src/lib/auto-levels';
 import { DraftField, SliderGesture } from '../../src/lib/slider-input';
 import { RECIPE_VERSION } from '../../src/types/recipe';
 import type { DocumentUpdate, ImageDocument } from '../../src/types/document';
@@ -102,6 +103,7 @@ const CLICK_EDITS: EditCase[] = [
   ...PRESET_IDS.map((id): EditCase => ({ name: `preset chip "${id}"`, from: 'fresh', update: ADJUSTMENT_PRESETS[id] })),
   ...SECTIONS.map((s): EditCase => ({ name: `"${s}" section reset icon`, from: 'adjusted', update: SECTION_RESETS[s] })),
   { name: 'Reset All (adjustments panel, tool subheader)', from: 'adjusted', update: resetAdjustments },
+  { name: 'Auto Levels chip', from: 'fresh', update: autoLevels(new Uint8Array([40, 90, 200, 255, 60, 120, 180, 255])) },
   { name: 'Invert checkbox on', from: 'fresh', update: setTonal({ invert: true }) },
   { name: 'Invert checkbox off', from: 'adjusted', update: setTonal({ invert: false }) },
   { name: 'CLAHE checkbox on', from: 'fresh', update: setDetail({ clahe: true }) },

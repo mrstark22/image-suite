@@ -12,6 +12,7 @@ import {
   Wand2,
 } from 'lucide-react';
 import { useDocumentStore } from '../../store/documentStore';
+import { useRenderStore } from '../../store/renderStore';
 import { DocumentSlider } from '../shared/Slider';
 import { Histogram } from '../shared/Histogram';
 import type { GrayscaleMode } from '../../types/image';
@@ -24,6 +25,7 @@ import {
   setDetail,
   setTonal,
 } from '../../lib/document';
+import { autoLevels } from '../../lib/auto-levels';
 import { ADJUSTMENT_PRESETS, SECTION_RESETS, type AdjustmentPresetId } from '../../lib/adjustment-edits';
 import styles from './Panels.module.css';
 
@@ -37,6 +39,8 @@ export const AdjustmentsPanel: React.FC = () => {
   const tonal = doc?.steps.tonal ?? DEFAULT_TONAL;
   const color = doc?.steps.color ?? DEFAULT_COLOR;
   const detail = doc?.steps.detail ?? DEFAULT_DETAIL;
+  // Auto Levels reads the unadjusted render the levels are applied to.
+  const source = useRenderStore((s) => s.source);
   // Sharpening and the adaptive threshold have lengths in mm, so they need a size.
   const sizeSet = doc?.mmPerPx != null;
 
@@ -121,8 +125,9 @@ export const AdjustmentsPanel: React.FC = () => {
         <div className={styles.presetChips}>
           <button
             className={styles.presetChip}
-            onClick={() => applyPreset('auto-levels')}
-            title="Auto-stretch histogram levels for optimal contrast"
+            onClick={() => source && edit(autoLevels(new Uint8Array(source.buffer)))}
+            disabled={!source}
+            title="Set the black and white points from the image's histogram"
           >
             <Wand2 size={12} /> Auto Levels
           </button>
