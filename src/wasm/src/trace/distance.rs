@@ -135,7 +135,11 @@ mod tests {
             if x < 2 || x + 2 >= w {
                 best = best.min((x + 1).min(w - x) as f64);
             }
-            assert!((dt[i] as f64 - best).abs() < 1e-4, "x = {x}: {} vs {best}", dt[i]);
+            assert!(
+                (dt[i] as f64 - best).abs() < 1e-4,
+                "x = {x}: {} vs {best}",
+                dt[i]
+            );
         }
     }
 
