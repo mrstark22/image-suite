@@ -19,7 +19,7 @@ import {
   DEFAULT_DETAIL,
   DEFAULT_TONAL,
   DEFAULT_COLOR,
-    resetTonal,
+  resetAdjustments,
   setColor,
   setDetail,
   setTonal,
@@ -101,7 +101,11 @@ export const AdjustmentsPanel: React.FC = () => {
       {/* Header */}
       <div className={styles.panelHeader}>
         <span className={styles.panelTitle}>Tonal & Enhancements</span>
-        <button className={styles.resetButton} onClick={() => edit(resetTonal)} title="Reset all adjustments">
+        <button
+          className={styles.resetButton}
+          onClick={() => edit(resetAdjustments)}
+          title="Reset every tone, color and detail adjustment"
+        >
           Reset All
         </button>
       </div>

@@ -11,7 +11,7 @@ import { useRenderStore } from '../../src/store/renderStore';
 import {
   DEFAULT_DETAIL,
   DEFAULT_DITHER,
-  resetTonal,
+  resetAdjustments,
   setCrop,
   setDetail,
   setDither,
@@ -153,7 +153,7 @@ describe('crop followed by other edits (#15), rendered', () => {
     const token = store().beginGesture();
     store().updateGesture(token, setTonal({ contrast: 30 }));
     store().endGesture(token);
-    store().edit(resetTonal);
+    store().edit(resetAdjustments);
     await check(200 / 600);
 
     store().edit(setDetail({ unsharpStrength: 50, adaptiveThreshold: true }));

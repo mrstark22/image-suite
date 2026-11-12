@@ -220,9 +220,13 @@ export const resetAll: DocumentUpdate = (d) => ({
   depth: { ...DEFAULT_DEPTH },
 });
 
-/** Restores the tonal and colour adjustments. */
-export const resetTonal: DocumentUpdate = (d) =>
-  withSteps(d, { tonal: { ...DEFAULT_TONAL }, color: { ...DEFAULT_COLOR } });
+/**
+ * Restores every setting of the adjustments panel: tone, colour and detail
+ * (CLAHE, sharpening and the adaptive threshold). Keeps the crop, the dither,
+ * the workflow settings and the scale.
+ */
+export const resetAdjustments: DocumentUpdate = (d) =>
+  withSteps(d, { tonal: { ...DEFAULT_TONAL }, color: { ...DEFAULT_COLOR }, detail: { ...DEFAULT_DETAIL } });
 
 /** Restores the dither settings. */
 export const resetDither: DocumentUpdate = (d) => withSteps(d, { dither: { ...DEFAULT_DITHER } });

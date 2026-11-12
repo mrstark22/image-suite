@@ -18,7 +18,7 @@ import {
   applyRecipe,
   resetAll,
   resetDither,
-  resetTonal,
+  resetAdjustments,
   resetVector,
   sameValue,
   setColor,
@@ -101,7 +101,7 @@ const CLICK_EDITS: EditCase[] = [
   // Adjustments panel
   ...PRESET_IDS.map((id): EditCase => ({ name: `preset chip "${id}"`, from: 'fresh', update: ADJUSTMENT_PRESETS[id] })),
   ...SECTIONS.map((s): EditCase => ({ name: `"${s}" section reset icon`, from: 'adjusted', update: SECTION_RESETS[s] })),
-  { name: 'Reset All (adjustments panel, tool subheader)', from: 'adjusted', update: resetTonal },
+  { name: 'Reset All (adjustments panel, tool subheader)', from: 'adjusted', update: resetAdjustments },
   { name: 'Invert checkbox on', from: 'fresh', update: setTonal({ invert: true }) },
   { name: 'Invert checkbox off', from: 'adjusted', update: setTonal({ invert: false }) },
   { name: 'CLAHE checkbox on', from: 'fresh', update: setDetail({ clahe: true }) },
