@@ -15,7 +15,6 @@ import { useDocumentStore } from '../../store/documentStore';
 import { DocumentSlider } from '../shared/Slider';
 import { Histogram } from '../shared/Histogram';
 import type { GrayscaleMode } from '../../types/image';
-import type { DocumentUpdate } from '../../types/document';
 import {
   DEFAULT_DETAIL,
   DEFAULT_TONAL,
@@ -25,15 +24,11 @@ import {
   setDetail,
   setTonal,
 } from '../../lib/document';
+import { ADJUSTMENT_PRESETS, SECTION_RESETS, type AdjustmentPresetId } from '../../lib/adjustment-edits';
 import styles from './Panels.module.css';
 
 /** Shown on controls whose lengths are in millimetres while the size is not set. */
 export const SET_SIZE_NOTE = 'Set the size to use this';
-
-/** Applies several updates as one edit, so they are one undo entry. */
-function all(...updates: DocumentUpdate[]): DocumentUpdate {
-  return (d) => updates.reduce((acc, u) => u(acc), d);
-}
 
 /** Tonal, colour and detail adjustments of the open document. */
 export const AdjustmentsPanel: React.FC = () => {
@@ -90,33 +85,8 @@ export const AdjustmentsPanel: React.FC = () => {
     detail.adaptiveThreshold ||
     tonal.invert;
 
-  // Preset Handlers
-  const applyPreset = (name: string) => {
-    switch (name) {
-      case 'auto-levels':
-        edit(setTonal({ blackPoint: 15, whitePoint: 245, midtones: 5, contrast: 15 }));
-        break;
-      case 'laser-prep':
-        edit(
-          all(
-            setTonal({ contrast: 30, clarity: 35, midtones: 10, highlights: -15, shadows: 20, grayscaleMode: 'rec709' }),
-            setDetail({ unsharpStrength: 60, unsharpRadiusMm: DEFAULT_DETAIL.unsharpRadiusMm })
-          )
-        );
-        break;
-      case 'shadow-lift':
-        edit(setTonal({ shadows: 50, midtones: 25, exposure: 0.3, contrast: 10 }));
-        break;
-      case 'high-contrast':
-        edit(setTonal({ contrast: 50, blacks: -20, whites: 20, clarity: 25 }));
-        break;
-      case 'slate-invert':
-        edit(setTonal({ invert: true, contrast: 35, clarity: 30, grayscaleMode: 'rec709' }));
-        break;
-      default:
-        break;
-    }
-  };
+  // Preset Handlers: each chip is one edit.
+  const applyPreset = (name: AdjustmentPresetId) => edit(ADJUSTMENT_PRESETS[name]);
 
   const grayscaleOptions: Array<{ id: GrayscaleMode; label: string }> = [
     { id: 'none', label: 'Color' },
@@ -208,16 +178,7 @@ export const AdjustmentsPanel: React.FC = () => {
                 className={styles.resetButton}
                 onClick={(e) => {
                   e.stopPropagation();
-                  edit(setTonal({
-                    exposure: 0,
-                    brightness: 0,
-                    contrast: 0,
-                    midtones: 0,
-                    highlights: 0,
-                    shadows: 0,
-                    whites: 0,
-                    blacks: 0,
-                  }));
+                  edit(SECTION_RESETS.tone);
                 }}
                 title="Reset Tone"
               >
@@ -325,7 +286,7 @@ export const AdjustmentsPanel: React.FC = () => {
                 className={styles.resetButton}
                 onClick={(e) => {
                   e.stopPropagation();
-                  edit(setTonal({ blackPoint: 0, whitePoint: 255, gamma: 1.0 }));
+                  edit(SECTION_RESETS.levels);
                 }}
                 title="Reset Levels"
               >
@@ -392,12 +353,7 @@ export const AdjustmentsPanel: React.FC = () => {
                 className={styles.resetButton}
                 onClick={(e) => {
                   e.stopPropagation();
-                  edit(
-                    all(
-                      setTonal({ clarity: 0 }),
-                      setDetail({ unsharpStrength: 0, unsharpRadiusMm: DEFAULT_DETAIL.unsharpRadiusMm })
-                    )
-                  );
+                  edit(SECTION_RESETS.detail);
                 }}
                 title="Reset Clarity"
               >
@@ -472,12 +428,7 @@ export const AdjustmentsPanel: React.FC = () => {
                 className={styles.resetButton}
                 onClick={(e) => {
                   e.stopPropagation();
-                  edit(
-                    all(
-                      setColor({ saturation: 0, vibrance: 0, temperature: 0, tint: 0 }),
-                      setTonal({ grayscaleMode: 'none' })
-                    )
-                  );
+                  edit(SECTION_RESETS.color);
                 }}
                 title="Reset Color"
               >
@@ -569,7 +520,7 @@ export const AdjustmentsPanel: React.FC = () => {
                 className={styles.resetButton}
                 onClick={(e) => {
                   e.stopPropagation();
-                  edit(all(setDetail({ clahe: false, adaptiveThreshold: false }), setTonal({ invert: false })));
+                  edit(SECTION_RESETS.filters);
                 }}
                 title="Reset Filters"
               >
