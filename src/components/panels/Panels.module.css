@@ -262,10 +262,15 @@
   gap: 4px;
 }
 
-.presetChip:hover {
+.presetChip:hover:not(:disabled) {
   background: var(--bg-surface-hover);
   border-color: var(--accent-primary);
   color: var(--text-primary);
+}
+
+.presetChip:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .presetChipActive {

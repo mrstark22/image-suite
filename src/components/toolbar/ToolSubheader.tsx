@@ -3,7 +3,7 @@ import { Hand, Play, Trash2, RotateCcw, Scissors, Crop } from 'lucide-react';
 import { useViewStore } from '../../store/viewStore';
 import { useDocumentStore } from '../../store/documentStore';
 import { useRenderStore } from '../../store/renderStore';
-import { DEFAULT_VECTOR, resetTonal, setVector } from '../../lib/document';
+import { DEFAULT_VECTOR, resetAdjustments, setVector } from '../../lib/document';
 import { useUIStore } from '../../store/uiStore';
 import type { VectorMode } from '../../types/vector';
 import styles from './ToolSubheader.module.css';
@@ -57,8 +57,8 @@ export const ToolSubheader: React.FC = () => {
           <>
             <button
               className={styles.actionBtn}
-              onClick={() => edit(resetTonal)}
-              title="Reset tonal & color adjustments"
+              onClick={() => edit(resetAdjustments)}
+              title="Reset tone, color and detail adjustments"
             >
               <RotateCcw size={12} /> Reset Adjustments
             </button>
