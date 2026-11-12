@@ -387,6 +387,11 @@ describe('canvas controls a keyboard can reach (#55 review)', () => {
     expect(onChange).toHaveBeenLastCalledWith(0);
     press('End', {}, divider);
     expect(onChange).toHaveBeenLastCalledWith(1);
+    // Shift moves it four steps at a time.
+    press('ArrowRight', { shiftKey: true }, divider);
+    expect(onChange).toHaveBeenLastCalledWith(0.5 + 4 * SPLIT_KEY_STEP);
+    press('ArrowLeft', { shiftKey: true }, divider);
+    expect(onChange).toHaveBeenLastCalledWith(0.5 - 4 * SPLIT_KEY_STEP);
     // Clamped at the edges.
     rerender(<SplitDivider splitPosition={0.98} onChange={onChange} onDragStart={() => {}} />);
     press('ArrowRight', {}, divider);
@@ -476,6 +481,42 @@ describe('Trace step: progress and cancel', () => {
       await settle(() => finishTrace(twoLayers()));
       expect(useRenderStore.getState().vectorResult).toBeNull();
       expect(traceDocument).toHaveBeenCalledTimes(1);
+      expect(container.querySelector('[role=progressbar]')).toBeNull();
+    } finally {
+      disconnect();
+    }
+  });
+
+  it('a trace asked for right after Cancel shows progress at once, while the cancelled run still holds the worker', async () => {
+    const finishers: Array<(result: VectorResult) => void> = [];
+    const traceDocument = vi.fn(() => new Promise<VectorResult>((resolve) => finishers.push(resolve)));
+    const pipeline = {
+      traceDocument,
+      renderPreview: () => new Promise(() => {}),
+      releaseSource: () => Promise.resolve(),
+    } as unknown as Pipeline;
+    useUIStore.setState({ job: 'vector' });
+    useRenderStore.setState({ autoTrace: true });
+    const disconnect = connectSchedulers(createSchedulers(() => pipeline), () => pipeline);
+    try {
+      useDocumentStore.getState().open(decodedImage(4, 4), 10);
+      const { container } = render(<VectorizationPanel />);
+      click(button(container, /^Cancel$/));
+      expect(container.querySelector('[role=progressbar]')).toBeNull();
+
+      // Asked for again before the cancelled run has left the worker.
+      click(button(container, /Trace Vectors/));
+      expect(traceDocument).toHaveBeenCalledTimes(1);
+      expect(container.querySelector('[role=progressbar]')).not.toBeNull();
+
+      // The cancelled run ends: its result is dropped and the new one starts, still shown.
+      await settle(() => finishers[0](twoLayers()));
+      expect(traceDocument).toHaveBeenCalledTimes(2);
+      expect(useRenderStore.getState().vectorResult).toBeNull();
+      expect(container.querySelector('[role=progressbar]')).not.toBeNull();
+
+      await settle(() => finishers[1](twoLayers()));
+      expect(useRenderStore.getState().vectorResult?.layers).toHaveLength(2);
       expect(container.querySelector('[role=progressbar]')).toBeNull();
     } finally {
       disconnect();
