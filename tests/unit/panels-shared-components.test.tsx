@@ -8,7 +8,7 @@
  * - A failed background removal or test grid is reported as an error, not in
  *   the success style it used to share with every other message.
  * - The export's progress shows its percentage and its Cancel reaches the
- *   worker.
+ *   worker; a running trace shows progress, and its Cancel drops the result.
  * - Every control in every panel and dialog is a native, focusable control
  *   with a name a screen reader can read, so each is reachable and operable
  *   by keyboard.
@@ -29,6 +29,7 @@ import { CropStepPanel, ImageStepPanel, NeedsImage, SizeStepPanel } from '../../
 import { SizeDialog } from '../../src/components/dialogs/SizeDialog';
 import { MaterialTestGridDialog } from '../../src/components/dialogs/MaterialTestGridDialog';
 import { DropZone } from '../../src/components/shared/DropZone';
+import { connectSchedulers, createSchedulers } from '../../src/lib/schedulers';
 import { setPipeline, type Pipeline } from '../../src/lib/pipeline-client';
 import { useDocumentStore } from '../../src/store/documentStore';
 import { useRenderStore } from '../../src/store/renderStore';
@@ -83,6 +84,7 @@ beforeEach(() => {
     exportProgress: null,
     backgroundRemoval: null,
     vectorResult: null,
+    isTracing: false,
   });
   useUIStore.setState({ job: 'photo' });
   testGridDocument.failWith = null;
@@ -251,9 +253,9 @@ describe('every control in the migrated panels is reachable and named', () => {
     }
   });
 
-  it('Trace, in every mode, and with a result', () => {
+  it('Trace, in every mode, with a result, and while tracing', () => {
     openWithPreview();
-    useRenderStore.setState({ vectorResult: twoLayers(), isVectorStale: true });
+    useRenderStore.setState({ vectorResult: twoLayers(), isTracing: true, isVectorStale: true });
     const modes: VectorMode[] = ['outline', 'multi-color', 'edge-detect', 'centerline'];
     const { container, rerender } = render(<VectorizationPanel />);
     for (const mode of modes) {
@@ -373,6 +375,65 @@ describe('dialogs on the shared Dialog', () => {
     expect(alert.getAttribute('data-tone')).toBe('error');
     expect(alert.textContent).toContain('larger than the largest image allowed');
     expect(onClose).not.toHaveBeenCalled();
+  });
+});
+
+describe('Trace step: progress and cancel', () => {
+  it('a running trace shows progress; Cancel drops its result and does not trace again', async () => {
+    let finishTrace: (result: VectorResult) => void = () => {};
+    const traceDocument = vi.fn(() => new Promise<VectorResult>((resolve) => (finishTrace = resolve)));
+    const pipeline = {
+      traceDocument,
+      // The preview is not what this test is about: it never finishes.
+      renderPreview: () => new Promise(() => {}),
+      releaseSource: () => Promise.resolve(),
+    } as unknown as Pipeline;
+    useUIStore.setState({ job: 'vector' });
+    useRenderStore.setState({ autoTrace: true });
+    const disconnect = connectSchedulers(createSchedulers(() => pipeline), () => pipeline);
+    try {
+      useDocumentStore.getState().open(decodedImage(4, 4), 10);
+      expect(traceDocument).toHaveBeenCalledTimes(1);
+      const { container } = render(<VectorizationPanel />);
+      const bar = one(container, '[role=progressbar]');
+      expect(accessibleName(bar)).toBe('Tracing');
+      // The tracer cannot say how far it is, so no percentage is made up.
+      expect(bar.hasAttribute('aria-valuenow')).toBe(false);
+
+      click(button(container, /^Cancel$/));
+      expect(container.querySelector('[role=progressbar]')).toBeNull();
+      expect(useRenderStore.getState().autoTrace).toBe(false);
+
+      // The worker finishes the run it had started; its result is not shown.
+      await settle(() => finishTrace(twoLayers()));
+      expect(useRenderStore.getState().vectorResult).toBeNull();
+      expect(traceDocument).toHaveBeenCalledTimes(1);
+      expect(container.querySelector('[role=progressbar]')).toBeNull();
+    } finally {
+      disconnect();
+    }
+  });
+
+  it('without Cancel, the same trace is committed when it finishes', async () => {
+    let finishTrace: (result: VectorResult) => void = () => {};
+    const traceDocument = vi.fn(() => new Promise<VectorResult>((resolve) => (finishTrace = resolve)));
+    const pipeline = {
+      traceDocument,
+      renderPreview: () => new Promise(() => {}),
+      releaseSource: () => Promise.resolve(),
+    } as unknown as Pipeline;
+    useUIStore.setState({ job: 'vector' });
+    useRenderStore.setState({ autoTrace: true });
+    const disconnect = connectSchedulers(createSchedulers(() => pipeline), () => pipeline);
+    try {
+      useDocumentStore.getState().open(decodedImage(4, 4), 10);
+      expect(useRenderStore.getState().isTracing).toBe(true);
+      await settle(() => finishTrace(twoLayers()));
+      expect(useRenderStore.getState().vectorResult?.layers).toHaveLength(2);
+      expect(useRenderStore.getState().isTracing).toBe(false);
+    } finally {
+      disconnect();
+    }
   });
 });
 
