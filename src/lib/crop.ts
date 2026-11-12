@@ -120,7 +120,16 @@ export function adjustCropBox(
     }
   }
 
-  return { x: Math.round(x), y: Math.round(y), width: Math.round(w), height: Math.round(h) };
+  // The size is rounded first and a west or north handle is placed from the
+  // edge that stays, so rounding cannot push the box past the image or move
+  // the fixed edge (review of #84).
+  const width = Math.round(w);
+  const height = Math.round(h);
+  const resizesW = handle !== 'move' && handle.includes('w');
+  const resizesN = handle !== 'move' && handle.includes('n');
+  const left = resizesW ? box.x + box.width - width : Math.round(x);
+  const top = resizesN ? box.y + box.height - height : Math.round(y);
+  return { x: Math.max(0, left), y: Math.max(0, top), width, height };
 }
 
 /** How far one arrow key moves or sizes the crop box, in preview pixels; Alt makes it one pixel. */

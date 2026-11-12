@@ -50,6 +50,12 @@ interface RenderState {
    */
   tracedInputs: TraceInputs | null;
   /**
+   * The background-removed pixels the trace shown read, or null if it read the
+   * image as opened. Removal is not in the document, so it is recorded beside
+   * `tracedInputs` (review of #84).
+   */
+  tracedRemoval: ArrayBuffer | null;
+  /**
    * The layers hidden on screen, by `layerKey`, kept across traces so a
    * re-trace does not show them again. A colour layer is known by its
    * colour, not its position, so a re-clustering that renumbers the colours
@@ -131,10 +137,11 @@ export function traceInputsOf(doc: ImageDocument): TraceInputs {
  * screen. False while a newer trace is due or the settings changed.
  */
 export function traceIsCurrent(): boolean {
-  const { vectorResult, tracedInputs } = useRenderStore.getState();
+  const { vectorResult, tracedInputs, tracedRemoval, backgroundRemoval } = useRenderStore.getState();
   const doc = useDocumentStore.getState().doc;
   if (!vectorResult || !doc) return false;
-  return tracedInputs === null || sameValue(tracedInputs, traceInputsOf(doc));
+  if (tracedInputs === null) return true;
+  return sameValue(tracedInputs, traceInputsOf(doc)) && tracedRemoval === (backgroundRemoval?.pixels ?? null);
 }
 
 /**
@@ -162,6 +169,15 @@ function summed(layers: VectorLayer[]): Pick<VectorResult, 'totalPaths' | 'total
   };
 }
 
+/**
+ * True when changing background removal leaves the trace on screen out of
+ * date: a trace is shown and none will replace it, as auto-trace is off. With
+ * auto-trace on, the scheduler traces again (review of #84).
+ */
+function removalOutdatesTrace(s: Pick<RenderState, 'vectorResult' | 'tracedInputs' | 'autoTrace'>): boolean {
+  return s.vectorResult !== null && s.tracedInputs !== null && !s.autoTrace;
+}
+
 const EMPTY_RESULTS = {
   source: null,
   processed: null,
@@ -171,6 +187,7 @@ const EMPTY_RESULTS = {
   autoTrace: true,
   isVectorStale: false,
   tracedInputs: null,
+  tracedRemoval: null,
   hiddenLayers: [] as string[],
   isProcessing: false,
   processingDurationMs: 0,
@@ -220,10 +237,11 @@ export const useRenderStore = create<RenderState>((set, get) => ({
     const same = current !== null && current.key === from.key && buffer.byteLength === current.width * current.height * 4;
     if (!same) return false;
     const original = get().backgroundRemoval?.original ?? current.buffer;
-    set({
+    set((s) => ({
       source: { ...current, buffer },
       backgroundRemoval: { key: current.key, pixels: buffer, original },
-    });
+      isVectorStale: s.isVectorStale || removalOutdatesTrace(s),
+    }));
     return true;
   },
 
@@ -233,7 +251,11 @@ export const useRenderStore = create<RenderState>((set, get) => ({
       set({ backgroundRemoval: null });
       return;
     }
-    set({ source: { ...source, buffer: backgroundRemoval.original }, backgroundRemoval: null });
+    set((s) => ({
+      source: { ...source, buffer: backgroundRemoval.original },
+      backgroundRemoval: null,
+      isVectorStale: s.isVectorStale || removalOutdatesTrace(s),
+    }));
   },
 
   // Called with a trace's result only while nothing it read has changed, so the
@@ -248,6 +270,7 @@ export const useRenderStore = create<RenderState>((set, get) => ({
       },
       isVectorStale: false,
       tracedInputs: doc ? traceInputsOf(doc) : null,
+      tracedRemoval: get().backgroundRemoval?.pixels ?? null,
     });
   },
 
@@ -260,7 +283,9 @@ export const useRenderStore = create<RenderState>((set, get) => ({
     set((s) => {
       const doc = useDocumentStore.getState().doc;
       const changed =
-        s.vectorResult !== null && s.tracedInputs !== null && (!doc || !sameValue(traceInputsOf(doc), s.tracedInputs));
+        s.vectorResult !== null &&
+        s.tracedInputs !== null &&
+        (!doc || !sameValue(traceInputsOf(doc), s.tracedInputs) || s.tracedRemoval !== (s.backgroundRemoval?.pixels ?? null));
       return { autoTrace: false, traceRequest: s.traceRequest + 1, isTracing: false, isVectorStale: s.isVectorStale || changed };
     }),
 
@@ -273,6 +298,7 @@ export const useRenderStore = create<RenderState>((set, get) => ({
     set({
       // Not a trace, so not traced with any settings.
       tracedInputs: null,
+      tracedRemoval: null,
       autoTrace: false,
       vectorResult: {
         layers,
@@ -285,7 +311,7 @@ export const useRenderStore = create<RenderState>((set, get) => ({
   },
 
   clearVectors: () =>
-    set({ vectorResult: null, autoTrace: false, isVectorStale: false, tracedInputs: null, hiddenLayers: [] }),
+    set({ vectorResult: null, autoTrace: false, isVectorStale: false, tracedInputs: null, tracedRemoval: null, hiddenLayers: [] }),
 
   toggleVectorLayer: (layerId) => {
     const vr = get().vectorResult;

@@ -366,3 +366,20 @@ fn cutline_is_offset_by_the_distance() {
         .fold(0.0, f64::max);
     assert!(worst < 0.6, "offset error {worst}");
 }
+
+/// A speck inside a pinhole goes with the hole: both are below the minimum
+/// area, so the shape comes out solid (review of #84).
+#[test]
+fn speck_inside_a_pinhole_leaves_no_hole() {
+    let ink = |x: f64, y: f64| {
+        let square = (10.0..70.0).contains(&x) && (10.0..70.0).contains(&y);
+        let hole = (37.0..43.0).contains(&x) && (37.0..43.0).contains(&y);
+        let speck = (39.0..41.0).contains(&x) && (39.0..41.0).contains(&y);
+        (square && !hole) || speck
+    };
+    let px = render(80, 80, ink);
+    let mut c = cfg(Shapes::Outline);
+    c.min_area_mm2 = 0.5; // 50 px: the hole is 32 px and the speck 4 px
+    let r = trace(&px, 80, 80, &c);
+    assert_eq!(all_paths(&r).len(), 1, "only the square's outline remains");
+}

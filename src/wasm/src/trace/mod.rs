@@ -348,7 +348,9 @@ fn trace_layer(
             }
         }
         // Holes: background regions (4-connected) that do not reach the border.
-        let outside: Vec<bool> = inside.iter().map(|&v| !v).collect();
+        // Read from the field with the specks already gone, so a speck inside a
+        // hole counts as part of the hole and is filled with it.
+        let outside: Vec<bool> = field.iter().map(|&v| v <= 0.0).collect();
         let (bl, ba) = components(&outside, w, h, false);
         let mut touches = vec![false; ba.len()];
         for x in 0..w {

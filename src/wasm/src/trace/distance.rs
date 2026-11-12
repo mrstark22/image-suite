@@ -12,8 +12,12 @@ fn dt_1d(f: &[f32], d: &mut [f32], v: &mut [usize], z: &mut [f32]) {
     v[0] = 0;
     z[0] = -INF;
     z[1] = INF;
+    // Where the parabolas rooted at `q` and `p` (q > p) meet. In 64 bits and
+    // with q² - p² as (q - p)(q + p): a 32-bit float holds q² exactly only up
+    // to q = 4096, and images are larger than that.
     let meet = |q: usize, p: usize| -> f32 {
-        ((f[q] + (q * q) as f32) - (f[p] + (p * p) as f32)) / (2.0 * q as f32 - 2.0 * p as f32)
+        let (qf, pf) = (q as f64, p as f64);
+        (((f[q] as f64 - f[p] as f64) + (qf - pf) * (qf + pf)) / (2.0 * (qf - pf))) as f32
     };
     for q in 1..n {
         let mut s = meet(q, v[k]);
@@ -101,6 +105,39 @@ fn squared_edt_in_place(g: &mut [f32], w: usize, h: usize) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Past 4096 px a coordinate squared no longer fits a 32-bit float exactly
+    /// (review of #84): the transform must still be exact on a long image.
+    #[test]
+    fn matches_brute_force_on_a_long_image() {
+        let (w, h) = (7000usize, 3usize);
+        // Outside pixels at irregular gaps of up to 120 px along the middle row.
+        let mut inside = vec![true; w * h];
+        let mut x = 5usize;
+        while x < w {
+            inside[w + x] = false;
+            x += 7 + (x * 7919) % 113;
+        }
+        let dt = distance_to_outside(&inside, w, h);
+        for x in 0..w {
+            let i = w + x;
+            if !inside[i] {
+                assert_eq!(dt[i], 0.0);
+                continue;
+            }
+            // The rows above and below the image are outside, 2 px away.
+            let mut best = 2.0f64;
+            for xx in x.saturating_sub(2)..(x + 3).min(w) {
+                if !inside[w + xx] {
+                    best = best.min((xx as f64 - x as f64).abs());
+                }
+            }
+            if x < 2 || x + 2 >= w {
+                best = best.min((x + 1).min(w - x) as f64);
+            }
+            assert!((dt[i] as f64 - best).abs() < 1e-4, "x = {x}: {} vs {best}", dt[i]);
+        }
+    }
 
     #[test]
     fn matches_brute_force() {

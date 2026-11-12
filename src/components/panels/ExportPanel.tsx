@@ -178,11 +178,8 @@ export const ExportPanel: React.FC = () => {
                 {file.widthPx} × {file.heightPx} px at {file.dpi.toFixed(1)} DPI
               </strong>
             </div>
-            {job !== 'photo' && (
-              <div className={styles.controlNote}>
-                {job === 'vector' ? 'Traced' : 'The heightmap is computed'} at preview resolution until{' '}
-                {job === 'vector' ? '#30' : '#46'}.
-              </div>
+            {job === 'relief' && (
+              <div className={styles.controlNote}>The heightmap is computed at preview resolution until #46.</div>
             )}
           </div>
         ) : (
