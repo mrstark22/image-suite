@@ -42,8 +42,15 @@ interface RenderState {
   autoTrace: boolean;
   /** True when the tracing settings changed while auto-trace was off. */
   isVectorStale: boolean;
-  /** Increases when the user asks for a trace, so one runs even if nothing changed. */
+  /**
+   * Increases when the user asks for a trace, so one runs even if nothing
+   * changed, and when the user cancels one. The trace scheduler reads it, so
+   * either way a trace already running is for an older request and its
+   * result is dropped.
+   */
   traceRequest: number;
+  /** True while a trace is running in the worker. */
+  isTracing: boolean;
 
   isProcessing: boolean;
   processingDurationMs: number;
@@ -75,6 +82,13 @@ interface RenderState {
   setAutoTrace: (autoTrace: boolean) => void;
   /** Turns auto-trace on and traces now. */
   requestTrace: () => void;
+  /**
+   * Stops waiting for the running trace: its result is dropped and auto-trace
+   * is turned off, so it does not start again. The tracer cannot stop part way,
+   * so the worker finishes the run in the background before its next job.
+   */
+  cancelTrace: () => void;
+  setIsTracing: (tracing: boolean) => void;
   addVectorLayer: (layer: VectorLayer) => void;
   /** Adds a cutline around the image. Refuses (returns false) while the size is not set. */
   generateCutline: (offsetMm?: number, smoothness?: number) => boolean;
@@ -128,6 +142,7 @@ export const useRenderStore = create<RenderState>((set, get) => ({
   ...EMPTY_RESULTS,
   previewVersion: 0,
   traceRequest: 0,
+  isTracing: false,
   errorMessage: null,
   exportProgress: null,
 
@@ -188,6 +203,10 @@ export const useRenderStore = create<RenderState>((set, get) => ({
   setAutoTrace: (autoTrace) => set({ autoTrace }),
 
   requestTrace: () => set((s) => ({ autoTrace: true, traceRequest: s.traceRequest + 1 })),
+
+  cancelTrace: () => set((s) => ({ autoTrace: false, traceRequest: s.traceRequest + 1, isTracing: false })),
+
+  setIsTracing: (isTracing) => set({ isTracing }),
 
   addVectorLayer: (layer) => {
     const vr = get().vectorResult;

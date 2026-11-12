@@ -95,7 +95,14 @@ export function createSchedulers(pipeline: () => Pipeline): Schedulers {
       target: previewTarget(doc),
       sourceStagePixels: removalFor(doc),
     }),
-    run: (req: TraceRequest) => pipeline().traceDocument(req),
+    run: async (req: TraceRequest) => {
+      render().setIsTracing(true);
+      try {
+        return await pipeline().traceDocument(req);
+      } finally {
+        render().setIsTracing(false);
+      }
+    },
     commit: (res: VectorResult) => render().setVectorResult(res),
     fail: report('Tracing failed'),
   });

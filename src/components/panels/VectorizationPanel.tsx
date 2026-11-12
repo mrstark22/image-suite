@@ -15,6 +15,7 @@ import { DocumentSlider, Slider } from '../shared/Slider';
 import { Button } from '../shared/Button';
 import { Section } from '../shared/Section';
 import { Toggle } from '../shared/Toggle';
+import { Progress } from '../shared/Progress';
 import { StatusMessage } from '../shared/StatusMessage';
 import { DEFAULT_VECTOR, resetVector, setVector } from '../../lib/document';
 import type { VectorMode } from '../../types/vector';
@@ -39,8 +40,10 @@ export const VectorizationPanel: React.FC = () => {
   const vectorResult = useRenderStore((s) => s.vectorResult);
   const autoTrace = useRenderStore((s) => s.autoTrace);
   const isVectorStale = useRenderStore((s) => s.isVectorStale);
+  const isTracing = useRenderStore((s) => s.isTracing);
   const setAutoTrace = useRenderStore((s) => s.setAutoTrace);
   const requestTrace = useRenderStore((s) => s.requestTrace);
+  const cancelTrace = useRenderStore((s) => s.cancelTrace);
   const clearVectors = useRenderStore((s) => s.clearVectors);
   const toggleVectorLayer = useRenderStore((s) => s.toggleVectorLayer);
   const removeVectorLayer = useRenderStore((s) => s.removeVectorLayer);
@@ -81,9 +84,10 @@ export const VectorizationPanel: React.FC = () => {
         <Button variant="primary" icon={<Play size={13} />} onClick={handleTraceNow}>
           {vectorResult ? (isVectorStale ? 'Re-Trace Vectors' : 'Update Vectors') : 'Trace Vectors'}
         </Button>
-        {isVectorStale && vectorResult && (
+        {isVectorStale && vectorResult && !isTracing && (
           <StatusMessage tone="warning">The settings changed since the last trace.</StatusMessage>
         )}
+        {isTracing && <Progress label="Tracing" fraction={null} onCancel={cancelTrace} />}
 
         <Toggle label="Auto-trace on change" checked={autoTrace} onChange={setAutoTrace} />
       </div>
