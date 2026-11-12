@@ -1,14 +1,12 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo, useId } from 'react';
 import { createPortal } from 'react-dom';
 import { Check, X } from 'lucide-react';
 import { useDocumentStore } from '../../store/documentStore';
 import { useRenderStore } from '../../store/renderStore';
 import { useViewStore } from '../../store/viewStore';
-import { previewBoxToSource } from '../../lib/crop';
+import { adjustCropBox, cropBoxForKey, previewBoxToSource, type CropAspect, type CropHandle } from '../../lib/crop';
 import { setCrop } from '../../lib/document';
 import styles from './CanvasCropOverlay.module.css';
-
-type AspectRatio = 'free' | '1:1' | '4:3' | '16:9' | '3:2';
 
 /**
  * The crop tool. The box is drawn on the preview as shown; applying it sets
@@ -44,7 +42,7 @@ export const CanvasCropOverlay: React.FC<{ barHost: HTMLElement | null }> = ({ b
     [setCanvasTool]
   );
 
-  const [ratio, setRatio] = useState<AspectRatio>('free');
+  const [ratio, setRatio] = useState<CropAspect>('free');
   const [cropBox, setCropBox] = useState<{ x: number; y: number; width: number; height: number }>({
     x: 0,
     y: 0,
@@ -52,7 +50,12 @@ export const CanvasCropOverlay: React.FC<{ barHost: HTMLElement | null }> = ({ b
     height: 600,
   });
 
-  const [dragHandle, setDragHandle] = useState<string | null>(null);
+  // The box, focused when the tool opens so the arrow keys work at once (#79).
+  const boxRef = useRef<HTMLDivElement>(null);
+  const [isBoxFocused, setIsBoxFocused] = useState(false);
+  const hintId = useId();
+
+  const [dragHandle, setDragHandle] = useState<CropHandle | null>(null);
   const dragStartRef = useRef<{
     /** The pointer dragging; another finger on the screen does not move the box. */
     pointerId: number;
@@ -75,6 +78,12 @@ export const CanvasCropOverlay: React.FC<{ barHost: HTMLElement | null }> = ({ b
     }
   }, [canvasTool, dims]);
 
+  // Focus the box when the tool opens, wherever the tool was opened from.
+  const isCropping = canvasTool === 'crop' && dims !== null;
+  useEffect(() => {
+    if (isCropping) boxRef.current?.focus({ preventScroll: true });
+  }, [isCropping]);
+
   // A pinch that began with a finger on the box ends the box's drag (#54).
   useEffect(() => {
     if (isPinching) setDragHandle(null);
@@ -96,7 +105,7 @@ export const CanvasCropOverlay: React.FC<{ barHost: HTMLElement | null }> = ({ b
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [canvasTool, cropBox, applyCanvasCrop, setCanvasTool]);
 
-  const handlePointerDownHandle = (e: React.PointerEvent, handle: string) => {
+  const handlePointerDownHandle = (e: React.PointerEvent, handle: CropHandle) => {
     e.stopPropagation();
     e.preventDefault();
     setDragHandle(handle);
@@ -113,55 +122,21 @@ export const CanvasCropOverlay: React.FC<{ barHost: HTMLElement | null }> = ({ b
     if (useViewStore.getState().isPinching) return;
     const dx = (e.clientX - dragStartRef.current.clientX) / zoom;
     const dy = (e.clientY - dragStartRef.current.clientY) / zoom;
-    const startBox = dragStartRef.current.box;
-
-    let newX = startBox.x;
-    let newY = startBox.y;
-    let newW = startBox.width;
-    let newH = startBox.height;
-
-    if (dragHandle === 'move') {
-      newX = Math.max(0, Math.min(dims.width - newW, startBox.x + dx));
-      newY = Math.max(0, Math.min(dims.height - newH, startBox.y + dy));
-    } else {
-      if (dragHandle.includes('e')) newW = Math.max(30, Math.min(dims.width - newX, startBox.width + dx));
-      if (dragHandle.includes('s')) newH = Math.max(30, Math.min(dims.height - newY, startBox.height + dy));
-      if (dragHandle.includes('w')) {
-        const potentialW = startBox.width - dx;
-        if (potentialW >= 30) {
-          newX = Math.max(0, startBox.x + dx);
-          newW = startBox.width + (startBox.x - newX);
-        }
-      }
-      if (dragHandle.includes('n')) {
-        const potentialH = startBox.height - dy;
-        if (potentialH >= 30) {
-          newY = Math.max(0, startBox.y + dy);
-          newH = startBox.height + (startBox.y - newY);
-        }
-      }
-
-      // Constrain Aspect Ratio if set
-      if (ratio === '1:1') {
-        const side = Math.min(newW, newH);
-        newW = side;
-        newH = side;
-      } else if (ratio === '4:3') {
-        newH = Math.round(newW * (3 / 4));
-      } else if (ratio === '16:9') {
-        newH = Math.round(newW * (9 / 16));
-      } else if (ratio === '3:2') {
-        newH = Math.round(newW * (2 / 3));
-      }
-    }
-
-    setCropBox({
-      x: Math.round(newX),
-      y: Math.round(newY),
-      width: Math.round(newW),
-      height: Math.round(newH),
-    });
+    setCropBox(adjustCropBox(dragStartRef.current.box, dragHandle, dx, dy, dims, ratio));
   }, [dragHandle, dims, zoom, ratio]);
+
+  // The box is focusable: the arrow keys move it and Shift+arrows size it,
+  // so a crop can be drawn without a pointer (#79). Enter and Escape are
+  // handled for the whole tool above.
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (!dims || e.ctrlKey || e.metaKey) return;
+    const next = cropBoxForKey(cropBox, e, dims, ratio);
+    if (!next) return;
+    e.preventDefault();
+    // The canvas pans on the arrow keys when it has focus itself; the box's keys are the box's.
+    e.stopPropagation();
+    setCropBox(next);
+  };
 
   const handlePointerUp = useCallback((e: PointerEvent) => {
     if (e.pointerId !== dragStartRef.current.pointerId) return;
@@ -196,7 +171,7 @@ export const CanvasCropOverlay: React.FC<{ barHost: HTMLElement | null }> = ({ b
         className={styles.ratioSelect}
         aria-label="Aspect ratio"
         value={ratio}
-        onChange={(e) => setRatio(e.target.value as AspectRatio)}
+        onChange={(e) => setRatio(e.target.value as CropAspect)}
       >
         <option value="free">Freeform</option>
         <option value="1:1">1:1 Square</option>
@@ -207,6 +182,11 @@ export const CanvasCropOverlay: React.FC<{ barHost: HTMLElement | null }> = ({ b
 
       <span className={styles.cropDimLabel}>
         {fileW}×{fileH}px ({physical})
+      </span>
+
+      {/* While the box has focus, its keys are shown where the size changes. */}
+      <span id={hintId} className={isBoxFocused ? styles.keyHint : styles.visuallyHidden}>
+        Arrows move · Shift+Arrows size · Alt: 1 px · Enter applies
       </span>
 
       <button className={styles.btnCancel} onClick={() => setCanvasTool('pan')} title="Cancel Crop (Esc)">
@@ -228,7 +208,15 @@ export const CanvasCropOverlay: React.FC<{ barHost: HTMLElement | null }> = ({ b
 
       {/* Active Crop Box with Rule-of-Thirds Grid */}
       <div
+        ref={boxRef}
         className={styles.cropBox}
+        tabIndex={0}
+        role="group"
+        aria-label="Crop box"
+        aria-describedby={hintId}
+        onKeyDown={handleKeyDown}
+        onFocus={() => setIsBoxFocused(true)}
+        onBlur={() => setIsBoxFocused(false)}
         style={{
           left: cropBox.x,
           top: cropBox.y,

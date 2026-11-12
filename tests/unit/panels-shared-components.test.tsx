@@ -682,8 +682,9 @@ describe('inline styles (#55)', () => {
       'src/components/canvas/PreviewCanvas.tsx <div> onPointerDown': '#81; the split divider also has arrow keys',
       // Orbiting the 3D view: no keyboard path yet (#81).
       'src/components/canvas/DepthViewer3D.tsx <div> onPointerDown': '#81',
-      // Moving and sizing the crop box: no keyboard path yet (#79). Enter applies, Escape cancels.
-      'src/components/canvas/CanvasCropOverlay.tsx <div> onPointerDown': '#79',
+      // Moving and sizing the crop box: the box takes focus; arrows move it and
+      // Shift+arrows size it (#79). Enter applies, Escape cancels.
+      'src/components/canvas/CanvasCropOverlay.tsx <div> onPointerDown': 'arrow keys on the focused crop box',
     };
     const found = new Set<string>();
     for (const file of MIGRATED) {
