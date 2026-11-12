@@ -1,5 +1,5 @@
-import React, { useEffect, useReducer, useState } from 'react';
-import { Grid, X, Check } from 'lucide-react';
+import React, { useEffect, useId, useReducer, useState } from 'react';
+import { Grid, Check } from 'lucide-react';
 import { confirmReplaceInBrowser } from '../../lib/open-image';
 import { useDocumentStore, hasUnsavedEdits } from '../../store/documentStore';
 import { previewDpi, useRenderStore } from '../../store/renderStore';
@@ -14,19 +14,38 @@ import {
   gridFormReducer,
   type GridField,
 } from '../../lib/test-grid-form';
+import { Button } from '../shared/Button';
+import { Dialog } from '../shared/Dialog';
+import { Select, type SelectOption } from '../shared/Select';
+import { StatusMessage } from '../shared/StatusMessage';
 import styles from './MaterialTestGridDialog.module.css';
+
+type GridType = 'grayscale-step' | 'power-matrix';
+type TargetMode = 'raster' | 'vector';
+
+const TYPE_OPTIONS: SelectOption<GridType>[] = [
+  { value: 'power-matrix', label: 'Power vs. Speed Matrix (Laser / CNC Substrate Calibration)' },
+  { value: 'grayscale-step', label: 'Grayscale Step Wedge (0% to 100% Black Density)' },
+];
+
+const TARGET_OPTIONS: SelectOption<TargetMode>[] = [
+  { value: 'raster', label: 'Open as Image, Replacing the Current One (Grayscale Burn Levels)' },
+  { value: 'vector', label: 'Vector Cut Grid Overlay (Red #FF0000 Paths)' },
+];
 
 interface Props {
   isOpen: boolean;
   onClose: () => void;
 }
 
+/** Generates a material test grid, opened as the image or drawn over it as vectors. */
 export const MaterialTestGridDialog: React.FC<Props> = ({ isOpen, onClose }) => {
-  const [type, setType] = useState<'grayscale-step' | 'power-matrix'>('power-matrix');
+  const [type, setType] = useState<GridType>('power-matrix');
   // Typed text is kept until it is committed (blur, Enter or Generate), so
   // a clamp cannot replace the first digit before the second is typed.
   const [form, dispatch] = useReducer(gridFormReducer, INITIAL_GRID_FORM);
-  const [targetMode, setTargetMode] = useState<'raster' | 'vector'>('raster');
+  const [targetMode, setTargetMode] = useState<TargetMode>('raster');
+  const idPrefix = useId();
   const [error, setError] = useState<string | null>(null);
 
   const doc = useDocumentStore((s) => s.doc);
@@ -45,6 +64,7 @@ export const MaterialTestGridDialog: React.FC<Props> = ({ isOpen, onClose }) => 
 
   /** Props for one of the dialog's number fields. */
   const numberField = (field: GridField, step: number) => ({
+    id: `${idPrefix}-${field}`,
     type: 'number',
     className: styles.input,
     value: fieldText(form, field),
@@ -99,90 +119,83 @@ export const MaterialTestGridDialog: React.FC<Props> = ({ isOpen, onClose }) => 
   };
 
   return (
-    <div className={styles.overlay} onClick={onClose}>
-      <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
-        <div className={styles.header}>
-          <div className={styles.title}>
-            <Grid size={16} color="var(--text-2)" />
-            <span>Generate Material Test Grid Matrix</span>
-          </div>
-          <button className={styles.closeBtn} onClick={onClose}>
-            <X size={16} />
-          </button>
-        </div>
-
-        <div className={styles.body}>
-          <div className={styles.formGroup}>
-            <label className={styles.label}>Grid Test Pattern</label>
-            <select
-              className={styles.select}
-              value={type}
-              onChange={(e) => {
-                setError(null);
-                setType(e.target.value as typeof type);
-              }}
-            >
-              <option value="power-matrix">Power vs. Speed Matrix (Laser / CNC Substrate Calibration)</option>
-              <option value="grayscale-step">Grayscale Step Wedge (0% to 100% Black Density)</option>
-            </select>
-          </div>
-
-          <div className={styles.row}>
-            <div className={styles.formGroup}>
-              <label className={styles.label}>Rows (Power / Steps)</label>
-              <input {...numberField('rows', 1)} />
-            </div>
-            <div className={styles.formGroup}>
-              <label className={styles.label}>Columns (Speed / Steps)</label>
-              <input {...numberField('cols', 1)} />
-            </div>
-          </div>
-
-          <div className={styles.row}>
-            <div className={styles.formGroup}>
-              <label className={styles.label}>Box Size (mm)</label>
-              <input {...numberField('boxSizeMm', 0.5)} />
-            </div>
-            <div className={styles.formGroup}>
-              <label className={styles.label}>Spacing Gap (mm)</label>
-              <input {...numberField('gapMm', 0.5)} />
-            </div>
-          </div>
-
-          {targetMode === 'raster' && (
-            <div className={styles.formGroup}>
-              <label className={styles.label}>Grid Resolution (DPI)</label>
-              <input {...numberField('dpi', 1)} />
-            </div>
-          )}
-
-          <div className={styles.formGroup}>
-            <label className={styles.label}>Output Format</label>
-            <select
-              className={styles.select}
-              value={targetMode}
-              onChange={(e) => {
-                setError(null);
-                setTargetMode(e.target.value as typeof targetMode);
-              }}
-            >
-              <option value="raster">Open as Image, Replacing the Current One (Grayscale Burn Levels)</option>
-              <option value="vector">Vector Cut Grid Overlay (Red #FF0000 Paths)</option>
-            </select>
-          </div>
-        </div>
-
-        {error && <div className={styles.error}>{error}</div>}
-        <div className={styles.footer}>
-          <button className={styles.btnSecondary} onClick={onClose}>
+    <Dialog
+      open
+      onClose={onClose}
+      icon={<Grid size={16} />}
+      title="Generate Material Test Grid Matrix"
+      footer={
+        <>
+          {!canGenerate && <span className={styles.footerNote}>Set the size to overlay a vector grid.</span>}
+          <Button compact onClick={onClose}>
             Cancel
-          </button>
-          {!canGenerate && <span className={styles.label}>Set the size to overlay a vector grid.</span>}
-          <button className={styles.btnPrimary} onClick={handleGenerate} disabled={!canGenerate}>
-            <Check size={14} /> Generate Calibration Grid
-          </button>
+          </Button>
+          <Button variant="primary" compact icon={<Check size={14} />} onClick={handleGenerate} disabled={!canGenerate}>
+            Generate Calibration Grid
+          </Button>
+        </>
+      }
+    >
+      <Select
+        label="Grid Test Pattern"
+        value={type}
+        options={TYPE_OPTIONS}
+        onChange={(next) => {
+          setError(null);
+          setType(next);
+        }}
+      />
+
+      <div className={styles.row}>
+        <div className={styles.formGroup}>
+          <label className={styles.label} htmlFor={`${idPrefix}-rows`}>
+            Rows (Power / Steps)
+          </label>
+          <input {...numberField('rows', 1)} />
+        </div>
+        <div className={styles.formGroup}>
+          <label className={styles.label} htmlFor={`${idPrefix}-cols`}>
+            Columns (Speed / Steps)
+          </label>
+          <input {...numberField('cols', 1)} />
         </div>
       </div>
-    </div>
+
+      <div className={styles.row}>
+        <div className={styles.formGroup}>
+          <label className={styles.label} htmlFor={`${idPrefix}-boxSizeMm`}>
+            Box Size (mm)
+          </label>
+          <input {...numberField('boxSizeMm', 0.5)} />
+        </div>
+        <div className={styles.formGroup}>
+          <label className={styles.label} htmlFor={`${idPrefix}-gapMm`}>
+            Spacing Gap (mm)
+          </label>
+          <input {...numberField('gapMm', 0.5)} />
+        </div>
+      </div>
+
+      {targetMode === 'raster' && (
+        <div className={styles.formGroup}>
+          <label className={styles.label} htmlFor={`${idPrefix}-dpi`}>
+            Grid Resolution (DPI)
+          </label>
+          <input {...numberField('dpi', 1)} />
+        </div>
+      )}
+
+      <Select
+        label="Output Format"
+        value={targetMode}
+        options={TARGET_OPTIONS}
+        onChange={(next) => {
+          setError(null);
+          setTargetMode(next);
+        }}
+      />
+
+      {error && <StatusMessage tone="error">{error}</StatusMessage>}
+    </Dialog>
   );
 };

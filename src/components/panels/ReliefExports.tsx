@@ -7,6 +7,8 @@ import { getPipeline } from '../../lib/pipeline-client';
 import { encodeBmpGrayscale8, encodeBmpRgb24 } from '../../lib/bmp-encoder';
 import { encodePngGrayscale16 } from '../../lib/png-encoder';
 import { renderReliefPreview } from '../../lib/depth-shader';
+import { Button } from '../shared/Button';
+import { Section } from '../shared/Section';
 import styles from './Panels.module.css';
 
 /**
@@ -145,71 +147,37 @@ export const ReliefExports: React.FC = () => {
   };
 
   return (
-    <div className={styles.section}>
-      <div className={styles.sectionTitle}>Manufacturing & Render Output</div>
+    <Section title="Manufacturing & Render Output">
       {!sizeSet && <div className={styles.controlNote}>Set the size to export.</div>}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        <button
-          className={styles.primaryActionBtn}
+      <div className={styles.buttonStack}>
+        <Button
+          variant="primary"
+          icon={exportTypeDone === 'png16' ? <CheckCircle size={16} /> : <Layers size={16} />}
           onClick={handleExport16BitPng}
           disabled={isExporting || !previewBuffer || !sizeSet}
           title="Lossless 16-Bit (65,536 depth levels) for Vectric, Carbide Create Pro, LightBurn"
         >
-          {exportTypeDone === 'png16' ? (
-            <>
-              <CheckCircle size={16} color="var(--on-accent)" /> 16-Bit Heightmap Exported (.PNG)
-            </>
-          ) : (
-            <>
-              <Layers size={16} /> Export 16-Bit CNC Heightmap (.PNG)
-            </>
-          )}
-        </button>
+          {exportTypeDone === 'png16' ? '16-Bit Heightmap Exported (.PNG)' : 'Export 16-Bit CNC Heightmap (.PNG)'}
+        </Button>
 
-        <button
-          className={styles.primaryActionBtn}
-          style={{
-            backgroundColor: 'var(--surface-hover)',
-            color: 'var(--text)',
-            border: '1px solid var(--border)',
-          }}
+        <Button
+          icon={exportTypeDone === 'cnc' ? <CheckCircle size={16} /> : <Download size={16} />}
           onClick={handleExportCncBmp}
           disabled={isExporting || !previewBuffer || !sizeSet}
           title="Standard 8-Bit (256 depth levels) Windows Grayscale BMP"
         >
-          {exportTypeDone === 'cnc' ? (
-            <>
-              <CheckCircle size={16} color="var(--success)" /> 8-Bit CNC Heightmap Exported (.BMP)
-            </>
-          ) : (
-            <>
-              <Download size={16} /> Export 8-Bit CNC Heightmap (.BMP)
-            </>
-          )}
-        </button>
+          {exportTypeDone === 'cnc' ? '8-Bit CNC Heightmap Exported (.BMP)' : 'Export 8-Bit CNC Heightmap (.BMP)'}
+        </Button>
 
-        <button
-          className={styles.primaryActionBtn}
-          style={{
-            backgroundColor: 'transparent',
-            color: 'var(--text-2)',
-            border: '1px dashed var(--border)',
-          }}
+        <Button
+          icon={exportTypeDone === 'shaded' ? <CheckCircle size={16} /> : <ImageIcon size={16} />}
           onClick={handleExportShadedBmp}
           disabled={isExporting || !previewBuffer || !sizeSet}
           title="24-Bit Color Presentation Mockup Render (with substrate lighting & shadows)"
         >
-          {exportTypeDone === 'shaded' ? (
-            <>
-              <CheckCircle size={16} color="var(--success)" /> Presentation Render Exported (.BMP)
-            </>
-          ) : (
-            <>
-              <ImageIcon size={16} /> Export 3D Presentation Render (.BMP)
-            </>
-          )}
-        </button>
+          {exportTypeDone === 'shaded' ? 'Presentation Render Exported (.BMP)' : 'Export 3D Presentation Render (.BMP)'}
+        </Button>
       </div>
-    </div>
+    </Section>
   );
 };

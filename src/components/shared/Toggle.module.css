@@ -1,10 +1,17 @@
 /* Toggle (#55) */
 
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: var(--space-3);
+}
+
 .row {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: var(--space-3);
+  gap: var(--space-2);
   cursor: pointer;
 }
 
@@ -15,6 +22,7 @@
 }
 
 .checkbox {
+  flex-shrink: 0;
   width: 16px;
   height: 16px;
   accent-color: var(--text);
@@ -28,5 +36,14 @@
 
 .disabled {
   opacity: 0.5;
+}
+
+.disabled .row,
+.disabled .checkbox {
   cursor: not-allowed;
+}
+
+.note {
+  font-size: 10px;
+  color: var(--text-3);
 }

@@ -13,7 +13,7 @@ interface SliderProps {
   unit?: string;
   /** Called with each new value: every step of a drag, or once when a typed value is committed. */
   onChange: (value: number) => void;
-  /** Double-clicking the label calls this. */
+  /** Double-clicking the label, or pressing Delete or Backspace on the track, calls this. */
   onReset?: () => void;
   /** A pointer drag on the track starts. */
   onDragStart?: () => void;
@@ -26,6 +26,9 @@ interface SliderProps {
   note?: string;
 }
 
+/** Keys that reset a slider from its track. A range input does nothing with them itself. */
+const RESET_KEYS = new Set(['Delete', 'Backspace']);
+
 function formatted(value: number, step: number): string {
   return step < 1 ? value.toFixed(2) : String(Math.round(value));
 }
@@ -33,7 +36,8 @@ function formatted(value: number, step: number): string {
 /**
  * A labelled range slider with a number field. The number field keeps what
  * is typed and commits it once, on Enter or when it loses focus; Escape
- * abandons it.
+ * abandons it. A slider with a default resets to it on a double-click of its
+ * label or on Delete or Backspace on its track, so the keyboard can reset it too.
  */
 export const Slider: React.FC<SliderProps> = ({
   label,
@@ -75,6 +79,8 @@ export const Slider: React.FC<SliderProps> = ({
     }
   };
 
+  const canReset = onReset !== undefined && !disabled;
+
   // Fill of the track up to the thumb; computed per value.
   const percentage = Math.max(0, Math.min(100, ((value - min) / (max - min)) * 100));
 
@@ -83,9 +89,9 @@ export const Slider: React.FC<SliderProps> = ({
       <div className={styles.header}>
         <label
           htmlFor={rangeId}
-          className={`${styles.label} ${onReset && !disabled ? styles.resettable : ''}`}
-          onDoubleClick={disabled ? undefined : onReset}
-          title={onReset && !disabled ? 'Double-click to reset' : undefined}
+          className={`${styles.label} ${canReset ? styles.resettable : ''}`}
+          onDoubleClick={canReset ? onReset : undefined}
+          title={canReset ? 'Double-click, or press Delete on the slider, to reset' : undefined}
         >
           {label}
         </label>
@@ -120,11 +126,17 @@ export const Slider: React.FC<SliderProps> = ({
           value={value}
           disabled={disabled}
           aria-valuetext={unit ? `${formatted(value, step)} ${unit}` : undefined}
+          aria-keyshortcuts={canReset ? 'Delete' : undefined}
           onPointerDown={onDragStart}
           onPointerUp={onDragEnd}
           onPointerCancel={onDragEnd}
           onKeyDown={(e) => {
             if (isValueKey(e.key)) onKeyboardAdjust?.();
+            else if (canReset && RESET_KEYS.has(e.key)) {
+              e.preventDefault();
+              onKeyboardAdjust?.();
+              onReset?.();
+            }
           }}
           onChange={(e) => onChange(parseFloat(e.target.value))}
           style={{
@@ -141,7 +153,7 @@ interface DocumentSliderProps
   extends Omit<SliderProps, 'onChange' | 'onReset' | 'onDragStart' | 'onDragEnd' | 'onKeyboardAdjust'> {
   /** The change to the document for a value. */
   update: (value: number) => DocumentUpdate;
-  /** The change double-clicking the label makes. */
+  /** The change a reset makes (double-clicking the label, or Delete on the track). */
   reset?: DocumentUpdate;
 }
 

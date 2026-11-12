@@ -209,6 +209,7 @@ export const CanvasCropOverlay: React.FC = () => {
         <div className={styles.cropActionBar} onMouseDown={(e) => e.stopPropagation()}>
           <select
             className={styles.ratioSelect}
+            aria-label="Aspect ratio"
             value={ratio}
             onChange={(e) => setRatio(e.target.value as AspectRatio)}
           >
@@ -224,7 +225,7 @@ export const CanvasCropOverlay: React.FC = () => {
           </span>
 
           <button className={styles.btnCancel} onClick={() => setCanvasTool('pan')} title="Cancel Crop (Esc)">
-            <X size={12} style={{ verticalAlign: 'middle' }} /> Cancel
+            <X size={12} /> Cancel
           </button>
           <button className={styles.btnApply} onClick={() => applyCanvasCrop(cropBox)} title="Apply Crop (Enter)">
             <Check size={12} /> Apply Crop

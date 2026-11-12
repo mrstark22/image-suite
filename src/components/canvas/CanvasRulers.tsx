@@ -234,13 +234,17 @@ export const CanvasRulers: React.FC = () => {
 
   return (
     <>
-      <div
+      {/* A native button, so the unit can be changed from the keyboard too (#55). */}
+      <button
+        type="button"
         className={styles.rulerCorner}
         onClick={cycleUnit}
+        disabled={pxPerMm === null}
+        aria-label={`Ruler unit: ${unit}. Change to ${unit === 'mm' ? 'in' : unit === 'in' ? 'px' : 'mm'}`}
         title={pxPerMm === null ? 'Set the size to measure in mm or inches' : 'Click to cycle units (mm, in, px)'}
       >
         {unit}
-      </div>
+      </button>
       <div className={styles.topRuler}>
         <canvas ref={topCanvasRef} className={styles.rulerCanvas} />
       </div>

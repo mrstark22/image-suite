@@ -83,6 +83,9 @@
 }
 
 .btnCancel {
+  display: flex;
+  align-items: center;
+  gap: 4px;
   background: transparent;
   border: 1px solid var(--control-border);
   color: var(--text);

@@ -1,12 +1,10 @@
-import React, { useState } from 'react';
+import React, { useId, useState } from 'react';
 import {
   Sun,
   Sliders,
   Sparkles,
   Palette,
   Zap,
-  ChevronDown,
-  ChevronRight,
   RotateCcw,
   Flame,
   Wand2,
@@ -15,6 +13,10 @@ import { useDocumentStore } from '../../store/documentStore';
 import { useRenderStore } from '../../store/renderStore';
 import { DocumentSlider } from '../shared/Slider';
 import { Histogram } from '../shared/Histogram';
+import { Button } from '../shared/Button';
+import { Section } from '../shared/Section';
+import { Toggle } from '../shared/Toggle';
+import type { DocumentUpdate } from '../../types/document';
 import type { GrayscaleMode } from '../../types/image';
 import {
   DEFAULT_DETAIL,
@@ -52,6 +54,8 @@ export const AdjustmentsPanel: React.FC = () => {
     color: false,
     filters: false,
   });
+
+  const grayscaleLabelId = useId();
 
   const toggleSection = (section: string) => {
     setOpenSections((prev) => ({ ...prev, [section]: !prev[section] }));
@@ -105,17 +109,13 @@ export const AdjustmentsPanel: React.FC = () => {
       {/* Header */}
       <div className={styles.panelHeader}>
         <span className={styles.panelTitle}>Tonal & Enhancements</span>
-        <button
-          className={styles.resetButton}
-          onClick={() => edit(resetAdjustments)}
-          title="Reset every tone, color and detail adjustment"
-        >
+        <Button variant="link" onClick={() => edit(resetAdjustments)} title="Reset every tone, color and detail adjustment">
           Reset All
-        </button>
+        </Button>
       </div>
 
       {/* Live RGB/Luma Histogram */}
-      <div style={{ padding: '12px 16px 0 16px' }}>
+      <div className={styles.histogramBox}>
         <Histogram />
       </div>
 
@@ -124,6 +124,7 @@ export const AdjustmentsPanel: React.FC = () => {
         <div className={styles.presetsTitle}>Quick Tonal Presets</div>
         <div className={styles.presetChips}>
           <button
+            type="button"
             className={styles.presetChip}
             onClick={() => source && edit(autoLevels(new Uint8Array(source.buffer)))}
             disabled={!source}
@@ -132,6 +133,7 @@ export const AdjustmentsPanel: React.FC = () => {
             <Wand2 size={12} /> Auto Levels
           </button>
           <button
+            type="button"
             className={styles.presetChip}
             onClick={() => applyPreset('laser-prep')}
             title="Crisp contrast and texture pop optimized for laser engraving"
@@ -139,6 +141,7 @@ export const AdjustmentsPanel: React.FC = () => {
             <Flame size={12} /> Laser Prep
           </button>
           <button
+            type="button"
             className={styles.presetChip}
             onClick={() => applyPreset('shadow-lift')}
             title="Recover dark regions without washing out highlights"
@@ -146,6 +149,7 @@ export const AdjustmentsPanel: React.FC = () => {
             <Sun size={12} /> Shadow Lift
           </button>
           <button
+            type="button"
             className={styles.presetChip}
             onClick={() => applyPreset('high-contrast')}
             title="Punchy dynamic range for clean binary dithering"
@@ -153,6 +157,7 @@ export const AdjustmentsPanel: React.FC = () => {
             <Sparkles size={12} /> Punchy
           </button>
           <button
+            type="button"
             className={styles.presetChip}
             onClick={() => applyPreset('slate-invert')}
             title="Negative inverted tone for slate & anodized metal"
@@ -163,465 +168,314 @@ export const AdjustmentsPanel: React.FC = () => {
       </div>
 
       {/* Accordion 1: Tone & Exposure */}
-      <div className={styles.accordionSection}>
-        <div
-          className={styles.accordionHeader}
-          role="button"
-          tabIndex={0}
-          onClick={() => toggleSection('tone')}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' || e.key === ' ') {
-              e.preventDefault();
-              toggleSection('tone');
-            }
-          }}
-        >
-          <div className={styles.accordionLeft}>
-            <span className={styles.accordionIcon}><Sun size={15} /></span>
-            <span className={styles.accordionTitle}>Basic Tone & Exposure</span>
-            {isToneActive && <span className={styles.activeDot} title="Adjusted" />}
-          </div>
-          <div className={styles.accordionRight}>
-            {isToneActive && (
-              <button
-                className={styles.resetButton}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  edit(SECTION_RESETS.tone);
-                }}
-                title="Reset Tone"
-              >
-                <RotateCcw size={12} />
-              </button>
-            )}
-            {openSections.tone ? <ChevronDown size={15} color="var(--text-3)" /> : <ChevronRight size={15} color="var(--text-3)" />}
-          </div>
-        </div>
-
-        {openSections.tone && (
-          <div className={styles.accordionContent}>
-            <DocumentSlider
-              label="Exposure"
-              value={tonal.exposure ?? 0}
-              min={-3.0}
-              max={3.0}
-              step={0.1}
-              unit=" EV"
-              update={(v) => setTonal({ exposure: v })}
-              reset={setTonal({ exposure: 0 })}
-            />
-            <DocumentSlider
-              label="Brightness"
-              value={tonal.brightness}
-              min={-100}
-              max={100}
-              update={(v) => setTonal({ brightness: v })}
-              reset={setTonal({ brightness: 0 })}
-            />
-            <DocumentSlider
-              label="Contrast"
-              value={tonal.contrast}
-              min={-100}
-              max={100}
-              update={(v) => setTonal({ contrast: v })}
-              reset={setTonal({ contrast: 0 })}
-            />
-            <DocumentSlider
-              label="Midtones"
-              value={tonal.midtones ?? 0}
-              min={-100}
-              max={100}
-              update={(v) => setTonal({ midtones: v })}
-              reset={setTonal({ midtones: 0 })}
-            />
-            <DocumentSlider
-              label="Highlights"
-              value={tonal.highlights ?? 0}
-              min={-100}
-              max={100}
-              update={(v) => setTonal({ highlights: v })}
-              reset={setTonal({ highlights: 0 })}
-            />
-            <DocumentSlider
-              label="Shadows"
-              value={tonal.shadows ?? 0}
-              min={-100}
-              max={100}
-              update={(v) => setTonal({ shadows: v })}
-              reset={setTonal({ shadows: 0 })}
-            />
-            <DocumentSlider
-              label="Whites"
-              value={tonal.whites ?? 0}
-              min={-100}
-              max={100}
-              update={(v) => setTonal({ whites: v })}
-              reset={setTonal({ whites: 0 })}
-            />
-            <DocumentSlider
-              label="Blacks"
-              value={tonal.blacks ?? 0}
-              min={-100}
-              max={100}
-              update={(v) => setTonal({ blacks: v })}
-              reset={setTonal({ blacks: 0 })}
-            />
-          </div>
-        )}
-      </div>
+      <Section
+        title={<AdjustedTitle title="Basic Tone & Exposure" adjusted={isToneActive} />}
+        icon={<Sun size={15} />}
+        collapse={{ open: openSections.tone, onToggle: () => toggleSection('tone') }}
+        actions={<SectionReset adjusted={isToneActive} label="Reset Tone" update={SECTION_RESETS.tone} />}
+      >
+        <DocumentSlider
+          label="Exposure"
+          value={tonal.exposure ?? 0}
+          min={-3.0}
+          max={3.0}
+          step={0.1}
+          unit=" EV"
+          update={(v) => setTonal({ exposure: v })}
+          reset={setTonal({ exposure: 0 })}
+        />
+        <DocumentSlider
+          label="Brightness"
+          value={tonal.brightness}
+          min={-100}
+          max={100}
+          update={(v) => setTonal({ brightness: v })}
+          reset={setTonal({ brightness: 0 })}
+        />
+        <DocumentSlider
+          label="Contrast"
+          value={tonal.contrast}
+          min={-100}
+          max={100}
+          update={(v) => setTonal({ contrast: v })}
+          reset={setTonal({ contrast: 0 })}
+        />
+        <DocumentSlider
+          label="Midtones"
+          value={tonal.midtones ?? 0}
+          min={-100}
+          max={100}
+          update={(v) => setTonal({ midtones: v })}
+          reset={setTonal({ midtones: 0 })}
+        />
+        <DocumentSlider
+          label="Highlights"
+          value={tonal.highlights ?? 0}
+          min={-100}
+          max={100}
+          update={(v) => setTonal({ highlights: v })}
+          reset={setTonal({ highlights: 0 })}
+        />
+        <DocumentSlider
+          label="Shadows"
+          value={tonal.shadows ?? 0}
+          min={-100}
+          max={100}
+          update={(v) => setTonal({ shadows: v })}
+          reset={setTonal({ shadows: 0 })}
+        />
+        <DocumentSlider
+          label="Whites"
+          value={tonal.whites ?? 0}
+          min={-100}
+          max={100}
+          update={(v) => setTonal({ whites: v })}
+          reset={setTonal({ whites: 0 })}
+        />
+        <DocumentSlider
+          label="Blacks"
+          value={tonal.blacks ?? 0}
+          min={-100}
+          max={100}
+          update={(v) => setTonal({ blacks: v })}
+          reset={setTonal({ blacks: 0 })}
+        />
+      </Section>
 
       {/* Accordion 2: Levels & Histogram Clipping */}
-      <div className={styles.accordionSection}>
-        <div
-          className={styles.accordionHeader}
-          role="button"
-          tabIndex={0}
-          onClick={() => toggleSection('levels')}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' || e.key === ' ') {
-              e.preventDefault();
-              toggleSection('levels');
-            }
-          }}
-        >
-          <div className={styles.accordionLeft}>
-            <span className={styles.accordionIcon}><Sliders size={15} /></span>
-            <span className={styles.accordionTitle}>Levels & Gamma</span>
-            {isLevelsActive && <span className={styles.activeDot} title="Adjusted" />}
-          </div>
-          <div className={styles.accordionRight}>
-            {isLevelsActive && (
-              <button
-                className={styles.resetButton}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  edit(SECTION_RESETS.levels);
-                }}
-                title="Reset Levels"
-              >
-                <RotateCcw size={12} />
-              </button>
-            )}
-            {openSections.levels ? <ChevronDown size={15} color="var(--text-3)" /> : <ChevronRight size={15} color="var(--text-3)" />}
-          </div>
-        </div>
-
-        {openSections.levels && (
-          <div className={styles.accordionContent}>
-            <DocumentSlider
-              label="Black Point"
-              value={tonal.blackPoint}
-              min={0}
-              max={255}
-              update={(v) => setTonal({ blackPoint: v })}
-              reset={setTonal({ blackPoint: 0 })}
-            />
-            <DocumentSlider
-              label="Gamma Curve"
-              value={tonal.gamma}
-              min={0.2}
-              max={3.0}
-              step={0.05}
-              update={(v) => setTonal({ gamma: v })}
-              reset={setTonal({ gamma: 1.0 })}
-            />
-            <DocumentSlider
-              label="White Point"
-              value={tonal.whitePoint}
-              min={0}
-              max={255}
-              update={(v) => setTonal({ whitePoint: v })}
-              reset={setTonal({ whitePoint: 255 })}
-            />
-          </div>
-        )}
-      </div>
+      <Section
+        title={<AdjustedTitle title="Levels & Gamma" adjusted={isLevelsActive} />}
+        icon={<Sliders size={15} />}
+        collapse={{ open: openSections.levels, onToggle: () => toggleSection('levels') }}
+        actions={<SectionReset adjusted={isLevelsActive} label="Reset Levels" update={SECTION_RESETS.levels} />}
+      >
+        <DocumentSlider
+          label="Black Point"
+          value={tonal.blackPoint}
+          min={0}
+          max={255}
+          update={(v) => setTonal({ blackPoint: v })}
+          reset={setTonal({ blackPoint: 0 })}
+        />
+        <DocumentSlider
+          label="Gamma Curve"
+          value={tonal.gamma}
+          min={0.2}
+          max={3.0}
+          step={0.05}
+          update={(v) => setTonal({ gamma: v })}
+          reset={setTonal({ gamma: 1.0 })}
+        />
+        <DocumentSlider
+          label="White Point"
+          value={tonal.whitePoint}
+          min={0}
+          max={255}
+          update={(v) => setTonal({ whitePoint: v })}
+          reset={setTonal({ whitePoint: 255 })}
+        />
+      </Section>
 
       {/* Accordion 3: Clarity & Texture */}
-      <div className={styles.accordionSection}>
-        <div
-          className={styles.accordionHeader}
-          role="button"
-          tabIndex={0}
-          onClick={() => toggleSection('detail')}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' || e.key === ' ') {
-              e.preventDefault();
-              toggleSection('detail');
-            }
-          }}
-        >
-          <div className={styles.accordionLeft}>
-            <span className={styles.accordionIcon}><Sparkles size={15} /></span>
-            <span className={styles.accordionTitle}>Clarity & Texture</span>
-            {isDetailActive && <span className={styles.activeDot} title="Adjusted" />}
-          </div>
-          <div className={styles.accordionRight}>
-            {isDetailActive && (
-              <button
-                className={styles.resetButton}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  edit(SECTION_RESETS.detail);
-                }}
-                title="Reset Clarity"
-              >
-                <RotateCcw size={12} />
-              </button>
-            )}
-            {openSections.detail ? <ChevronDown size={15} color="var(--text-3)" /> : <ChevronRight size={15} color="var(--text-3)" />}
-          </div>
-        </div>
-
-        {openSections.detail && (
-          <div className={styles.accordionContent}>
-            <DocumentSlider
-              label="Clarity (Midtone Contrast)"
-              value={tonal.clarity ?? 0}
-              min={-100}
-              max={100}
-              update={(v) => setTonal({ clarity: v })}
-              reset={setTonal({ clarity: 0 })}
-            />
-            <DocumentSlider
-              label="Edge Sharpening (Unsharp Mask)"
-              value={detail.unsharpStrength}
-              min={0}
-              max={200}
-              step={5}
-              unit="%"
-              update={(v) => setDetail({ unsharpStrength: v })}
-              reset={setDetail({ unsharpStrength: 0 })}
-              disabled={!sizeSet}
-              note={sizeSet ? undefined : SET_SIZE_NOTE}
-            />
-            {detail.unsharpStrength > 0 && (
-              <DocumentSlider
-                label="Sharpen Radius"
-                value={detail.unsharpRadiusMm}
-                min={0.04}
-                max={0.5}
-                step={0.01}
-                unit="mm"
-                update={(v) => setDetail({ unsharpRadiusMm: v })}
-                reset={setDetail({ unsharpRadiusMm: DEFAULT_DETAIL.unsharpRadiusMm })}
-                disabled={!sizeSet}
-              />
-            )}
-          </div>
+      <Section
+        title={<AdjustedTitle title="Clarity & Texture" adjusted={isDetailActive} />}
+        icon={<Sparkles size={15} />}
+        collapse={{ open: openSections.detail, onToggle: () => toggleSection('detail') }}
+        actions={<SectionReset adjusted={isDetailActive} label="Reset Clarity" update={SECTION_RESETS.detail} />}
+      >
+        <DocumentSlider
+          label="Clarity (Midtone Contrast)"
+          value={tonal.clarity ?? 0}
+          min={-100}
+          max={100}
+          update={(v) => setTonal({ clarity: v })}
+          reset={setTonal({ clarity: 0 })}
+        />
+        <DocumentSlider
+          label="Edge Sharpening (Unsharp Mask)"
+          value={detail.unsharpStrength}
+          min={0}
+          max={200}
+          step={5}
+          unit="%"
+          update={(v) => setDetail({ unsharpStrength: v })}
+          reset={setDetail({ unsharpStrength: 0 })}
+          disabled={!sizeSet}
+          note={sizeSet ? undefined : SET_SIZE_NOTE}
+        />
+        {detail.unsharpStrength > 0 && (
+          <DocumentSlider
+            label="Sharpen Radius"
+            value={detail.unsharpRadiusMm}
+            min={0.04}
+            max={0.5}
+            step={0.01}
+            unit="mm"
+            update={(v) => setDetail({ unsharpRadiusMm: v })}
+            reset={setDetail({ unsharpRadiusMm: DEFAULT_DETAIL.unsharpRadiusMm })}
+            disabled={!sizeSet}
+          />
         )}
-      </div>
+      </Section>
 
       {/* Accordion 4: Color & Grayscale */}
-      <div className={styles.accordionSection}>
-        <div
-          className={styles.accordionHeader}
-          role="button"
-          tabIndex={0}
-          onClick={() => toggleSection('color')}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' || e.key === ' ') {
-              e.preventDefault();
-              toggleSection('color');
-            }
-          }}
-        >
-          <div className={styles.accordionLeft}>
-            <span className={styles.accordionIcon}><Palette size={15} /></span>
-            <span className={styles.accordionTitle}>Color & Grayscale</span>
-            {isColorActive && <span className={styles.activeDot} title="Adjusted" />}
+      <Section
+        title={<AdjustedTitle title="Color & Grayscale" adjusted={isColorActive} />}
+        icon={<Palette size={15} />}
+        collapse={{ open: openSections.color, onToggle: () => toggleSection('color') }}
+        actions={<SectionReset adjusted={isColorActive} label="Reset Color" update={SECTION_RESETS.color} />}
+      >
+        {/* Grayscale Mode Selector */}
+        <div className={styles.choiceGroup} role="group" aria-labelledby={grayscaleLabelId}>
+          <div id={grayscaleLabelId} className={styles.choiceLabel}>
+            Grayscale Conversion Mode
           </div>
-          <div className={styles.accordionRight}>
-            {isColorActive && (
-              <button
-                className={styles.resetButton}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  edit(SECTION_RESETS.color);
-                }}
-                title="Reset Color"
-              >
-                <RotateCcw size={12} />
-              </button>
-            )}
-            {openSections.color ? <ChevronDown size={15} color="var(--text-3)" /> : <ChevronRight size={15} color="var(--text-3)" />}
+          <div className={styles.segmentedGroup}>
+            {grayscaleOptions.map((opt) => {
+              const isActive = (tonal.grayscaleMode || 'none') === opt.id;
+              return (
+                <button
+                  key={opt.id}
+                  type="button"
+                  className={`${styles.segmentedItem} ${isActive ? styles.segmentedItemActive : ''}`}
+                  aria-pressed={isActive}
+                  onClick={() => edit(setTonal({ grayscaleMode: opt.id }))}
+                >
+                  {opt.label}
+                </button>
+              );
+            })}
           </div>
         </div>
 
-        {openSections.color && (
-          <div className={styles.accordionContent}>
-            {/* Grayscale Mode Selector */}
-            <div style={{ marginBottom: 4 }}>
-              <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)', marginBottom: 6 }}>
-                Grayscale Conversion Mode
-              </div>
-              <div className={styles.segmentedGroup}>
-                {grayscaleOptions.map((opt) => (
-                  <button
-                    key={opt.id}
-                    className={`${styles.segmentedItem} ${(tonal.grayscaleMode || 'none') === opt.id ? styles.segmentedItemActive : ''}`}
-                    onClick={() => edit(setTonal({ grayscaleMode: opt.id }))}
-                  >
-                    {opt.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <DocumentSlider
-              label="Saturation"
-              value={color.saturation}
-              min={-100}
-              max={100}
-              update={(v) => setColor({ saturation: v })}
-              reset={setColor({ saturation: 0 })}
-            />
-            <DocumentSlider
-              label="Vibrance"
-              value={color.vibrance ?? 0}
-              min={-100}
-              max={100}
-              update={(v) => setColor({ vibrance: v })}
-              reset={setColor({ vibrance: 0 })}
-            />
-            <DocumentSlider
-              label="Temperature (Cool / Warm)"
-              value={color.temperature}
-              min={-100}
-              max={100}
-              update={(v) => setColor({ temperature: v })}
-              reset={setColor({ temperature: 0 })}
-            />
-            <DocumentSlider
-              label="Tint (Green / Magenta)"
-              value={color.tint}
-              min={-100}
-              max={100}
-              update={(v) => setColor({ tint: v })}
-              reset={setColor({ tint: 0 })}
-            />
-          </div>
-        )}
-      </div>
+        <DocumentSlider
+          label="Saturation"
+          value={color.saturation}
+          min={-100}
+          max={100}
+          update={(v) => setColor({ saturation: v })}
+          reset={setColor({ saturation: 0 })}
+        />
+        <DocumentSlider
+          label="Vibrance"
+          value={color.vibrance ?? 0}
+          min={-100}
+          max={100}
+          update={(v) => setColor({ vibrance: v })}
+          reset={setColor({ vibrance: 0 })}
+        />
+        <DocumentSlider
+          label="Temperature (Cool / Warm)"
+          value={color.temperature}
+          min={-100}
+          max={100}
+          update={(v) => setColor({ temperature: v })}
+          reset={setColor({ temperature: 0 })}
+        />
+        <DocumentSlider
+          label="Tint (Green / Magenta)"
+          value={color.tint}
+          min={-100}
+          max={100}
+          update={(v) => setColor({ tint: v })}
+          reset={setColor({ tint: 0 })}
+        />
+      </Section>
 
       {/* Accordion 5: Advanced Filters & Inversion */}
-      <div className={styles.accordionSection}>
-        <div
-          className={styles.accordionHeader}
-          role="button"
-          tabIndex={0}
-          onClick={() => toggleSection('filters')}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' || e.key === ' ') {
-              e.preventDefault();
-              toggleSection('filters');
-            }
-          }}
-        >
-          <div className={styles.accordionLeft}>
-            <span className={styles.accordionIcon}><Zap size={15} /></span>
-            <span className={styles.accordionTitle}>Advanced Filters</span>
-            {isFiltersActive && <span className={styles.activeDot} title="Adjusted" />}
-          </div>
-          <div className={styles.accordionRight}>
-            {isFiltersActive && (
-              <button
-                className={styles.resetButton}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  edit(SECTION_RESETS.filters);
-                }}
-                title="Reset Filters"
-              >
-                <RotateCcw size={12} />
-              </button>
-            )}
-            {openSections.filters ? <ChevronDown size={15} color="var(--text-3)" /> : <ChevronRight size={15} color="var(--text-3)" />}
-          </div>
-        </div>
-
-        {openSections.filters && (
-          <div className={styles.accordionContent}>
-            {/* Invert Negative Toggle */}
-            <div className={styles.toggleRow}>
-              <span className={styles.toggleLabel}>Invert Negative (Slate / Dark Metal)</span>
-              <input
-                type="checkbox"
-                className={styles.checkbox}
-                checked={tonal.invert ?? false}
-                onChange={(e) => edit(setTonal({ invert: e.target.checked }))}
-              />
-            </div>
-
-            {/* CLAHE */}
-            <div className={styles.toggleRow}>
-              <span className={styles.toggleLabel}>CLAHE (Local Contrast Equalization)</span>
-              <input
-                type="checkbox"
-                className={styles.checkbox}
-                checked={detail.clahe}
-                onChange={(e) => edit(setDetail({ clahe: e.target.checked }))}
-              />
-            </div>
-            {detail.clahe && (
-              <>
-                <DocumentSlider
-                  label="Clip Limit"
-                  value={detail.claheClipLimit}
-                  min={1.0}
-                  max={8.0}
-                  step={0.1}
-                  update={(v) => setDetail({ claheClipLimit: v })}
-                />
-                <DocumentSlider
-                  label="Grid Size"
-                  value={detail.claheGridSize}
-                  min={4}
-                  max={24}
-                  step={2}
-                  update={(v) => setDetail({ claheGridSize: v })}
-                />
-              </>
-            )}
-
-            {/* Adaptive Threshold */}
-            <div className={styles.toggleRow} style={{ marginTop: 6 }}>
-              <span className={styles.toggleLabel}>Adaptive Threshold (Local Binarization)</span>
-              <input
-                type="checkbox"
-                className={styles.checkbox}
-                checked={detail.adaptiveThreshold}
-                disabled={!sizeSet}
-                onChange={(e) => edit(setDetail({ adaptiveThreshold: e.target.checked }))}
-              />
-            </div>
-            {!sizeSet && <div className={styles.controlNote}>{SET_SIZE_NOTE}</div>}
-            {detail.adaptiveThreshold && (
-              <>
-                <DocumentSlider
-                  label="Block Size"
-                  value={detail.adaptiveBlockMm}
-                  min={0.4}
-                  max={5.2}
-                  step={0.1}
-                  unit="mm"
-                  update={(v) => setDetail({ adaptiveBlockMm: v })}
-                  reset={setDetail({ adaptiveBlockMm: DEFAULT_DETAIL.adaptiveBlockMm })}
-                  disabled={!sizeSet}
-                />
-                <DocumentSlider
-                  label="Constant Offset"
-                  value={detail.adaptiveConstant}
-                  min={-20}
-                  max={20}
-                  update={(v) => setDetail({ adaptiveConstant: v })}
-                  disabled={!sizeSet}
-                />
-              </>
-            )}
-          </div>
+      <Section
+        title={<AdjustedTitle title="Advanced Filters" adjusted={isFiltersActive} />}
+        icon={<Zap size={15} />}
+        collapse={{ open: openSections.filters, onToggle: () => toggleSection('filters') }}
+        actions={<SectionReset adjusted={isFiltersActive} label="Reset Filters" update={SECTION_RESETS.filters} />}
+      >
+        <Toggle
+          label="Invert Negative (Slate / Dark Metal)"
+          checked={tonal.invert ?? false}
+          onChange={(checked) => edit(setTonal({ invert: checked }))}
+        />
+        <Toggle
+          label="CLAHE (Local Contrast Equalization)"
+          checked={detail.clahe}
+          onChange={(checked) => edit(setDetail({ clahe: checked }))}
+        />
+        {detail.clahe && (
+          <>
+            <DocumentSlider
+              label="Clip Limit"
+              value={detail.claheClipLimit}
+              min={1.0}
+              max={8.0}
+              step={0.1}
+              update={(v) => setDetail({ claheClipLimit: v })}
+            />
+            <DocumentSlider
+              label="Grid Size"
+              value={detail.claheGridSize}
+              min={4}
+              max={24}
+              step={2}
+              update={(v) => setDetail({ claheGridSize: v })}
+            />
+          </>
         )}
-      </div>
+
+        <Toggle
+          label="Adaptive Threshold (Local Binarization)"
+          checked={detail.adaptiveThreshold}
+          disabled={!sizeSet}
+          note={sizeSet ? undefined : SET_SIZE_NOTE}
+          onChange={(checked) => edit(setDetail({ adaptiveThreshold: checked }))}
+        />
+        {detail.adaptiveThreshold && (
+          <>
+            <DocumentSlider
+              label="Block Size"
+              value={detail.adaptiveBlockMm}
+              min={0.4}
+              max={5.2}
+              step={0.1}
+              unit="mm"
+              update={(v) => setDetail({ adaptiveBlockMm: v })}
+              reset={setDetail({ adaptiveBlockMm: DEFAULT_DETAIL.adaptiveBlockMm })}
+              disabled={!sizeSet}
+            />
+            <DocumentSlider
+              label="Constant Offset"
+              value={detail.adaptiveConstant}
+              min={-20}
+              max={20}
+              update={(v) => setDetail({ adaptiveConstant: v })}
+              disabled={!sizeSet}
+            />
+          </>
+        )}
+      </Section>
     </div>
   );
 };
+
+/** A section title, marked when the section has changed anything. */
+const AdjustedTitle: React.FC<{ title: string; adjusted: boolean }> = ({ title, adjusted }) => (
+  <>
+    {title}
+    {adjusted && (
+      <>
+        <span className={styles.activeDot} aria-hidden="true" />
+        <span className={styles.visuallyHidden}>(adjusted)</span>
+      </>
+    )}
+  </>
+);
+
+/** Resets one section, in one edit; shown only while the section has changed anything. */
+const SectionReset: React.FC<{ adjusted: boolean; label: string; update: DocumentUpdate }> = ({ adjusted, label, update }) =>
+  adjusted ? (
+    <Button
+      variant="link"
+      icon={<RotateCcw size={12} />}
+      aria-label={label}
+      title={label}
+      onClick={() => useDocumentStore.getState().edit(update)}
+    />
+  ) : null;

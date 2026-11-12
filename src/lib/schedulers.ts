@@ -95,7 +95,14 @@ export function createSchedulers(pipeline: () => Pipeline): Schedulers {
       target: previewTarget(doc),
       sourceStagePixels: removalFor(doc),
     }),
-    run: (req: TraceRequest) => pipeline().traceDocument(req),
+    run: async (req: TraceRequest) => {
+      render().setIsTracing(true);
+      try {
+        return await pipeline().traceDocument(req);
+      } finally {
+        render().setIsTracing(false);
+      }
+    },
     commit: (res: VectorResult) => render().setVectorResult(res),
     fail: report('Tracing failed'),
   });
@@ -150,6 +157,11 @@ export function connectSchedulers(schedulers: Schedulers, pipeline: () => Pipeli
         state.autoTrace !== prev.autoTrace ||
         (state.exportProgress === null) !== (prev.exportProgress === null);
       if (changed) for (const s of all) s.refresh();
+      // A trace asked for while a cancelled one still holds the worker waits for
+      // it; show it as running from the moment it is asked for, not only once it starts.
+      if (state.traceRequest !== prev.traceRequest && state.autoTrace && schedulers.trace.isBusy()) {
+        state.setIsTracing(true);
+      }
     }),
     useUIStore.subscribe((state, prev) => {
       if (state.job === prev.job) return;

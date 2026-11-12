@@ -22,6 +22,17 @@
 .canvasWrapper {
   position: relative;
   box-shadow: var(--image-edge);
+  transform-origin: center center;
+}
+
+.invertedView {
+  filter: invert(1) hue-rotate(180deg);
+}
+
+/* A file dragged over the canvas. */
+.dragOver {
+  outline: 2px dashed var(--canvas-text);
+  outline-offset: -4px;
 }
 
 .mainCanvas {
@@ -38,6 +49,11 @@
   pointer-events: none;
 }
 
+/* The substrate guide is drawn above the vector paths. */
+.maskOverlay {
+  z-index: 25;
+}
+
 /* Split View Divider Handle */
 .splitDivider {
   position: absolute;
@@ -49,6 +65,11 @@
   cursor: ew-resize;
   pointer-events: auto;
   z-index: 30;
+}
+
+.splitDivider:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
 }
 
 .splitHandle {
