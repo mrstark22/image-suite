@@ -1,20 +1,40 @@
 import React, { useState } from 'react';
-import { Download, CheckCircle, FileCode, Box } from 'lucide-react';
+import { Download, CheckCircle, FileCode, Box, X } from 'lucide-react';
 import { useDocumentStore } from '../../store/documentStore';
 import { useRenderStore } from '../../store/renderStore';
 import { useUIStore } from '../../store/uiStore';
-import { encodeBmpRgb24 } from '../../lib/bmp-encoder';
+import { encodePngGrayscale16 } from '../../lib/png-encoder';
 import { generateProductionSVG } from '../../lib/svg-export';
 import { generateDXF } from '../../lib/dxf-export';
 import { recipeFromDocument } from '../../lib/document';
-import { exportResolution, fromMm, physicalSize } from '../../lib/document-size';
+import { exportResolution, fromMm } from '../../lib/document-size';
+import { exportPlan } from '../../lib/render-target';
+import { cancelRasterExport, exportRaster, rasterExportBlocker } from '../../lib/raster-export';
+import type { ExportProgress, RasterFormat } from '../../types/worker-messages';
 import styles from './Panels.module.css';
 
+const STAGE_LABEL: Record<ExportProgress['stage'], string> = {
+  preparing: 'Preparing the full-resolution image',
+  processing: 'Applying adjustments and dither',
+  encoding: 'Encoding',
+};
+
+/** Starts a download of `parts` as `fileName`. */
+function download(parts: BlobPart[], type: string, fileName: string): void {
+  const url = URL.createObjectURL(new Blob(parts, { type }));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = fileName;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 /**
- * Export of the prepared image, the trace and the heightmap. Size and DPI come
- * from the document; there is no DPI setting here. Raster export is
- * preview-sized until full-resolution export (#17), and writes the DPI that
- * gives the preview the document's physical size.
+ * Export of the prepared image, the trace and the heightmap. Raster export
+ * runs the pipeline in the worker at the source's full resolution for the
+ * crop and writes the document's DPI into the file (#17); the size and DPI
+ * shown come from the same plan the worker uses. The trace and heightmap are
+ * still preview-sized (#30, #42, #46) and carry the DPI of the preview.
  */
 export const ExportPanel: React.FC = () => {
   const doc = useDocumentStore((s) => s.doc);
@@ -22,11 +42,14 @@ export const ExportPanel: React.FC = () => {
   const processedBuffer = useRenderStore((s) => s.processed);
   const depthHeightMapBuffer = useRenderStore((s) => s.depthHeightMap);
   const vectorResult = useRenderStore((s) => s.vectorResult);
+  const progress = useRenderStore((s) => s.exportProgress);
+  // Read so the panel updates when background removal is applied or restored.
+  useRenderStore((s) => s.backgroundRemoval);
   const setSizeDialogOpen = useUIStore((s) => s.setSizeDialogOpen);
 
-  const [format, setFormat] = useState<'png' | 'bmp' | 'jpeg' | 'webp' | 'recipe'>('png');
-  const [isExporting, setIsExporting] = useState(false);
+  const [format, setFormat] = useState<RasterFormat | 'recipe'>('png');
   const [isDone, setIsDone] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   if (!doc || !source || !processedBuffer) {
     return (
@@ -41,85 +64,37 @@ export const ExportPanel: React.FC = () => {
     );
   }
 
-  const dims = source;
   const baseName = doc.source.name.replace(/\.[^/.]+$/, '');
-  const size = physicalSize(doc);
-  // What the file will carry: the preview's pixels at the DPI that keeps the document's size.
-  const resolution = size ? exportResolution(doc, dims.width) : null;
+  // What a raster export writes; null while the size is not set.
+  const plan = doc.mmPerPx === null ? null : exportPlan(doc);
+  // The trace and heightmap are preview-sized: their files carry the preview's DPI.
+  const previewResolution = plan ? exportResolution(doc, source.width) : null;
   const vectorConfig = doc.vector;
-  // Raster and heightmap files need a physical size; a recipe does not.
-  const canExport = format === 'recipe' || resolution !== null;
+  const isExporting = progress !== null;
+  // A recipe needs no size; raster files need the size, and no preview-only background removal.
+  const blocker = format === 'recipe' ? null : rasterExportBlocker(doc);
+  const canExport = blocker === null && !isExporting;
 
-  const exportBufferAsFile = (
-    buffer: ArrayBuffer,
-    width: number,
-    height: number,
-    fileName: string,
-    outFormat: string
-  ) => {
-    if (outFormat === 'bmp') {
-      const { dpi } = exportResolution(doc, width);
-      const bmpBuf = encodeBmpRgb24(new Uint8ClampedArray(buffer), width, height, dpi);
-      const blob = new Blob([bmpBuf], { type: 'image/bmp' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${fileName}.bmp`;
-      a.click();
-      URL.revokeObjectURL(url);
+  const handleExecuteExport = async () => {
+    if (!canExport) return;
+    setIsDone(false);
+    setError(null);
+    if (format === 'recipe') {
+      const recipe = recipeFromDocument(doc, `${baseName} recipe`);
+      download([JSON.stringify(recipe, null, 2)], 'application/json', `${baseName}-recipe.imgsuite`);
     } else {
-      const canvas = document.createElement('canvas');
-      canvas.width = width;
-      canvas.height = height;
-      const ctx = canvas.getContext('2d');
-      if (ctx) {
-        const imgData = new ImageData(new Uint8ClampedArray(buffer), width, height);
-        ctx.putImageData(imgData, 0, 0);
-        canvas.toBlob((blob) => {
-          if (blob) {
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `${fileName}.${outFormat}`;
-            a.click();
-            URL.revokeObjectURL(url);
-          }
-        }, `image/${outFormat}`);
+      try {
+        // The document as it is now: edits made while it runs are not in the file.
+        const file = await exportRaster(doc, format);
+        if (!file) return; // cancelled
+        download([file.bytes], file.mimeType, `prepared-${baseName}.${file.extension}`);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err));
+        return;
       }
     }
-  };
-
-  const handleExecuteExport = () => {
-    if (!canExport) return;
-    setIsExporting(true);
-    setIsDone(false);
-
-    setTimeout(() => {
-      if (format === 'recipe') {
-        const recipe = recipeFromDocument(doc, `${baseName} recipe`);
-        const json = JSON.stringify(recipe, null, 2);
-        const blob = new Blob([json], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `${baseName}-recipe.imgsuite`;
-        a.click();
-        URL.revokeObjectURL(url);
-      } else {
-        // Export the processed image
-        exportBufferAsFile(
-          processedBuffer,
-          dims.width,
-          dims.height,
-          `prepared-${baseName}`,
-          format
-        );
-      }
-
-      setIsExporting(false);
-      setIsDone(true);
-      setTimeout(() => setIsDone(false), 3000);
-    }, 150);
+    setIsDone(true);
+    setTimeout(() => setIsDone(false), 3000);
   };
 
   return (
@@ -138,8 +113,6 @@ export const ExportPanel: React.FC = () => {
         >
           <option value="png">PNG (Lossless 8-bit)</option>
           <option value="bmp">BMP (Windows Bitmap CNC/Laser)</option>
-          <option value="jpeg">JPEG (Standard Photo)</option>
-          <option value="webp">WebP (Compressed)</option>
           <option value="recipe">Edit Recipe (.imgsuite JSON)</option>
         </select>
       </div>
@@ -147,28 +120,25 @@ export const ExportPanel: React.FC = () => {
       {/* Physical size, from the document */}
       <div className={styles.section}>
         <div className={styles.sectionTitle}>Physical Size & Resolution</div>
-        {size && resolution ? (
+        {plan ? (
           <div className={styles.readoutBox}>
             <div className={styles.readoutRow}>
               <span>Width</span>
               <strong>
-                {size.widthMm.toFixed(1)} mm ({fromMm(size.widthMm, 'in').toFixed(2)}")
+                {plan.widthMm.toFixed(1)} mm ({fromMm(plan.widthMm, 'in').toFixed(2)}")
               </strong>
             </div>
             <div className={styles.readoutRow}>
               <span>Height</span>
               <strong>
-                {size.heightMm.toFixed(1)} mm ({fromMm(size.heightMm, 'in').toFixed(2)}")
+                {plan.heightMm.toFixed(1)} mm ({fromMm(plan.heightMm, 'in').toFixed(2)}")
               </strong>
             </div>
             <div className={styles.readoutRow}>
               <span>File</span>
               <strong>
-                {dims.width} × {dims.height} px at {resolution.dpi.toFixed(1)} DPI
+                {plan.target.widthPx} × {plan.target.heightPx} px at {plan.dpi.toFixed(1)} DPI
               </strong>
-            </div>
-            <div className={styles.controlNote}>
-              Exports at preview resolution until full-resolution export (#17).
             </div>
           </div>
         ) : (
@@ -188,8 +158,8 @@ export const ExportPanel: React.FC = () => {
       <div className={styles.exportActionBlock}>
         <button
           className={styles.primaryActionBtn}
-          onClick={handleExecuteExport}
-          disabled={isExporting || !canExport}
+          onClick={() => void handleExecuteExport()}
+          disabled={!canExport}
         >
           {isDone ? (
             <>
@@ -202,6 +172,28 @@ export const ExportPanel: React.FC = () => {
             </>
           )}
         </button>
+        {progress && (
+          <div className={styles.readoutBox} style={{ marginTop: 8 }} role="status">
+            <div className={styles.readoutRow}>
+              <span>
+                {STAGE_LABEL[progress.stage]}
+                {progress.stage === 'encoding' ? ` ${Math.round(progress.fraction * 100)}%` : '…'}
+              </span>
+              <button className={styles.resetButton} onClick={cancelRasterExport}>
+                <X size={12} /> Cancel
+              </button>
+            </div>
+            <div className={styles.controlNote} style={{ margin: 0 }}>
+              The preview is paused while exporting.
+            </div>
+          </div>
+        )}
+        {blocker && plan && <div className={styles.controlNote} style={{ marginTop: 8 }}>{blocker}</div>}
+        {error && (
+          <div className={styles.controlNote} style={{ marginTop: 8, color: 'var(--accent-danger)' }} role="alert">
+            Export failed: {error}
+          </div>
+        )}
       </div>
 
       {/* Vector Production Files */}
@@ -212,13 +204,13 @@ export const ExportPanel: React.FC = () => {
             <button
               className={styles.primaryActionBtn}
               style={{ flex: 1, backgroundColor: 'var(--bg-surface-hover)', color: 'var(--text-primary)', border: '1px solid var(--border-medium)' }}
-              disabled={!resolution}
+              disabled={!previewResolution}
               onClick={() => {
-                if (!resolution) return;
+                if (!previewResolution) return;
                 const svgStr = generateProductionSVG(vectorResult, {
                   strokeWidth: vectorConfig.strokeWidth,
                   physicalUnits: 'mm',
-                  dpi: resolution.dpi,
+                  dpi: previewResolution.dpi,
                 });
                 const blob = new Blob([svgStr], { type: 'image/svg+xml' });
                 const url = URL.createObjectURL(blob);
@@ -261,15 +253,18 @@ export const ExportPanel: React.FC = () => {
           <button
             className={styles.primaryActionBtn}
             style={{ marginTop: 8, width: '100%', backgroundColor: 'var(--bg-surface-hover)', color: 'var(--text-primary)', border: '1px solid var(--border-medium)' }}
-            disabled={!resolution}
+            disabled={!previewResolution}
             onClick={() => {
-              exportBufferAsFile(
-                depthHeightMapBuffer,
-                dims.width,
-                dims.height,
-                `${baseName}-16bit-heightmap`,
-                'png'
-              );
+              if (!previewResolution) return;
+              // Preview-sized until #42 and #46, which also decide whether this button stays.
+              void encodePngGrayscale16(
+                new Uint16Array(depthHeightMapBuffer),
+                source.width,
+                source.height,
+                previewResolution.pxPerMm
+              )
+                .then((png) => download([png.buffer as ArrayBuffer], 'image/png', `${baseName}-16bit-heightmap.png`))
+                .catch((err: unknown) => setError(err instanceof Error ? err.message : String(err)));
             }}
           >
             <Download size={14} /> Download 16-Bit Heightmap (.PNG)

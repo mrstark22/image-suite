@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { encodePngGrayscale16 } from '../../src/lib/png-encoder';
 
 describe('16-Bit Grayscale PNG Encoder', () => {
-  it('encodes 16-bit depth values into valid PNG format', () => {
+  it('encodes 16-bit depth values into valid PNG format', async () => {
     const width = 8;
     const height = 4;
     const total = width * height;
@@ -13,7 +13,7 @@ describe('16-Bit Grayscale PNG Encoder', () => {
       depth16[i] = Math.round((i / (total - 1)) * 65535);
     }
 
-    const pngBytes = encodePngGrayscale16(depth16, width, height);
+    const pngBytes = await encodePngGrayscale16(depth16, width, height);
 
     expect(pngBytes).toBeInstanceOf(Uint8Array);
     expect(pngBytes.length).toBeGreaterThan(50);

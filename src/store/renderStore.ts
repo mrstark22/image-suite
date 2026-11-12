@@ -4,7 +4,7 @@ import type { VectorLayer, VectorResult } from '../types/vector';
 import type { PreviewSource } from '../lib/crop';
 import { MM_PER_INCH } from '../lib/document-size';
 import { sameValue } from '../lib/document';
-import type { SourceStage } from '../types/worker-messages';
+import type { ExportProgress, SourceStage } from '../types/worker-messages';
 import { generateCutlineLayer } from '../lib/cutline-generator';
 import { smoothVectorResult } from '../lib/vector-smoother';
 import { useDocumentStore } from './documentStore';
@@ -48,6 +48,11 @@ interface RenderState {
   isProcessing: boolean;
   processingDurationMs: number;
   errorMessage: string | null;
+  /**
+   * The running raster export's progress, or `null` when none is running.
+   * While it is set the preview, trace and relief wait (design section 5).
+   */
+  exportProgress: ExportProgress | null;
 
   /**
    * Commits a render: its pixels become the preview and, when it carries one,
@@ -79,6 +84,7 @@ interface RenderState {
   toggleVectorLayer: (layerId: string) => void;
   setIsProcessing: (processing: boolean) => void;
   setErrorMessage: (message: string | null) => void;
+  setExportProgress: (progress: ExportProgress | null) => void;
 }
 
 /**
@@ -123,6 +129,7 @@ export const useRenderStore = create<RenderState>((set, get) => ({
   previewVersion: 0,
   traceRequest: 0,
   errorMessage: null,
+  exportProgress: null,
 
   commitRender: ({ key, sourceStage, pixels, durationMs }) => {
     const held = get().source;
@@ -244,6 +251,8 @@ export const useRenderStore = create<RenderState>((set, get) => ({
   setIsProcessing: (isProcessing) => set({ isProcessing }),
 
   setErrorMessage: (errorMessage) => set({ errorMessage, isProcessing: false }),
+
+  setExportProgress: (exportProgress) => set({ exportProgress }),
 }));
 
 // Keep the derived results in step with the document. A new document starts

@@ -80,3 +80,28 @@ export interface ProcessBgRemovalResult {
   removedPixelCount: number;
   durationMs: number;
 }
+
+/** Raster export formats (design section 6). JPEG and WebP carry no DPI here and are not offered. */
+export type RasterFormat = 'png' | 'bmp';
+
+/**
+ * Where a raster export has got to. The stages are the calls that actually
+ * exist (design section 5): preparing the source, processing (steps 4 to 6 in
+ * one call) and encoding, which reports the fraction of rows written.
+ */
+export interface ExportProgress {
+  stage: 'preparing' | 'processing' | 'encoding';
+  /** Fraction of the stage done: 0 or 1 except while encoding. */
+  fraction: number;
+}
+
+/** A finished raster export: the file's bytes and what they hold. */
+export interface RasterExport {
+  bytes: ArrayBuffer;
+  mimeType: string;
+  extension: string;
+  widthPx: number;
+  heightPx: number;
+  /** The pixels per millimetre written into the file, before rounding to whole pixels per metre. */
+  pxPerMm: number;
+}

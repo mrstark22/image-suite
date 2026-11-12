@@ -245,7 +245,7 @@ To fix as each piece is ported. Verified in the audit unless marked.
 - Checkboxes, preset chips and reset buttons in the adjustments panel are not undoable. Reported.
 - Stale worker results can overwrite the current preview. Reported. Fixed in #19: the schedulers in `src/lib/render-scheduler.ts` commit a result only if nothing it read has changed.
 - Relief: transparent pixels count as ink, so a logo on a transparent background gives a flat map (`src/wasm/src/depth.rs:40`). Reported. Fixed by flattening transparency in the core: since #16 the relief reads the flattened `source` stage; #18 adds its test.
-- Relief: the Export panel's heightmap button sends 16-bit data down the 8-bit path (`src/components/panels/ExportPanel.tsx:316`).
+- Relief: the Export panel's heightmap button sends 16-bit data down the 8-bit path (`src/components/panels/ExportPanel.tsx:316`). Since #17, which removed that path, the button writes through the 16-bit encoder; removing the duplicate button stays with #46.
 - Relief: AI depth falls back to a heuristic with no message (`src/lib/ai-depth.ts:127`), and its cache key is weak (`src/workers/pipeline-api.ts`, `computeQuickBufferHash`).
 - Existing tests check output shape, not correctness.
 

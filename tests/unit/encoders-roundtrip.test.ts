@@ -1,159 +1,15 @@
 /**
  * Round-trip tests for the hand-written PNG and BMP encoders.
  *
- * Each file is decoded by a small decoder written here from the format
- * specifications (using Node's zlib for inflate and CRC), and every sample is
+ * Each file is decoded by a small decoder written from the format
+ * specifications (tests/helpers/png-decode.ts and bmp-decode.ts), and every sample is
  * compared with the source. A corrupt pixel, CRC, length or header fails.
  */
 import { describe, it, expect } from 'vitest';
-import zlib from 'zlib';
-import { encodePngGrayscale16 } from '../../src/lib/png-encoder';
+import { encodePng8, encodePngGrayscale16, type PngColour } from '../../src/lib/png-encoder';
+import { decodePng } from '../helpers/png-decode';
+import { decodeBmp } from '../helpers/bmp-decode';
 import { encodeBmpGrayscale8, encodeBmpRgb24 } from '../../src/lib/bmp-encoder';
-
-interface DecodedPng {
-  width: number;
-  height: number;
-  bitDepth: number;
-  colorType: number;
-  chunkTypes: string[];
-  samples: Uint16Array;
-}
-
-/** Decodes a non-interlaced greyscale PNG, verifying the signature and every chunk CRC. */
-function decodeGreyPng(bytes: Uint8Array): DecodedPng {
-  const signature = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
-  for (let i = 0; i < 8; i++) {
-    if (bytes[i] !== signature[i]) throw new Error('Bad PNG signature');
-  }
-  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  const chunkTypes: string[] = [];
-  const idat: Uint8Array[] = [];
-  let width = 0;
-  let height = 0;
-  let bitDepth = 0;
-  let colorType = 0;
-  let p = 8;
-  while (p < bytes.length) {
-    const length = view.getUint32(p);
-    const type = String.fromCharCode(...bytes.subarray(p + 4, p + 8));
-    const data = bytes.subarray(p + 8, p + 8 + length);
-    const storedCrc = view.getUint32(p + 8 + length);
-    const actualCrc = zlib.crc32(bytes.subarray(p + 4, p + 8 + length));
-    if (storedCrc !== actualCrc) throw new Error(`Bad CRC in ${type} chunk`);
-    chunkTypes.push(type);
-    if (type === 'IHDR') {
-      const d = new DataView(data.buffer, data.byteOffset, data.byteLength);
-      width = d.getUint32(0);
-      height = d.getUint32(4);
-      bitDepth = data[8];
-      colorType = data[9];
-      if (data[10] !== 0 || data[11] !== 0 || data[12] !== 0) throw new Error('Unsupported IHDR options');
-    } else if (type === 'IDAT') {
-      idat.push(data);
-    }
-    p += 12 + length;
-  }
-  if (p !== bytes.length) throw new Error('Trailing or truncated data');
-
-  const raw = zlib.inflateSync(Buffer.concat(idat));
-  const bytesPerSample = bitDepth / 8;
-  const stride = width * bytesPerSample;
-  if (raw.length !== (stride + 1) * height) throw new Error('Unexpected decompressed size');
-
-  const samples = new Uint16Array(width * height);
-  const prev = new Uint8Array(stride);
-  const row = new Uint8Array(stride);
-  for (let y = 0; y < height; y++) {
-    const filter = raw[y * (stride + 1)];
-    for (let i = 0; i < stride; i++) {
-      const x = raw[y * (stride + 1) + 1 + i];
-      const a = i >= bytesPerSample ? row[i - bytesPerSample] : 0;
-      const b = prev[i];
-      const c = i >= bytesPerSample ? prev[i - bytesPerSample] : 0;
-      let predictor = 0;
-      if (filter === 1) predictor = a;
-      else if (filter === 2) predictor = b;
-      else if (filter === 3) predictor = (a + b) >> 1;
-      else if (filter === 4) {
-        const pa = Math.abs(b - c);
-        const pb = Math.abs(a - c);
-        const pc = Math.abs(a + b - 2 * c);
-        predictor = pa <= pb && pa <= pc ? a : pb <= pc ? b : c;
-      } else if (filter !== 0) throw new Error(`Bad filter type ${filter}`);
-      row[i] = (x + predictor) & 0xff;
-    }
-    for (let x = 0; x < width; x++) {
-      samples[y * width + x] = bytesPerSample === 2 ? (row[x * 2] << 8) | row[x * 2 + 1] : row[x];
-    }
-    prev.set(row);
-  }
-  return { width, height, bitDepth, colorType, chunkTypes, samples };
-}
-
-interface DecodedBmp {
-  width: number;
-  height: number;
-  bitsPerPixel: number;
-  pixelsPerMetreX: number;
-  pixelsPerMetreY: number;
-  fileSize: number;
-  dataOffset: number;
-  palette: Uint8Array;
-  /** Top-down rows; one value per pixel for 8-bit, [r, g, b] triples for 24-bit. */
-  pixels: Uint8Array;
-  paddingBytes: number[];
-}
-
-/** Decodes an uncompressed, bottom-up 8-bit or 24-bit BMP. */
-function decodeBmp(buffer: ArrayBuffer): DecodedBmp {
-  const bytes = new Uint8Array(buffer);
-  const view = new DataView(buffer);
-  if (bytes[0] !== 0x42 || bytes[1] !== 0x4d) throw new Error('Bad BMP signature');
-  const fileSize = view.getUint32(2, true);
-  const dataOffset = view.getUint32(10, true);
-  const infoSize = view.getUint32(14, true);
-  const width = view.getInt32(18, true);
-  const height = view.getInt32(22, true);
-  const planes = view.getUint16(26, true);
-  const bitsPerPixel = view.getUint16(28, true);
-  const compression = view.getUint32(30, true);
-  const pixelsPerMetreX = view.getInt32(38, true);
-  const pixelsPerMetreY = view.getInt32(42, true);
-  if (infoSize !== 40 || planes !== 1 || compression !== 0) throw new Error('Unsupported BMP header');
-  if (height <= 0) throw new Error('Expected a bottom-up BMP');
-
-  const channels = bitsPerPixel / 8;
-  const stride = Math.ceil((width * channels) / 4) * 4;
-  const palette = bytes.slice(14 + infoSize, dataOffset);
-  const pixels = new Uint8Array(width * height * channels);
-  const paddingBytes: number[] = [];
-  for (let y = 0; y < height; y++) {
-    const rowStart = dataOffset + (height - 1 - y) * stride;
-    for (let x = 0; x < width; x++) {
-      if (channels === 1) {
-        pixels[y * width + x] = bytes[rowStart + x];
-      } else {
-        // Stored as B, G, R.
-        pixels[(y * width + x) * 3] = bytes[rowStart + x * 3 + 2];
-        pixels[(y * width + x) * 3 + 1] = bytes[rowStart + x * 3 + 1];
-        pixels[(y * width + x) * 3 + 2] = bytes[rowStart + x * 3];
-      }
-    }
-    for (let i = width * channels; i < stride; i++) paddingBytes.push(bytes[rowStart + i]);
-  }
-  return {
-    width,
-    height,
-    bitsPerPixel,
-    pixelsPerMetreX,
-    pixelsPerMetreY,
-    fileSize,
-    dataOffset,
-    palette,
-    pixels,
-    paddingBytes,
-  };
-}
 
 /** Deterministic pseudo-random values in [0, max]. */
 function noise(count: number, max: number, seed = 7): number[] {
@@ -164,12 +20,12 @@ function noise(count: number, max: number, seed = 7): number[] {
   });
 }
 
-describe('16-bit greyscale PNG encoder', () => {
-  it('round-trips every sample of a pseudo-random image through an independent decoder', () => {
+describe('16-bit greyscale PNG encoder', async () => {
+  it('round-trips every sample of a pseudo-random image through an independent decoder', async () => {
     const width = 301;
     const height = 257;
     const source = Uint16Array.from(noise(width * height, 65535));
-    const png = decodeGreyPng(encodePngGrayscale16(source, width, height));
+    const png = decodePng(await encodePngGrayscale16(source, width, height));
 
     expect(png.width).toBe(width);
     expect(png.height).toBe(height);
@@ -180,30 +36,124 @@ describe('16-bit greyscale PNG encoder', () => {
     expect(Buffer.from(png.samples.buffer).equals(Buffer.from(source.buffer))).toBe(true);
   });
 
-  it('keeps the full 16-bit range, including values that differ only in the low byte', () => {
+  it('keeps the full 16-bit range, including values that differ only in the low byte', async () => {
     const source = Uint16Array.from([0, 1, 255, 256, 257, 32767, 32768, 65534, 65535]);
-    const png = decodeGreyPng(encodePngGrayscale16(source, 9, 1));
+    const png = decodePng(await encodePngGrayscale16(source, 9, 1));
     expect(Array.from(png.samples)).toEqual(Array.from(source));
   });
 
-  it('round-trips an image larger than one 64 KiB stored block', () => {
+  it('round-trips a 400x300 image', async () => {
     const width = 400;
-    const height = 300; // 240,300 raw bytes: several deflate blocks
+    const height = 300;
     const source = Uint16Array.from({ length: width * height }, (_, i) => (i * 37) & 0xffff);
-    const png = decodeGreyPng(encodePngGrayscale16(source, width, height));
+    const png = decodePng(await encodePngGrayscale16(source, width, height));
     expect(Buffer.from(png.samples.buffer).equals(Buffer.from(source.buffer))).toBe(true);
   });
 
-  it('round-trips a 1x1 image', () => {
-    const png = decodeGreyPng(encodePngGrayscale16(Uint16Array.from([51234]), 1, 1));
+  it('round-trips a 1x1 image', async () => {
+    const png = decodePng(await encodePngGrayscale16(Uint16Array.from([51234]), 1, 1));
     expect(Array.from(png.samples)).toEqual([51234]);
   });
 
-  it('is rejected by the decoder when a byte of pixel data is corrupted', () => {
-    const bytes = encodePngGrayscale16(Uint16Array.from(noise(64, 65535)), 8, 8);
+  it('is rejected by the decoder when a byte of pixel data is corrupted', async () => {
+    const bytes = await encodePngGrayscale16(Uint16Array.from(noise(64, 65535)), 8, 8);
     const corrupted = bytes.slice();
     corrupted[corrupted.length - 30] ^= 0x01;
-    expect(() => decodeGreyPng(corrupted)).toThrow();
+    expect(() => decodePng(corrupted)).toThrow();
+  });
+});
+
+describe('8-bit PNG encoder', () => {
+  const CHANNELS: Record<PngColour, number> = { grey: 1, rgb: 3, rgba: 4 };
+  const COLOUR_TYPE: Record<PngColour, number> = { grey: 0, rgb: 2, rgba: 6 };
+
+  for (const colour of ['grey', 'rgb', 'rgba'] as const) {
+    for (const [width, height] of [
+      [1, 1],
+      [3, 2],
+      [7, 5],
+      [301, 257],
+    ]) {
+      it(`${colour}: every byte of a pseudo-random ${width}x${height} image survives an independent inflate and decoder`, async () => {
+        const rgba = Uint8Array.from(noise(width * height * 4, 255, width * 13 + height));
+        const png = decodePng(await encodePng8(() => rgba, width, height, colour));
+        const channels = CHANNELS[colour];
+        expect([png.width, png.height, png.bitDepth, png.colorType]).toEqual([width, height, 8, COLOUR_TYPE[colour]]);
+        expect(png.chunkTypes[0]).toBe('IHDR');
+        expect(png.chunkTypes[png.chunkTypes.length - 1]).toBe('IEND');
+        let mismatches = 0;
+        for (let i = 0; i < width * height; i++) {
+          // Grey writes the red channel; RGB drops alpha.
+          for (let c = 0; c < channels; c++) if (png.samples[i * channels + c] !== rgba[i * 4 + c]) mismatches++;
+        }
+        expect(mismatches).toBe(0);
+      });
+    }
+  }
+
+  it('round-trips an image of several chunks of rows, reading the pixels afresh for each', async () => {
+    // 1100 x 400 RGBA is 1.76 MB of rows: two chunks.
+    const width = 1100;
+    const height = 400;
+    const rgba = Uint8Array.from(noise(width * height * 4, 255, 3));
+    let reads = 0;
+    const fractions: number[] = [];
+    const png = decodePng(
+      await encodePng8(
+        () => {
+          reads++;
+          return rgba;
+        },
+        width,
+        height,
+        'rgba',
+        { onProgress: (f) => void fractions.push(f) }
+      )
+    );
+    expect(Buffer.from(Uint8Array.from(png.samples)).equals(Buffer.from(rgba))).toBe(true);
+    expect(fractions.length).toBe(2);
+    expect(fractions[1]).toBe(1);
+    expect(reads).toBeGreaterThan(height);
+  });
+
+  it('writes pHYs in whole pixels per metre, in metres, before the image data', async () => {
+    const rgba = new Uint8Array(4 * 4 * 4).fill(255);
+    for (const [pxPerMm, ppm] of [
+      [300 / 25.4, 11811],
+      [10, 10000],
+      [72 / 25.4, 2835],
+      [1 / 0.0847, 11806],
+    ]) {
+      const png = decodePng(await encodePng8(() => rgba, 4, 4, 'grey', { pxPerMm }));
+      expect(png.phys).toEqual({ x: ppm, y: ppm, unit: 1 });
+      expect(png.chunkTypes.slice(0, 3)).toEqual(['IHDR', 'pHYs', 'IDAT']);
+    }
+    const without = decodePng(await encodePng8(() => rgba, 4, 4, 'grey'));
+    expect(without.phys).toBeNull();
+  });
+
+  it('compresses: a flat 1000x1000 image is a small fraction of its raw size', async () => {
+    const rgba = new Uint8Array(1000 * 1000 * 4).fill(255);
+    const bytes = await encodePng8(() => rgba, 1000, 1000, 'grey');
+    expect(bytes.length).toBeLessThan(1000 * 1000 * 0.01);
+    expect(decodePng(bytes).samples.every((v) => v === 255)).toBe(true);
+  });
+
+  it('stops, rejecting, when the progress callback throws', async () => {
+    const rgba = new Uint8Array(1100 * 400 * 4);
+    const encoding = encodePng8(() => rgba, 1100, 400, 'rgba', {
+      onProgress: () => {
+        throw new Error('stop');
+      },
+    });
+    await expect(encoding).rejects.toThrow('stop');
+  });
+});
+
+describe('16-bit PNG resolution', () => {
+  it('writes pHYs when given a resolution', async () => {
+    const png = decodePng(await encodePngGrayscale16(new Uint16Array(4), 2, 2, 254 / 25.4));
+    expect(png.phys).toEqual({ x: 10000, y: 10000, unit: 1 });
   });
 });
 

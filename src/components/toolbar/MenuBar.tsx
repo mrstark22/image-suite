@@ -33,6 +33,7 @@ export const MenuBar: React.FC = () => {
 
   const doc = useDocumentStore((s) => s.doc);
   const isProcessing = useRenderStore((s) => s.isProcessing);
+  const isExporting = useRenderStore((s) => s.exportProgress !== null);
   const durationMs = useRenderStore((s) => s.processingDurationMs);
   const setZoom = useViewStore((s) => s.setZoom);
   const resetViewport = useViewStore((s) => s.resetViewport);
@@ -415,7 +416,7 @@ export const MenuBar: React.FC = () => {
             <span>{dpi === null ? 'Size not set' : `${Number(dpi.toFixed(1))} DPI`}</span>
             <span style={{ color: 'var(--text-muted)' }}>•</span>
             <span style={{ color: 'var(--accent-primary)', fontFamily: 'var(--font-mono)' }}>
-              {isProcessing ? '...' : `${durationMs.toFixed(1)}ms`}
+              {isExporting ? 'Paused while exporting' : isProcessing ? '...' : `${durationMs.toFixed(1)}ms`}
             </span>
           </div>
         )}

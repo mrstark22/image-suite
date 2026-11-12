@@ -1,11 +1,14 @@
 import * as Comlink from 'comlink';
 import type {
   DocumentRenderRequest,
+  ExportProgress,
   LoadedSourceInfo,
   PreviewRenderResult,
   ProcessDepthPayload,
   ProcessBgRemovalPayload,
   ProcessBgRemovalResult,
+  RasterExport,
+  RasterFormat,
   ReliefRenderResult,
   SourceStage,
   TraceRequest,
@@ -14,8 +17,10 @@ import type { VectorResult } from '../types/vector';
 import type { DepthResult } from '../types/depth';
 import { removeBackground } from '../lib/bg-removal';
 import { PipelineEngine } from '../lib/pipeline-engine';
-import { sourceStageKey } from '../lib/render-target';
+import { exportPlan, sourceStageKey } from '../lib/render-target';
 import { cropRectOf } from '../lib/document-size';
+import { encodeRaster } from '../lib/raster-encode';
+import type { ImageDocument } from '../types/document';
 import type { RustWasmEngine } from '../wasm/wasm-bridge';
 
 /**
@@ -50,6 +55,14 @@ function computeQuickBufferHash(bytes: Uint8Array, width: number, height: number
 export const ENGINE_LOAD_ERROR =
   'The image processing engine failed to load. Reload the page; if it keeps happening, your browser may not support WebAssembly.';
 
+/** Thrown by `exportRaster` when the export was cancelled. Recognised by its name, which survives Comlink. */
+export class ExportCancelledError extends Error {
+  constructor() {
+    super('Export cancelled.');
+    this.name = 'ExportCancelledError';
+  }
+}
+
 /** Decodes an image file into a pipeline engine. Provided by the browser worker; absent in Node. */
 export type FileDecoder = (engine: PipelineEngine, sourceId: string, file: File) => Promise<LoadedSourceInfo>;
 
@@ -58,6 +71,10 @@ export class PipelineWorkerApi {
   private enginePromise: Promise<PipelineEngine> | null = null;
   /** Loads and releases run one at a time, in the order they were asked for. */
   private sourceQueue: Promise<unknown> = Promise.resolve();
+  /** Settles when no export is running. Renders wait for it (design section 5). */
+  private exportIdle: Promise<unknown> = Promise.resolve();
+  /** Set by `cancelExport`; the running export stops at its next boundary. */
+  private cancelRequested = false;
 
   constructor(
     private readonly loadCore: () => Promise<RustWasmEngine>,
@@ -112,6 +129,7 @@ export class PipelineWorkerApi {
 
   /** Renders the preview: the `final` stage at the request's target. */
   public async renderPreview(req: DocumentRenderRequest): Promise<PreviewRenderResult> {
+    await this.exportIdle;
     const engine = await this.engine();
     const start = performance.now();
     const options = { cache: true, sourceStagePixels: req.sourceStagePixels };
@@ -127,6 +145,7 @@ export class PipelineWorkerApi {
 
   /** Renders the relief heightmap from the `source` stage at the request's target. */
   public async renderRelief(req: DocumentRenderRequest): Promise<ReliefRenderResult> {
+    await this.exportIdle;
     const engine = await this.engine();
     const start = performance.now();
     const source = engine.render(req.doc, req.target, 'source', { cache: true, sourceStagePixels: req.sourceStagePixels });
@@ -147,10 +166,55 @@ export class PipelineWorkerApi {
 
   /** Traces the `source` stage at the request's target with the document's tracing settings. */
   public async traceDocument(req: TraceRequest): Promise<VectorResult> {
+    await this.exportIdle;
     const engine = await this.engine();
     const core = await this.core();
     const source = engine.render(req.doc, req.target, 'source', { cache: true, sourceStagePixels: req.sourceStagePixels });
     return core.vectorize(source.pixels, req.target.widthPx, req.target.heightPx, req.doc.vector);
+  }
+
+  /**
+   * Exports `doc` as a raster file (design section 6): the `final` stage at
+   * the source's full resolution for the crop, encoded here with the
+   * document's resolution in the file. Refuses while the size is not set.
+   *
+   * `onProgress` is awaited at each boundary (preparing, processing, and
+   * every chunk of rows while encoding); a `cancelExport` call takes effect
+   * at the next one. Renders for the preview, trace and relief wait until the
+   * export has finished, and loads and releases queue behind it.
+   */
+  public exportRaster(
+    doc: ImageDocument,
+    format: RasterFormat,
+    onProgress?: (progress: ExportProgress) => void | Promise<void>
+  ): Promise<RasterExport> {
+    const plan = exportPlan(doc);
+    this.cancelRequested = false;
+    const run = this.queued(async () => {
+      const engine = await this.engine();
+      const boundary = async (progress: ExportProgress) => {
+        await onProgress?.(progress);
+        if (this.cancelRequested) throw new ExportCancelledError();
+      };
+      const file = await engine.renderInPlace(
+        doc,
+        plan.target,
+        'final',
+        (pixels) =>
+          encodeRaster(format, pixels, plan.target.widthPx, plan.target.heightPx, plan.pxPerMm, (fraction) =>
+            boundary({ stage: 'encoding', fraction })
+          ),
+        (stage) => boundary({ stage, fraction: 0 })
+      );
+      return Comlink.transfer(file, [file.bytes]);
+    });
+    this.exportIdle = run.catch(() => undefined);
+    return run;
+  }
+
+  /** Stops the running export at its next boundary. Does nothing when none is running. */
+  public cancelExport(): void {
+    this.cancelRequested = true;
   }
 
   /** The `source`-stage pixels, when the main thread does not already have them. */
