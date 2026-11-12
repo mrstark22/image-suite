@@ -1,0 +1,68 @@
+/* Buttons (#55): the panels' primary, secondary and link actions. */
+
+.button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.icon {
+  display: inline-flex;
+  flex-shrink: 0;
+}
+
+.primary {
+  width: 100%;
+  height: 34px;
+  padding: 0 12px;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-weight: 600;
+  font-size: 12px;
+  border: none;
+  border-radius: var(--radius-sm);
+}
+
+.primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+.secondary {
+  width: 100%;
+  height: 32px;
+  padding: 0 12px;
+  background: var(--surface-hover);
+  color: var(--text);
+  font-weight: var(--weight-medium);
+  font-size: var(--text-md);
+  border: 1px solid var(--control-border);
+  border-radius: var(--radius-sm);
+}
+
+.secondary:hover:not(:disabled) {
+  background: var(--surface-2);
+}
+
+.link {
+  display: inline-flex;
+  gap: var(--space-1);
+  font-size: 11px;
+  color: var(--text-3);
+}
+
+.link:hover:not(:disabled) {
+  color: var(--text);
+}
+
+.compact {
+  width: auto;
+  height: auto;
+  padding: 6px 16px;
+}
