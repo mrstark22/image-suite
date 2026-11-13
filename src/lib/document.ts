@@ -11,7 +11,7 @@ import type {
 } from '../types/document';
 import { RECIPE_VERSION, type EditRecipe, type EditStep } from '../types/recipe';
 import { clampCropRect } from './crop';
-import { checkPalette } from './trace-palette';
+import { checkVectorSettings } from './trace-settings';
 
 /**
  * The document's defaults and the pure functions that change it. Every change
@@ -242,11 +242,11 @@ export const resetVector: DocumentUpdate = (d) => ({ ...d, vector: { ...DEFAULT_
  * image, so a recipe leaves them alone.
  */
 export function applyRecipe(recipe: EditRecipe): DocumentUpdate {
-  // A recipe is a file anyone can write: a palette colour that is not
-  // #rrggbb is refused here, not traced as some other colour.
+  // A recipe is a file anyone can write: a tracing value the tracer does not
+  // have (a shape mode, a colour, a number) is refused here, not traced as
+  // some other value (#86).
   for (const step of recipe.steps) {
-    const palette = step.type === 'vectorize' ? (step.params as Partial<VectorConfig>).palette : null;
-    if (palette) checkPalette(palette);
+    if (step.type === 'vectorize') checkVectorSettings(knownKeys(step.params as Partial<VectorConfig>, DEFAULT_VECTOR));
   }
   return (d) => {
     const tonal = { ...DEFAULT_TONAL };

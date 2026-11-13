@@ -131,8 +131,15 @@ impl Rng {
 
 /// Clusters closer than this (ΔE) are one colour.
 const MERGE_DE: f32 = 6.0;
-/// A pixel within this ΔE of the line between two opposite neighbours' colours is a fringe pixel.
+/// A fringe pixel differs from both of two opposite neighbours by more than this ΔE.
 const FRINGE_DE: f32 = 4.0;
+/// A fringe pixel lies within this many levels (of 255) of the line between
+/// those neighbours' colours. The line is taken in the image's own red, green
+/// and blue: an anti-aliased edge is a blend of its two colours there, in
+/// proportion to how much of the pixel each covers. In Lab the blend of two
+/// saturated colours bows away from the straight line, so such an edge was
+/// not seen as a fringe and was traced a pixel at a time, as a staircase.
+const FRINGE_RGB: f32 = 8.0;
 
 /// Segments `rgba` into `k` colours, or into the fixed palette `fixed` (Lab) when it is not empty.
 pub fn segment(rgba: &[u8], w: usize, h: usize, k: usize, fixed: &[[f32; 3]]) -> Segmentation {
@@ -149,16 +156,27 @@ pub fn segment(rgba: &[u8], w: usize, h: usize, k: usize, fixed: &[[f32; 3]]) ->
         ((-1, -1), (1, 1)),
         ((1, -1), (-1, 1)),
     ];
+    let rgb_of = |i: usize| -> [f32; 3] {
+        [
+            rgba[i * 4] as f32,
+            rgba[i * 4 + 1] as f32,
+            rgba[i * 4 + 2] as f32,
+        ]
+    };
     let mut fringe = vec![false; n];
     for y in 1..h.saturating_sub(1) {
         for x in 1..w.saturating_sub(1) {
             let i = y * w + x;
             let p = &lab[i];
             for ((ax, ay), (bx, by)) in pairs {
-                let a = &lab[(y as isize + ay) as usize * w + (x as isize + ax) as usize];
-                let b = &lab[(y as isize + by) as usize * w + (x as isize + bx) as usize];
+                let ia = (y as isize + ay) as usize * w + (x as isize + ax) as usize;
+                let ib = (y as isize + by) as usize * w + (x as isize + bx) as usize;
+                let (a, b) = (&lab[ia], &lab[ib]);
                 let sep = FRINGE_DE * FRINGE_DE;
-                if d2(p, a) > sep && d2(p, b) > sep && to_segment(p, a, b).0 < sep {
+                if d2(p, a) > sep
+                    && d2(p, b) > sep
+                    && to_segment(&rgb_of(i), &rgb_of(ia), &rgb_of(ib)).0 < FRINGE_RGB * FRINGE_RGB
+                {
                     fringe[i] = true;
                     break;
                 }
@@ -196,6 +214,10 @@ pub fn segment(rgba: &[u8], w: usize, h: usize, k: usize, fixed: &[[f32; 3]]) ->
         best
     };
 
+    let centres_rgb: Vec<[f32; 3]> = centres
+        .iter()
+        .map(|c| lab_to_rgb(*c).map(|v| v as f32))
+        .collect();
     // Clustered pixels take their nearest colour; fringe pixels a mixture of nearby colours.
     let mut mix: Vec<Mix> = (0..n)
         .map(|i| {
@@ -218,7 +240,10 @@ pub fn segment(rgba: &[u8], w: usize, h: usize, k: usize, fixed: &[[f32; 3]]) ->
                     }
                 }
             }
-            let p = &lab[i];
+            // The share of each colour is read in red, green and blue, where
+            // it is the share of the pixel that colour covers.
+            let p = &rgb_of(i);
+            let centres = &centres_rgb;
             let mut best = (
                 f32::MAX,
                 Mix {

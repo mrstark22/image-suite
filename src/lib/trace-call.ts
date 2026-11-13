@@ -1,8 +1,9 @@
 import type { PaletteEntry, PathKind, VectorConfig, VectorLayer, VectorResult } from '../types/vector';
 import { TooLargeError } from './pipeline-engine';
-import { checkPalette, rgbOfHex } from './trace-palette';
+import { rgbOfHex, withDrawnColours } from './trace-palette';
+import { checkVectorSettings } from './trace-settings';
 
-/** The exports `traceImage` needs (a subset of the WASM module's). */
+/** The exports `traceImageAt` needs (a subset of the WASM module's). */
 export interface TraceExports {
   memory: WebAssembly.Memory;
   allocate: (size: number) => number;
@@ -120,30 +121,6 @@ export function parseTrace(json: string, pxPerMm: number): VectorResult {
 }
 
 /**
- * Traces the RGBA8 image `pixels` (`width` x `height`) with `config`, where
- * the image has `pxPerMm` pixels per millimetre: copies it into WASM memory
- * and calls `traceImageAt`. Throws a `TooLargeError` when it does not fit.
- */
-export function traceImage(
-  wasm: TraceExports,
-  pixels: ArrayBuffer | Uint8Array,
-  width: number,
-  height: number,
-  pxPerMm: number,
-  config: VectorConfig
-): VectorResult {
-  const bytes = width * height * 4;
-  const ptr = wasm.try_allocate(bytes);
-  if (!ptr) throw new TooLargeError(`Not enough memory on this device to trace ${width} × ${height} px.`);
-  try {
-    new Uint8Array(wasm.memory.buffer, ptr, bytes).set(pixels instanceof Uint8Array ? pixels : new Uint8Array(pixels));
-    return traceImageAt(wasm, ptr, width, height, pxPerMm, config);
-  } finally {
-    wasm.deallocate(ptr, bytes);
-  }
-}
-
-/**
  * Traces the RGBA8 image already in WASM memory at `ptr`, leaving it there.
  * Throws a `TooLargeError` when the tracer cannot have the memory it needs,
  * and an error when it refuses the input.
@@ -157,8 +134,9 @@ export function traceImageAt(
   config: VectorConfig
 ): VectorResult {
   if (!(pxPerMm > 0)) throw new Error('Set the size of the image before tracing.');
+  // A value the tracer does not have is an error here, never traced as a default (#86).
+  checkVectorSettings(config);
   const fixed = config.colorMode === 'color' ? config.palette : null;
-  if (fixed) checkPalette(fixed);
   const palette = fixed ? encodePalette(fixed) : new Uint8Array(0);
   const palPtr = palette.length > 0 ? wasm.try_allocate(palette.length) : 0;
   if (palette.length > 0 && !palPtr) throw new TooLargeError('Not enough memory on this device to trace this image.');
@@ -186,17 +164,7 @@ export function traceImageAt(
     if (!out) throw new Error('The tracer could not trace this image.');
     // Read the view now: tracing may have grown memory.
     const json = new TextDecoder().decode(new Uint8Array(wasm.memory.buffer, out, wasm.get_trace_json_len()));
-    const result = parseTrace(json, pxPerMm);
-    // A layer is drawn in its entry's own colour when one was chosen; the
-    // tracer only sees the colour to match.
-    for (const layer of result.layers) {
-      const drawAs = layer.paletteIndex === null ? undefined : fixed?.[layer.paletteIndex]?.drawAs;
-      if (drawAs !== undefined) {
-        layer.sourceColor = layer.color;
-        layer.color = drawAs;
-      }
-    }
-    return result;
+    return withDrawnColours(parseTrace(json, pxPerMm), fixed);
   } finally {
     if (palPtr) wasm.deallocate(palPtr, palette.length);
   }

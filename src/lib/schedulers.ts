@@ -1,3 +1,4 @@
+import { traceInputRefs } from './trace-inputs';
 import type { ImageDocument } from '../types/document';
 import type { DocumentRenderRequest, PreviewRenderResult, ReliefRenderResult, TraceRequest } from '../types/worker-messages';
 import type { VectorResult } from '../types/vector';
@@ -87,18 +88,8 @@ export function createSchedulers(pipeline: () => Pipeline): Schedulers {
 
   const trace = new RenderScheduler({
     // Traces the adjusted image (#23): everything before the dither.
-    select: (doc: ImageDocument) =>
-      [
-        doc.source,
-        doc.mmPerPx,
-        doc.steps.crop,
-        doc.steps.tonal,
-        doc.steps.color,
-        doc.steps.detail,
-        doc.vector,
-        render().traceRequest,
-        render().backgroundRemoval,
-      ] as const,
+    // What the trace reads from the document is listed once, in `traceInputsOf` (#89).
+    select: (doc: ImageDocument) => [...traceInputRefs(doc), render().traceRequest, render().backgroundRemoval],
     // Waits for a gesture to end, so a slider drag does not trace every step.
     // Tracing settings are in millimetres, so nothing traces until the size is set.
     enabled: () => {

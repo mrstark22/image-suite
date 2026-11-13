@@ -1,7 +1,7 @@
 /**
  * The tracer's defining properties (phase 2, #24 to #29), on synthetic
  * anti-aliased shapes whose correct geometry is known. They run the compiled
- * WASM through `traceImage`, the call the app makes.
+ * WASM through `traceImageAt`, the call the app makes.
  *
  * Coordinates are image pixels on the pixel-edge grid: pixel (x, y) covers the
  * square from (x, y) to (x + 1, y + 1). `runTrace` uses 10 px per mm, so the

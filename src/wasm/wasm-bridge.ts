@@ -6,7 +6,7 @@
 import initWasm from './pkg/image_suite_wasm.wasm?init';
 import wasmUrl from './pkg/image_suite_wasm.wasm?url';
 import type { VectorConfig, VectorResult } from '../types/vector';
-import { traceImage, traceImageAt, type TraceExports } from '../lib/trace-call';
+import { traceImageAt, type TraceExports } from '../lib/trace-call';
 import type { DepthConfig, DepthResult } from '../types/depth';
 
 export interface WasmPipelineParams {
@@ -253,11 +253,6 @@ export class RustWasmEngine {
       params.ditherScale ?? 1,
       params.ditherInverted ? 1 : 0
     );
-  }
-
-  /** Traces an RGBA8 image (see `traceImage`). */
-  public trace(pixels: ArrayBuffer, width: number, height: number, pxPerMm: number, config: VectorConfig): VectorResult {
-    return traceImage(this.wasm, pixels, width, height, pxPerMm, config);
   }
 
   /** Traces the RGBA8 image at `ptr` in WASM memory, in place (see `traceImageAt`). */

@@ -7,12 +7,49 @@ export function rgbOfHex(color: string): [number, number, number] {
   return [parseInt(hex.slice(0, 2), 16), parseInt(hex.slice(2, 4), 16), parseInt(hex.slice(4, 6), 16)];
 }
 
-/** Throws unless every colour of `palette` is `#rrggbb`. */
+/** The most colours a palette can have: the tracer's own limit on the number of colours. */
+export const MAX_PALETTE = 32;
+
+/**
+ * Throws unless `palette` is one the tracer can use: at most `MAX_PALETTE`
+ * entries (the tracer holds a colour's index in a byte, and 255 means "left
+ * out", #88), every colour `#rrggbb`, and every merge pointing at an entry.
+ */
 export function checkPalette(palette: PaletteEntry[]): void {
+  if (!Array.isArray(palette)) throw new Error('The palette is not a list of colours.');
+  if (palette.length > MAX_PALETTE) {
+    throw new Error(`The palette has ${palette.length} colours; the most the tracer takes is ${MAX_PALETTE}.`);
+  }
   for (const e of palette) {
     rgbOfHex(e.color);
     if (e.drawAs !== undefined) rgbOfHex(e.drawAs);
+    const m = e.mergeInto;
+    if (m !== null && !(Number.isInteger(m) && m >= 0 && m < palette.length)) {
+      throw new Error(`A palette colour is merged into colour ${String(m)}, which the palette does not have.`);
+    }
   }
+}
+
+/**
+ * `result` with each colour layer drawn in its palette entry's `drawAs`
+ * colour, or in the colour it traces when the entry has none. The tracer
+ * only sees the colour to match, so this is where a layer gets its drawn
+ * colour, for a new trace and for one already on screen (#91).
+ */
+export function withDrawnColours(result: VectorResult, palette: PaletteEntry[] | null): VectorResult {
+  let changed = false;
+  const layers = result.layers.map((layer) => {
+    if (layer.paletteIndex === null) return layer;
+    const traced = layer.sourceColor ?? layer.color;
+    const drawAs = palette?.[layer.paletteIndex]?.drawAs;
+    const color = drawAs ?? traced;
+    const sourceColor = drawAs === undefined ? undefined : traced;
+    if (color === layer.color && sourceColor === layer.sourceColor) return layer;
+    changed = true;
+    const { sourceColor: _dropped, ...rest } = layer;
+    return sourceColor === undefined ? { ...rest, color } : { ...rest, color, sourceColor };
+  });
+  return changed ? { ...result, layers } : result;
 }
 
 /** What happens to one palette colour: its own layer, left out, or merged into another colour's layer. */

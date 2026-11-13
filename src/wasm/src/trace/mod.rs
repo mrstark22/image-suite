@@ -209,7 +209,26 @@ pub fn trace(rgba: &[u8], w: usize, h: usize, cfg: &TraceConfig) -> TraceResult 
             } else {
                 union.as_deref_mut()
             };
-            let paths = trace_layer(&mut field, w, h, &params, into_union);
+            // The paper is not a drawn shape: along its middle it is a web
+            // of lines between the artwork. In Centreline mode it keeps an
+            // outline, as a solid area does.
+            let paper;
+            let layer_params = if is_background && params.shapes == Shapes::Centreline {
+                paper = LayerParams {
+                    shapes: Shapes::Outline,
+                    max_stroke_px: params.max_stroke_px,
+                    min_area_px: params.min_area_px,
+                    dot_max_px: params.dot_max_px,
+                    fit: FitOptions {
+                        tolerance: params.fit.tolerance,
+                        corner_angle: params.fit.corner_angle,
+                    },
+                };
+                &paper
+            } else {
+                &params
+            };
+            let paths = trace_layer(&mut field, w, h, layer_params, into_union);
             let rgb = cfg.palette.get(out).map(|e| e.rgb).unwrap_or(palette[out]);
             layers.push(TracedLayer {
                 name: format!("Colour {}", out + 1),
