@@ -1,22 +1,12 @@
-import React, { useEffect, useRef, useState, useCallback, useId } from "react";
-import { RotateCcw, Box, Compass } from "lucide-react";
-import { useDocumentStore } from "../../store/documentStore";
-import { DEFAULT_DEPTH } from "../../lib/document";
-import { ActivePointers, type PointerPair } from "../../lib/gestures";
-import {
-  DEFAULT_CAMERA,
-  FOV_Y_DEG,
-  cameraForKey,
-  framingDistance,
-  dollyBy,
-  orbitBy,
-  panBy,
-  pinchCamera,
-  type OrbitCamera,
-} from "../../lib/orbit-camera";
-import type { ReliefMaterial } from "../../types/depth";
-import { COARSE_POINTER_QUERY } from "../shared/breakpoints";
-import styles from "./DepthViewer3D.module.css";
+import React, { useEffect, useRef, useState, useCallback, useId } from 'react';
+import { RotateCcw, Box, Compass } from 'lucide-react';
+import { useDocumentStore } from '../../store/documentStore';
+import { DEFAULT_DEPTH } from '../../lib/document';
+import { ActivePointers, type PointerPair } from '../../lib/gestures';
+import { DEFAULT_CAMERA, FOV_Y_DEG, cameraForKey, framingDistance, dollyBy, orbitBy, panBy, pinchCamera, type OrbitCamera } from '../../lib/orbit-camera';
+import type { ReliefMaterial } from '../../types/depth';
+import { COARSE_POINTER_QUERY } from '../shared/breakpoints';
+import styles from './DepthViewer3D.module.css';
 
 interface DepthViewer3DProps {
   /** The heightmap: `width * height` 16-bit heights, 0 deepest to 65535 the surface. */
@@ -31,12 +21,7 @@ interface DepthViewer3DProps {
 const GRID_SIZE = 360;
 /** Height of the light above the surface, degrees: low enough to model the relief. */
 const LIGHT_ELEVATION_DEG = 35;
-const MATERIAL_CODE: Record<ReliefMaterial, number> = {
-  walnut: 0,
-  brass: 1,
-  slate: 2,
-  grayscale: 3,
-};
+const MATERIAL_CODE: Record<ReliefMaterial, number> = { walnut: 0, brass: 1, slate: 2, grayscale: 3 };
 
 const VS = `
 attribute vec2 a_uv;
@@ -113,18 +98,14 @@ interface GpuScene {
 /** Creates the scene on `canvas`, or returns the reason it cannot. */
 function createScene(canvas: HTMLCanvasElement): GpuScene | string {
   const attrs = { antialias: true, alpha: false, depth: true };
-  let gl: WebGLRenderingContext | WebGL2RenderingContext | null =
-    canvas.getContext("webgl2", attrs) as WebGL2RenderingContext | null;
+  let gl: WebGLRenderingContext | WebGL2RenderingContext | null = canvas.getContext('webgl2', attrs) as WebGL2RenderingContext | null;
   const isWebGL2 = gl !== null;
   if (!gl) {
-    gl = canvas.getContext("webgl", attrs) as WebGLRenderingContext | null;
-    if (gl && !gl.getExtension("OES_element_index_uint"))
-      return "This browser cannot draw the 3D view (WebGL without 32-bit indices).";
+    gl = canvas.getContext('webgl', attrs) as WebGLRenderingContext | null;
+    if (gl && !gl.getExtension('OES_element_index_uint')) return 'This browser cannot draw the 3D view (WebGL without 32-bit indices).';
   }
-  if (!gl)
-    return "This browser cannot draw the 3D view (no WebGL). The Heightmap view still shows the result.";
-  const floatLinear =
-    isWebGL2 && gl.getExtension("OES_texture_float_linear") !== null;
+  if (!gl) return 'This browser cannot draw the 3D view (no WebGL). The Heightmap view still shows the result.';
+  const floatLinear = isWebGL2 && gl.getExtension('OES_texture_float_linear') !== null;
 
   const shaders: WebGLShader[] = [];
   const compile = (type: number, src: string): WebGLShader | null => {
@@ -141,16 +122,14 @@ function createScene(canvas: HTMLCanvasElement): GpuScene | string {
   const fail = (why: string) => {
     shaders.forEach((s) => gl!.deleteShader(s));
     if (program) gl!.deleteProgram(program);
-    gl!.getExtension("WEBGL_lose_context")?.loseContext();
+    gl!.getExtension('WEBGL_lose_context')?.loseContext();
     return why;
   };
-  if (!vs || !fs || !program)
-    return fail("The 3D view could not start its shaders.");
+  if (!vs || !fs || !program) return fail('The 3D view could not start its shaders.');
   gl.attachShader(program, vs);
   gl.attachShader(program, fs);
   gl.linkProgram(program);
-  if (!gl.getProgramParameter(program, gl.LINK_STATUS))
-    return fail("The 3D view could not start its shaders.");
+  if (!gl.getProgramParameter(program, gl.LINK_STATUS)) return fail('The 3D view could not start its shaders.');
 
   const uvs = new Float32Array((GRID_SIZE + 1) * (GRID_SIZE + 1) * 2);
   let k = 0;
@@ -178,7 +157,7 @@ function createScene(canvas: HTMLCanvasElement): GpuScene | string {
   gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indices, gl.STATIC_DRAW);
 
   gl.useProgram(program);
-  const aUv = gl.getAttribLocation(program, "a_uv");
+  const aUv = gl.getAttribLocation(program, 'a_uv');
   gl.enableVertexAttribArray(aUv);
   gl.vertexAttribPointer(aUv, 2, gl.FLOAT, false, 0, 0);
 
@@ -192,16 +171,7 @@ function createScene(canvas: HTMLCanvasElement): GpuScene | string {
   gl.depthFunc(gl.LEQUAL);
 
   const uniforms: Record<string, WebGLUniformLocation | null> = {};
-  for (const name of [
-    "u_mvp",
-    "u_heightMap",
-    "u_meshHalf",
-    "u_depth",
-    "u_texel",
-    "u_texelWorld",
-    "u_lightDir",
-    "u_material",
-  ]) {
+  for (const name of ['u_mvp', 'u_heightMap', 'u_meshHalf', 'u_depth', 'u_texel', 'u_texelWorld', 'u_lightDir', 'u_material']) {
     uniforms[name] = gl.getUniformLocation(program, name);
   }
   return {
@@ -227,16 +197,11 @@ function releaseScene(scene: GpuScene): void {
     gl.deleteShader(s);
   });
   gl.deleteProgram(scene.program);
-  gl.getExtension("WEBGL_lose_context")?.loseContext();
+  gl.getExtension('WEBGL_lose_context')?.loseContext();
 }
 
 /** Uploads the heightmap as a filterable texture (#48: R32F only where linear filtering of it is supported). */
-function uploadHeights(
-  scene: GpuScene,
-  heights: Uint16Array,
-  width: number,
-  height: number,
-): void {
+function uploadHeights(scene: GpuScene, heights: Uint16Array, width: number, height: number): void {
   const { gl } = scene;
   gl.bindTexture(gl.TEXTURE_2D, scene.texture);
   gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
@@ -246,31 +211,11 @@ function uploadHeights(
     for (let i = 0; i < heights.length; i++) data[i] = heights[i] / 65535;
     // R16F is always filterable in WebGL 2; R32F needs OES_texture_float_linear.
     const format = scene.floatLinear ? gl2.R32F : gl2.R16F;
-    gl2.texImage2D(
-      gl2.TEXTURE_2D,
-      0,
-      format,
-      width,
-      height,
-      0,
-      gl2.RED,
-      gl2.FLOAT,
-      data,
-    );
+    gl2.texImage2D(gl2.TEXTURE_2D, 0, format, width, height, 0, gl2.RED, gl2.FLOAT, data);
   } else {
     const data = new Uint8Array(heights.length);
     for (let i = 0; i < heights.length; i++) data[i] = heights[i] >> 8;
-    gl.texImage2D(
-      gl.TEXTURE_2D,
-      0,
-      gl.LUMINANCE,
-      width,
-      height,
-      0,
-      gl.LUMINANCE,
-      gl.UNSIGNED_BYTE,
-      data,
-    );
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.LUMINANCE, width, height, 0, gl.LUMINANCE, gl.UNSIGNED_BYTE, data);
   }
 }
 
@@ -281,12 +226,7 @@ function uploadHeights(
  * when something changes, and releases its GPU resources and context when it
  * closes (#48).
  */
-export const DepthViewer3D: React.FC<DepthViewer3DProps> = ({
-  depthBuffer,
-  width,
-  height,
-  sizeMm,
-}) => {
+export const DepthViewer3D: React.FC<DepthViewer3DProps> = ({ depthBuffer, width, height, sizeMm }) => {
   const canvasHostRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -302,16 +242,15 @@ export const DepthViewer3D: React.FC<DepthViewer3DProps> = ({
   // The camera as last moved with the keys: what screen readers are told. A
   // drag or pinch changes the camera on every frame, and announcing each one
   // would flood the reader, so pointer moves are not announced (review of #84).
-  const [announcedCamera, setAnnouncedCamera] =
-    useState<OrbitCamera>(DEFAULT_CAMERA);
+  const [announcedCamera, setAnnouncedCamera] = useState<OrbitCamera>(DEFAULT_CAMERA);
   const [isFocused, setIsFocused] = useState(false);
   // A phone has no right button or wheel, so its hint names only touch gestures.
   const [touchOnly] = useState(
     () =>
-      typeof window !== "undefined" &&
-      typeof window.matchMedia === "function" &&
+      typeof window !== 'undefined' &&
+      typeof window.matchMedia === 'function' &&
       window.matchMedia(COARSE_POINTER_QUERY).matches &&
-      !window.matchMedia("(any-pointer: fine)").matches,
+      !window.matchMedia('(any-pointer: fine)').matches
   );
   const keysHintId = useId();
 
@@ -320,8 +259,8 @@ export const DepthViewer3D: React.FC<DepthViewer3DProps> = ({
   // it is released.
   const pointersRef = useRef(new ActivePointers());
   const gestureRef = useRef<
-    | { kind: "orbit" | "pan"; pointerId: number; x: number; y: number }
-    | { kind: "pinch"; start: PointerPair; camera: OrbitCamera }
+    | { kind: 'orbit' | 'pan'; pointerId: number; x: number; y: number }
+    | { kind: 'pinch'; start: PointerPair; camera: OrbitCamera }
     | null
   >(null);
 
@@ -340,13 +279,7 @@ export const DepthViewer3D: React.FC<DepthViewer3DProps> = ({
   }, []);
 
   const handleTopDownCamera = useCallback(() => {
-    setCamera((prev) => ({
-      ...prev,
-      azimuth: 0,
-      elevation: 88,
-      panX: 0,
-      panY: 0,
-    }));
+    setCamera((prev) => ({ ...prev, azimuth: 0, elevation: 88, panX: 0, panY: 0 }));
   }, []);
 
   // The GPU scene lives exactly as long as the view. Each scene gets a canvas
@@ -355,12 +288,12 @@ export const DepthViewer3D: React.FC<DepthViewer3DProps> = ({
   useEffect(() => {
     const host = canvasHostRef.current;
     if (!host) return;
-    const canvas = document.createElement("canvas");
+    const canvas = document.createElement('canvas');
     canvas.className = styles.webglCanvas;
     host.appendChild(canvas);
     canvasRef.current = canvas;
     const scene = createScene(canvas);
-    if (typeof scene === "string") {
+    if (typeof scene === 'string') {
       setGlError(scene);
       return () => {
         canvasRef.current = null;
@@ -368,10 +301,7 @@ export const DepthViewer3D: React.FC<DepthViewer3DProps> = ({
       };
     }
     sceneRef.current = scene;
-    const resize =
-      typeof ResizeObserver === "undefined"
-        ? null
-        : new ResizeObserver(() => requestDraw());
+    const resize = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(() => requestDraw());
     resize?.observe(canvas);
     return () => {
       resize?.disconnect();
@@ -417,96 +347,49 @@ export const DepthViewer3D: React.FC<DepthViewer3DProps> = ({
       const widthMm = sizeMm?.widthMm ?? width;
       const heightMm = sizeMm?.heightMm ?? height;
       const worldPerMm = 2 / Math.max(widthMm, heightMm);
-      const half = {
-        x: (widthMm * worldPerMm) / 2,
-        y: (heightMm * worldPerMm) / 2,
-      };
+      const half = { x: (widthMm * worldPerMm) / 2, y: (heightMm * worldPerMm) / 2 };
       const depthWorld = maxDepthMm * exaggeration * worldPerMm;
 
       // The camera's distance and pan are relative to the distance that frames the whole plate.
-      const frame = framingDistance(
-        { halfX: half.x, halfY: half.y, depth: depthWorld },
-        camera.elevation,
-        w / h,
-      );
-      const proj = perspective(
-        (FOV_Y_DEG * Math.PI) / 180,
-        w / h,
-        0.05,
-        100 + frame * 4,
-      );
-      const view = orbitView(
-        camera.azimuth,
-        camera.elevation,
-        camera.distance * frame,
-        camera.panX * frame,
-        camera.panY * frame,
-        -depthWorld / 2,
-      );
-      gl.uniformMatrix4fv(
-        u.u_mvp,
-        false,
-        new Float32Array(multiply(proj, view)),
-      );
+      const frame = framingDistance({ halfX: half.x, halfY: half.y, depth: depthWorld }, camera.elevation, w / h);
+      const proj = perspective((FOV_Y_DEG * Math.PI) / 180, w / h, 0.05, 100 + frame * 4);
+      const view = orbitView(camera.azimuth, camera.elevation, camera.distance * frame, camera.panX * frame, camera.panY * frame, -depthWorld / 2);
+      gl.uniformMatrix4fv(u.u_mvp, false, new Float32Array(multiply(proj, view)));
       gl.uniform2f(u.u_meshHalf, half.x, half.y);
       gl.uniform1f(u.u_depth, depthWorld);
       gl.uniform2f(u.u_texel, 1 / width, 1 / height);
       gl.uniform2f(u.u_texelWorld, (half.x * 2) / width, (half.y * 2) / height);
       const az = (lightAngle * Math.PI) / 180;
       const el = (LIGHT_ELEVATION_DEG * Math.PI) / 180;
-      gl.uniform3f(
-        u.u_lightDir,
-        Math.cos(az) * Math.cos(el),
-        Math.sin(az) * Math.cos(el),
-        Math.sin(el),
-      );
+      gl.uniform3f(u.u_lightDir, Math.cos(az) * Math.cos(el), Math.sin(az) * Math.cos(el), Math.sin(el));
       gl.uniform1i(u.u_material, MATERIAL_CODE[material] ?? 0);
       gl.uniform1i(u.u_heightMap, 0);
       gl.drawElements(gl.TRIANGLES, scene.indexCount, gl.UNSIGNED_INT, 0);
     };
     requestDraw();
-  }, [
-    camera,
-    material,
-    lightAngle,
-    exaggeration,
-    maxDepthMm,
-    sizeMm?.widthMm,
-    sizeMm?.heightMm,
-    width,
-    height,
-    depthBuffer,
-    requestDraw,
-  ]);
+  }, [camera, material, lightAngle, exaggeration, maxDepthMm, sizeMm?.widthMm, sizeMm?.heightMm, width, height, depthBuffer, requestDraw]);
 
   const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     // The HUD's buttons are inside the view; they are not drags.
-    if ((e.target as Element).closest("button")) return;
+    if ((e.target as Element).closest('button')) return;
     const pointers = pointersRef.current;
-    if (e.pointerType === "mouse" && e.button !== 0 && e.button !== 2) return;
+    if (e.pointerType === 'mouse' && e.button !== 0 && e.button !== 2) return;
     pointers.down(e.pointerId, { x: e.clientX, y: e.clientY });
     e.currentTarget.setPointerCapture?.(e.pointerId);
     const pair = pointers.pair();
     if (pair) {
-      gestureRef.current = { kind: "pinch", start: pair, camera };
+      gestureRef.current = { kind: 'pinch', start: pair, camera };
     } else {
-      const kind =
-        e.pointerType === "mouse" && e.button === 2 ? "pan" : "orbit";
-      gestureRef.current = {
-        kind,
-        pointerId: e.pointerId,
-        x: e.clientX,
-        y: e.clientY,
-      };
+      const kind = e.pointerType === 'mouse' && e.button === 2 ? 'pan' : 'orbit';
+      gestureRef.current = { kind, pointerId: e.pointerId, x: e.clientX, y: e.clientY };
     }
   };
 
   const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (!pointersRef.current.move(e.pointerId, { x: e.clientX, y: e.clientY }))
-      return;
+    if (!pointersRef.current.move(e.pointerId, { x: e.clientX, y: e.clientY })) return;
     const gesture = gestureRef.current;
     if (!gesture) return;
-    if (gesture.kind === "pinch") {
+    if (gesture.kind === 'pinch') {
       const pair = pointersRef.current.pair();
       if (pair) setCamera(pinchCamera(gesture.camera, gesture.start, pair));
       return;
@@ -516,9 +399,7 @@ export const DepthViewer3D: React.FC<DepthViewer3DProps> = ({
     const dy = e.clientY - gesture.y;
     gesture.x = e.clientX;
     gesture.y = e.clientY;
-    setCamera((prev) =>
-      gesture.kind === "orbit" ? orbitBy(prev, dx, dy) : panBy(prev, dx, dy),
-    );
+    setCamera((prev) => (gesture.kind === 'orbit' ? orbitBy(prev, dx, dy) : panBy(prev, dx, dy)));
   };
 
   const handlePointerEnd = (e: React.PointerEvent<HTMLDivElement>) => {
@@ -526,16 +407,13 @@ export const DepthViewer3D: React.FC<DepthViewer3DProps> = ({
     if (!pointers.has(e.pointerId)) return;
     pointers.up(e.pointerId);
     // Lifting one finger of a pinch carries on as an orbit with the other.
-    const rest = gestureRef.current?.kind === "pinch" ? pointers.first() : null;
-    gestureRef.current = rest
-      ? { kind: "orbit", pointerId: rest.id, x: rest.at.x, y: rest.at.y }
-      : null;
+    const rest = gestureRef.current?.kind === 'pinch' ? pointers.first() : null;
+    gestureRef.current = rest ? { kind: 'orbit', pointerId: rest.id, x: rest.at.x, y: rest.at.y } : null;
   };
 
   // Keys pressed on the view itself; the HUD's buttons keep theirs.
   const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
-    if (e.target !== e.currentTarget || e.ctrlKey || e.metaKey || e.altKey)
-      return;
+    if (e.target !== e.currentTarget || e.ctrlKey || e.metaKey || e.altKey) return;
     const next = cameraForKey(camera, e);
     if (!next) return;
     e.preventDefault();
@@ -551,8 +429,8 @@ export const DepthViewer3D: React.FC<DepthViewer3DProps> = ({
       e.preventDefault();
       setCamera((prev) => dollyBy(prev, 1 + e.deltaY * 0.0015));
     };
-    container.addEventListener("wheel", onWheel, { passive: false });
-    return () => container.removeEventListener("wheel", onWheel);
+    container.addEventListener('wheel', onWheel, { passive: false });
+    return () => container.removeEventListener('wheel', onWheel);
   }, []);
 
   return (
@@ -580,28 +458,17 @@ export const DepthViewer3D: React.FC<DepthViewer3DProps> = ({
         <div className={styles.hudBadge}>
           <Box size={14} />
           <span>
-            {sizeMm
-              ? `${sizeMm.widthMm.toFixed(0)} × ${sizeMm.heightMm.toFixed(0)} mm, `
-              : ""}
-            {maxDepthMm.toFixed(1)} mm deep
-            {exaggeration !== 1 ? `, shown ${exaggeration}×` : ""}
+            {sizeMm ? `${sizeMm.widthMm.toFixed(0)} × ${sizeMm.heightMm.toFixed(0)} mm, ` : ''}
+            {maxDepthMm.toFixed(1)} mm deep{exaggeration !== 1 ? `, shown ${exaggeration}×` : ''}
           </span>
         </div>
 
         <div className={styles.hudActions}>
-          <button
-            className={styles.hudBtn}
-            onClick={handleTopDownCamera}
-            title="Look straight down"
-          >
+          <button className={styles.hudBtn} onClick={handleTopDownCamera} title="Look straight down">
             <Compass size={14} />
             <span>Top View</span>
           </button>
-          <button
-            className={styles.hudBtn}
-            onClick={handleResetCamera}
-            title="Reset the camera"
-          >
+          <button className={styles.hudBtn} onClick={handleResetCamera} title="Reset the camera">
             <RotateCcw size={14} />
             <span>Reset View</span>
           </button>
@@ -614,10 +481,10 @@ export const DepthViewer3D: React.FC<DepthViewer3DProps> = ({
       </span>
       <div className={styles.hudHint} aria-hidden="true">
         {isFocused
-          ? "Arrows: Orbit • Shift + Arrows: Larger Step • + / −: Zoom"
+          ? 'Arrows: Orbit • Shift + Arrows: Larger Step • + / −: Zoom'
           : touchOnly
-            ? "Drag: Orbit • Two Fingers: Pan • Pinch: Zoom"
-            : "Drag: Orbit • Right-Drag or Two Fingers: Pan • Scroll or Pinch: Zoom"}
+            ? 'Drag: Orbit • Two Fingers: Pan • Pinch: Zoom'
+            : 'Drag: Orbit • Right-Drag or Two Fingers: Pan • Scroll or Pinch: Zoom'}
       </div>
       <div className={styles.visuallyHidden} role="status" aria-live="polite">
         {`Camera ${Math.round(((announcedCamera.azimuth % 360) + 360) % 360)}° around, ${Math.round(announcedCamera.elevation)}° above the surface, zoom ${Math.round(100 / announcedCamera.distance)}%`}
@@ -630,42 +497,13 @@ export const DepthViewer3D: React.FC<DepthViewer3DProps> = ({
 // Matrix helpers (column-major, as WebGL takes them)
 // -------------------------------------------------------------------------
 
-function perspective(
-  fov: number,
-  aspect: number,
-  near: number,
-  far: number,
-): number[] {
+function perspective(fov: number, aspect: number, near: number, far: number): number[] {
   const f = 1.0 / Math.tan(fov / 2);
   const rangeInv = 1.0 / (near - far);
-  return [
-    f / aspect,
-    0,
-    0,
-    0,
-    0,
-    f,
-    0,
-    0,
-    0,
-    0,
-    (near + far) * rangeInv,
-    -1,
-    0,
-    0,
-    near * far * rangeInv * 2,
-    0,
-  ];
+  return [f / aspect, 0, 0, 0, 0, f, 0, 0, 0, 0, (near + far) * rangeInv, -1, 0, 0, near * far * rangeInv * 2, 0];
 }
 
-function orbitView(
-  azimuthDeg: number,
-  elevationDeg: number,
-  distance: number,
-  panX: number,
-  panY: number,
-  targetZ: number,
-): number[] {
+function orbitView(azimuthDeg: number, elevationDeg: number, distance: number, panX: number, panY: number, targetZ: number): number[] {
   const az = (azimuthDeg * Math.PI) / 180;
   const el = (elevationDeg * Math.PI) / 180;
   const eye = [
@@ -695,18 +533,9 @@ function lookAt(eye: number[], target: number[], up: number[]): number[] {
   const yy = zz * xx - zx * xz;
   const yz = zx * xy - zy * xx;
   return [
-    xx,
-    yx,
-    zx,
-    0,
-    xy,
-    yy,
-    zy,
-    0,
-    xz,
-    yz,
-    zz,
-    0,
+    xx, yx, zx, 0,
+    xy, yy, zy, 0,
+    xz, yz, zz, 0,
     -(xx * eye[0] + xy * eye[1] + xz * eye[2]),
     -(yx * eye[0] + yy * eye[1] + yz * eye[2]),
     -(zx * eye[0] + zy * eye[1] + zz * eye[2]),
