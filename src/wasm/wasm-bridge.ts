@@ -10,6 +10,14 @@ import { traceImageAt, type TraceExports } from '../lib/trace-call';
 import type { CardPhotoExports } from '../lib/card-photo-call';
 import type { DepthConfig, DepthResult, ResolvedDepthSource } from '../types/depth';
 
+/** 256-bin channel and luma histograms. */
+export interface PreparedHistogram {
+  r: Uint32Array;
+  g: Uint32Array;
+  b: Uint32Array;
+  luma: Uint32Array;
+}
+
 export interface WasmPipelineParams {
   width: number;
   height: number;
@@ -163,6 +171,7 @@ export interface WasmExports {
   sample_card_patches: CardPhotoExports['sample_card_patches'];
   rectify_card: CardPhotoExports['rectify_card'];
   get_trace_json_len: () => number;
+  get_prepared_histogram: () => number;
   process_depth: (
     ptr: number,
     width: number,
@@ -328,6 +337,20 @@ export class RustWasmEngine {
     } finally {
       if (curvePtr) this.wasm.deallocate(curvePtr, curveBytes);
     }
+  }
+
+  /**
+   * The histogram of the last `processInPlace` call's `prepared` stage (the
+   * tones the dither receives): 256 bins each of red, green, blue and luma.
+   */
+  public preparedHistogram(): PreparedHistogram {
+    const ptr = this.wasm.get_prepared_histogram();
+    // Copy with a DataView: the static is 4-byte aligned, but reading
+    // bytes makes no assumption about it.
+    const view = new DataView(this.wasm.memory.buffer, ptr, 1024 * 4);
+    const bins = new Uint32Array(1024);
+    for (let i = 0; i < 1024; i++) bins[i] = view.getUint32(i * 4, true);
+    return { r: bins.slice(0, 256), g: bins.slice(256, 512), b: bins.slice(512, 768), luma: bins.slice(768) };
   }
 
   /** Burn simulation preview (#41) in place on the dithered RGBA8 image at `ptr`. */

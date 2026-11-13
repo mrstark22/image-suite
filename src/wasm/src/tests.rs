@@ -228,3 +228,19 @@ fn burn_simulation_grows_dots_with_spot_size() {
     assert_eq!(small[(4 * 9 + 5) * 4], 255);
     assert!(big[(4 * 9 + 5) * 4] < 255);
 }
+
+#[test]
+fn prepared_histogram_counts_each_channel_and_luma() {
+    use crate::prepared_histogram;
+    // Two mid-grey pixels and one pure red one.
+    let px = [128, 128, 128, 255, 128, 128, 128, 255, 255, 0, 0, 255];
+    let bins = prepared_histogram(&px);
+    assert_eq!(bins[128], 2);
+    assert_eq!(bins[255], 1);
+    assert_eq!(bins[256 + 128], 2);
+    assert_eq!(bins[256], 1);
+    assert_eq!(bins[768 + 128], 2);
+    // Red's Rec. 709 luma: 0.2126 * 255 = 54.2.
+    assert_eq!(bins[768 + 54], 1);
+    assert_eq!(bins[768..].iter().sum::<u32>(), 3);
+}
