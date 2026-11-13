@@ -4,7 +4,7 @@ import { checkPalette } from './trace-palette';
 const COLOR_MODES: ReadonlyArray<VectorConfig['colorMode']> = ['mono', 'color'];
 const SHAPES: ReadonlyArray<VectorConfig['shapes']> = ['auto', 'outline', 'centerline'];
 const NUMBERS = ['threshold', 'colorCount', 'maxStrokeWidthMm', 'toleranceMm', 'cornerAngle', 'minAreaMm2', 'denoiseMm', 'cutlineOffsetMm'] as const;
-const FLAGS = ['invert', 'cutline'] as const;
+const FLAGS = ['autoThreshold', 'invert', 'cutline'] as const;
 
 /**
  * Throws unless every tracing setting present in `settings` is one the tracer

@@ -293,13 +293,31 @@ describe('settings', () => {
   it('threshold decides which greys are ink', () => {
     const img = render(60, 30, () => false);
     for (let y = 5; y < 25; y++) for (let x = 5; x < 25; x++) img.fill(100, (y * 60 + x) * 4, (y * 60 + x) * 4 + 3);
-    expect(allPaths(runTrace(wasm, img, 60, 30, { threshold: 128 }))).toHaveLength(1);
-    expect(allPaths(runTrace(wasm, img, 60, 30, { threshold: 90 }))).toHaveLength(0);
+    expect(allPaths(runTrace(wasm, img, 60, 30, { autoThreshold: false, threshold: 128 }))).toHaveLength(1);
+    expect(allPaths(runTrace(wasm, img, 60, 30, { autoThreshold: false, threshold: 90 }))).toHaveLength(0);
+  });
+
+  it('by default the artwork is found whatever its tone: gold on white traces, where a fixed mid-grey threshold finds nothing', () => {
+    const img = render(80, 80, (x, y) => Math.hypot(x - 40, y - 40) < 25);
+    // Recolour: ink becomes gold (lighter than mid-grey), paper stays white.
+    for (let i = 0; i < 80 * 80; i++) {
+      const a = 1 - img[i * 4] / 255;
+      img.set([224, 160, 48].map((c) => Math.round(c * a + 255 * (1 - a))), i * 4);
+    }
+    expect(allPaths(runTrace(wasm, img, 80, 80, { autoThreshold: false, threshold: 128 }))).toHaveLength(0);
+    const found = runTrace(wasm, img, 80, 80, { shapes: 'outline' });
+    expect(allPaths(found)).toHaveLength(1);
+    expect(found.threshold!.lightInk).toBe(false);
+    // Halfway between gold's grey level (166) and white (255).
+    expect(found.threshold!.level).toBeGreaterThan(200);
+    expect(found.threshold!.level).toBeLessThan(220);
+    // With the automatic threshold, invert traces the background: the paper's edge and the hole the disc leaves.
+    expect(allPaths(runTrace(wasm, img, 80, 80, { shapes: 'outline', invert: true }))).toHaveLength(2);
   });
 
   it('invert traces the light areas', () => {
     const img = render(60, 60, (x, y) => !(x >= 20 && x < 40 && y >= 20 && y < 40));
-    expect(allPaths(runTrace(wasm, img, 60, 60, { invert: true, shapes: 'outline' }))).toHaveLength(1);
+    expect(allPaths(runTrace(wasm, img, 60, 60, { autoThreshold: false, invert: true, shapes: 'outline' }))).toHaveLength(1);
   });
 
   it('specks and holes below the minimum area are dropped, others kept', () => {

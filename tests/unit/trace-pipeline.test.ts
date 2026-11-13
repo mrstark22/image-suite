@@ -61,8 +61,9 @@ describe('tracing in the pipeline', () => {
 
   it('traces the adjusted image: darkening the image changes the trace (#23)', async () => {
     store().open(await loadPixels(pipeline.api, greySquare(80, 60), 80, 60), 0.1);
+    store().edit(setVector({ autoThreshold: false }));
     await pipeline.settled();
-    // At the default threshold of 128 the 150 grey square is not ink.
+    // At a fixed threshold of 128 the 150 grey square is not ink.
     expect(pathCount(render().vectorResult)).toBe(0);
     store().edit(setTonal({ brightness: -40 }));
     await pipeline.settled();
@@ -71,7 +72,7 @@ describe('tracing in the pipeline', () => {
 
   it('a tracing setting changes the trace', async () => {
     store().open(await loadPixels(pipeline.api, greySquare(80, 60), 80, 60), 0.1);
-    store().edit(setVector({ threshold: 200 }));
+    store().edit(setVector({ autoThreshold: false, threshold: 200 }));
     await pipeline.settled();
     expect(pathCount(render().vectorResult)).toBe(1);
     store().edit(setVector({ cutline: true, cutlineOffsetMm: 1 }));
@@ -87,7 +88,7 @@ describe('export traces at full resolution (#23)', () => {
     const data = new Uint8Array(w * h * 4).fill(255);
     for (let x = 100; x < 3900; x++) data.fill(0, (100 * w + x) * 4, (100 * w + x) * 4 + 3);
     store().open(await loadPixels(pipeline.api, data.buffer, w, h), 0.05);
-    store().edit(setVector({ threshold: 100 }));
+    store().edit(setVector({ autoThreshold: false, threshold: 100 }));
     await pipeline.settled();
     expect(previewTarget(store().doc!).widthPx).toBe(2048);
     const shown = render().vectorResult!;
@@ -101,7 +102,7 @@ describe('export traces at full resolution (#23)', () => {
 
   it('layers hidden on screen stay hidden in the file', async () => {
     store().open(await loadPixels(pipeline.api, greySquare(80, 60), 80, 60), 0.1);
-    store().edit(setVector({ threshold: 200, cutline: true }));
+    store().edit(setVector({ autoThreshold: false, threshold: 200, cutline: true }));
     await pipeline.settled();
     render().toggleVectorLayer('cutline');
     const shown = render().vectorResult!;
