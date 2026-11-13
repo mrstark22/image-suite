@@ -3,7 +3,7 @@
  */
 import { DEFAULT_PREFERENCES, usePreferencesStore } from '../../src/store/preferencesStore';
 import type { LoadedSource } from '../../src/lib/image-loader';
-import { newSourceId, setOpenDefaults } from '../../src/store/documentStore';
+import { newSourceId } from '../../src/store/documentStore';
 import { useDocumentStore } from '../../src/store/documentStore';
 import { useRenderStore } from '../../src/store/renderStore';
 import { useUIStore } from '../../src/store/uiStore';
@@ -49,8 +49,6 @@ export function openPhoto(fileDpi: number | null = null): void {
 /** Closes any document and resets the stores between tests. */
 export function resetStores(): void {
   useDocumentStore.getState().close();
-  // No material chosen: documents open with the plain defaults.
-  setOpenDefaults(null);
   useRenderStore.setState({ errorMessage: null });
   useUIStore.setState({ isSizeDialogOpen: false });
   usePreferencesStore.setState({ ...DEFAULT_PREFERENCES });

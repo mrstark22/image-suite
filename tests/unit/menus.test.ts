@@ -2,6 +2,7 @@
  * The menus (#53) contain only actions that work: every item, run where it
  * is enabled, changes something; items that would do nothing are disabled.
  */
+import { useProfilesStore } from '../../src/store/profilesStore';
 import { usePreferencesStore } from '../../src/store/preferencesStore';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { MENUS, itemShortcut, type MenuItem } from '../../src/lib/menus';
@@ -82,6 +83,7 @@ const effects: Record<string, { setup?: () => void; changed: () => boolean }> = 
   theme: { changed: () => ui().theme === 'light' },
   'keep-settings': { changed: () => usePreferencesStore.getState().keepSettingsOnOpen },
   shortcuts: { changed: () => ui().isShortcutsDialogOpen },
+  profiles: { changed: () => useProfilesStore.getState().managerOpen },
 };
 
 describe('menus', () => {
@@ -101,6 +103,7 @@ describe('menus', () => {
       isTestGridDialogOpen: false,
       isShortcutsDialogOpen: false,
     });
+    useProfilesStore.getState().closeManager();
     vi.mocked(openImagePicker).mockClear();
   });
 
@@ -137,7 +140,7 @@ describe('menus', () => {
 
   it('with no image open, only the items that need none are enabled', () => {
     const enabled = items.filter((i) => i.enabled()).map((i) => i.id).sort();
-    expect(enabled).toEqual(['keep-settings', 'open', 'shortcuts', 'test-card', 'theme']);
+    expect(enabled).toEqual(['keep-settings', 'open', 'profiles', 'shortcuts', 'test-card', 'theme']);
   });
 
   it('Split View works in the vector job, whose canvas shows the adjusted image the trace reads (#23)', () => {

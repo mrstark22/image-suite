@@ -63,19 +63,6 @@ let nextDocumentId = 0;
 let nextSourceId = 0;
 let loadSequence = 0;
 
-/** Applied to every document as it opens; see `setOpenDefaults`. */
-let openDefaults: DocumentUpdate | null = null;
-
-/**
- * Sets the starting point of documents opened from now on: the material
- * chosen in the shell (#53). It is part of the document as loaded, so it is
- * not an undo entry and does not count as an unsaved edit. `null` opens
- * documents with the plain defaults.
- */
-export function setOpenDefaults(update: DocumentUpdate | null): void {
-  openDefaults = update;
-}
-
 /** A new id for a source about to be loaded into the pipeline. */
 export function newSourceId(): string {
   return `source-${++nextSourceId}`;
@@ -249,12 +236,11 @@ export const useDocumentStore = create<DocumentState>((set, get) => {
         },
         mmPerPx
       );
-      const fresh = openDefaults ? openDefaults(created) : created;
       // With "Keep settings when opening a new image" on, the new document is
       // built from the previous one's settings instead of the defaults (#67).
       const previous = get().doc;
       const keep = settings === 'preference' && usePreferencesStore.getState().keepSettingsOnOpen && previous !== null;
-      replace(keep ? carrySettings(previous, fresh) : fresh);
+      replace(keep ? carrySettings(previous, created) : created);
     },
 
     close: () => {

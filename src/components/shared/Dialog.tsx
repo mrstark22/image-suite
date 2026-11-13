@@ -17,8 +17,11 @@ interface DialogProps {
   title: React.ReactNode;
   /** Drawn before the title. */
   icon?: React.ReactNode;
-  /** `md` is 480px wide, `lg` 560px; both shrink to fit a narrow screen. */
-  size?: 'md' | 'lg';
+  /**
+   * `md` is 480px wide, `lg` 560px; both shrink to fit a narrow screen. `xl`
+   * is a 920px two-pane manager of fixed height that fills a phone's screen.
+   */
+  size?: 'md' | 'lg' | 'xl';
   /** The buttons at the bottom. */
   footer?: React.ReactNode;
   children: React.ReactNode;

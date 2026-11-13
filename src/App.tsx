@@ -8,6 +8,8 @@ import { SizeDialog } from './components/dialogs/SizeDialog';
 import { ReducedOpenDialog } from './components/dialogs/ReducedOpenDialog';
 import { MaterialTestGridDialog } from './components/dialogs/MaterialTestGridDialog';
 import { ShortcutsDialog } from './components/dialogs/ShortcutsDialog';
+import { ProfilesDialog } from './components/dialogs/ProfilesDialog';
+import { loadProfiles } from './store/profilesStore';
 import { ErrorBanner } from './components/shared/ErrorBanner';
 import { useLayout } from './components/shared/breakpoints';
 import { useUIStore } from './store/uiStore';
@@ -35,6 +37,10 @@ export const App: React.FC = () => {
   useEffect(() => {
     startSchedulers();
   }, []);
+  // Machines, materials and calibrations, from this browser's store (#33).
+  useEffect(() => {
+    void loadProfiles();
+  }, []);
   useKeyboardShortcuts();
   const layout = useLayout();
 
@@ -57,6 +63,7 @@ export const App: React.FC = () => {
       <ReducedOpenDialog />
       <MaterialTestGridDialog isOpen={isTestGridDialogOpen} onClose={() => setTestGridDialogOpen(false)} />
       <ShortcutsDialog isOpen={isShortcutsDialogOpen} onClose={() => setShortcutsDialogOpen(false)} />
+      <ProfilesDialog />
     </div>
   );
 };
