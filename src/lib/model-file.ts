@@ -12,6 +12,16 @@ export interface PinnedModelFile {
   bytes: number;
   /** SHA-256 of the joined file, lower-case hex. */
   sha256: string;
+  /** What the model is called in messages, such as "the AI depth model"; the background removal model when absent. */
+  name?: string;
+}
+
+/** Thrown by `loadPinnedModel` when its signal aborted the download. Recognised by its name. */
+export class ModelDownloadCancelledError extends Error {
+  constructor() {
+    super('The model download was cancelled.');
+    this.name = 'ModelDownloadCancelledError';
+  }
 }
 
 export interface DownloadProgress {
@@ -39,8 +49,11 @@ export async function sha256Hex(bytes: ArrayBuffer): Promise<string> {
 export async function loadPinnedModel(
   file: PinnedModelFile,
   onProgress: (p: DownloadProgress) => void,
-  fetchImpl: typeof fetch = fetch
+  fetchImpl: typeof fetch = fetch,
+  signal?: AbortSignal
 ): Promise<ArrayBuffer> {
+  const what = file.name ?? 'the background removal model';
+  const What = what[0].toUpperCase() + what.slice(1);
   let cached: ArrayBuffer | null = null;
   try {
     cached = await localforage.getItem<ArrayBuffer>(cacheKey(file));
@@ -58,16 +71,18 @@ export async function loadPinnedModel(
   for (const url of file.parts) {
     let response: Response;
     try {
-      response = await fetchImpl(url);
+      if (signal?.aborted) throw new ModelDownloadCancelledError();
+      response = await fetchImpl(url, signal ? { signal } : undefined);
     } catch (err) {
-      throw new Error(`Could not download the background removal model (${err instanceof Error ? err.message : String(err)}). Check the connection and try again.`);
+      if (signal?.aborted) throw new ModelDownloadCancelledError();
+      throw new Error(`Could not download ${what} (${err instanceof Error ? err.message : String(err)}). Check the connection and try again.`);
     }
     if (!response.ok) {
-      throw new Error(`Could not download the background removal model: the server answered ${response.status} for ${url}.`);
+      throw new Error(`Could not download ${what}: the server answered ${response.status} for ${url}.`);
     }
     const reader = response.body?.getReader();
     const append = (chunk: Uint8Array) => {
-      if (loaded + chunk.length > file.bytes) throw new Error('The background removal model downloaded is larger than expected.');
+      if (loaded + chunk.length > file.bytes) throw new Error(`${What} downloaded is larger than expected.`);
       joined.set(chunk, loaded);
       loaded += chunk.length;
       onProgress({ stage: 'downloading', loadedBytes: loaded, totalBytes: file.bytes });
@@ -77,18 +92,25 @@ export async function loadPinnedModel(
       continue;
     }
     for (;;) {
-      const { done, value } = await reader.read();
+      let chunk: ReadableStreamReadResult<Uint8Array>;
+      try {
+        chunk = await reader.read();
+      } catch (err) {
+        if (signal?.aborted) throw new ModelDownloadCancelledError();
+        throw err;
+      }
+      const { done, value } = chunk;
       if (done) break;
       append(value);
     }
   }
   if (loaded !== file.bytes) {
-    throw new Error(`The background removal model download was incomplete (${loaded} of ${file.bytes} bytes).`);
+    throw new Error(`${What} download was incomplete (${loaded} of ${file.bytes} bytes).`);
   }
   onProgress({ stage: 'verifying', loadedBytes: loaded, totalBytes: file.bytes });
   const hash = await sha256Hex(joined.buffer);
   if (hash !== file.sha256) {
-    throw new Error('The background removal model downloaded does not match its pinned checksum, so it was not used.');
+    throw new Error(`${What} downloaded does not match its pinned checksum, so it was not used.`);
   }
   try {
     await localforage.setItem(cacheKey(file), joined.buffer);
