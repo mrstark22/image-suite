@@ -227,7 +227,7 @@ describe('every control in the migrated panels is reachable and named', () => {
       useDocumentStore.getState().edit(setDetail({ clahe: true, adaptiveThreshold: true, unsharpStrength: 50 }));
       const { container, unmount } = mount(<AdjustmentsPanel />);
       for (const toggle of container.querySelectorAll<HTMLButtonElement>('h3 button[aria-expanded=false]')) click(toggle);
-      expect(container.querySelectorAll('h3 button[aria-expanded=true]')).toHaveLength(5);
+      expect(container.querySelectorAll('h3 button[aria-expanded=true]')).toHaveLength(6);
       // 20 in the photo job, which hides saturation and vibrance (they barely change the greys burned).
       expect(container.querySelectorAll('input[type=range]').length).toBeGreaterThanOrEqual(20);
       expect(inaccessibleControls(container), `size ${mmPerPx}`).toEqual([]);

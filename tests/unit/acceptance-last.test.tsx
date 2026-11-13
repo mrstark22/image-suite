@@ -22,7 +22,8 @@ import { addMaterial, emptyProfiles, saveCalibration, seedProfiles } from '../..
 import { setDither } from '../../src/lib/document';
 import type { ProfileData } from '../../src/types/profiles';
 import { decodedImage, resetStores } from '../helpers/documents';
-import { button, click, mount, type Mounted } from '../helpers/dom';
+import { AdjustmentsPanel } from '../../src/components/panels/AdjustmentsPanel';
+import { button, click, fakeViewport, mount, type Mounted } from '../helpers/dom';
 
 let mounted: Mounted | null = null;
 
@@ -114,5 +115,34 @@ describe('error banner', () => {
 
   it('its dismiss button is a 44 px target under touch', () => {
     expect(block('(pointer: coarse)')).toMatch(/width: var\(--touch-target\);\s*height: var\(--touch-target\)/);
+  });
+});
+
+describe('Adjust step sections', () => {
+  const sections = (root: HTMLElement) =>
+    [...root.querySelectorAll<HTMLButtonElement>('section h3 button[aria-expanded]')].map((b) => [b.textContent!.trim(), b.getAttribute('aria-expanded')]);
+
+  it('on a phone only Tone starts open; the others are titled and open on a tap', () => {
+    fakeViewport(412, true);
+    useDocumentStore.getState().open(decodedImage(40, 40), 10);
+    mounted = mount(<AdjustmentsPanel />);
+    expect(sections(mounted.container)).toEqual([
+      ['Tone', 'true'],
+      ['Highlights & Shadows', 'false'],
+      ['Levels & Gamma', 'false'],
+      ['Detail', 'false'],
+      ['Colour & Grey', 'false'],
+      ['Advanced Filters', 'false'],
+    ]);
+    expect(mounted.container.textContent).not.toContain('Whites');
+    click(button(mounted.container, /^Highlights & Shadows/));
+    expect(mounted.container.textContent).toContain('Whites');
+  });
+
+  it('on a desktop every section starts open', () => {
+    fakeViewport(1440);
+    useDocumentStore.getState().open(decodedImage(40, 40), 10);
+    mounted = mount(<AdjustmentsPanel />);
+    expect(sections(mounted.container).every(([, open]) => open === 'true')).toBe(true);
   });
 });
