@@ -10,7 +10,7 @@ What exists now (phases 0 to 5 and the UI redesign are built; phase 6 is not bei
 
 - **Three jobs** (Vector, Photo, Relief), each a short ordered flow of steps in one document with an undoable recipe.
 - **Profiles**: machines, categories, materials, thicknesses and calibrations, edited in File > Machines & Materials, stored in the browser, moved between computers by exporting and importing a file.
-- **Calibration cards**: File > Calibrate exports photo, cut and depth cards (as a LightBurn project or plain files) and saves the results as calibrations.
+- **Calibration cards**: File > Calibrate exports photo, cut and depth cards (as a LightBurn project or plain files) and saves the results as calibrations. Photo cards 1 and 2 can be read from a photo or scan of the burned card (`src/lib/card-reader.ts`, `src/wasm/src/card_photo.rs`, `CardPhotoReader.tsx`); cut cards are read by eye and depth cards from measured depths or a 3D scan.
 - **Background removal**: an undoable document step run by the ISNet model; the mask is computed per crop inside the pipeline.
 - **Photo**: the image is resampled to the machine's dot grid (dot pitch, default 0.1 mm), dithered (default Jarvis, serpentine) and exported as a 1-bit PNG or BMP with its DPI.
 - **Relief**: one heightmap feeds the 3D view and the export (full-resolution 16-bit PNG); heights from tone, shape (exact distance transform) or AI depth.

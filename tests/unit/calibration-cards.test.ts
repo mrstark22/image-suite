@@ -109,6 +109,7 @@ function parseProject(xml: string) {
       passes: Number(val(el, 'numPasses')),
       interval: val(el, 'interval') === null ? null : Number(val(el, 'interval')),
       ditherMode: val(el, 'ditherMode'),
+      passThrough: val(el, 'passThrough'),
     }));
   const shapes = [...root.children]
     .filter((el) => el.nodeName === 'Shape')
@@ -290,7 +291,9 @@ describe('LightBurn project (.lbrn2)', () => {
       expect(layer.maxPower).toBe(c.powerPct);
       expect(layer.passes).toBe(1);
       expect(layer.interval).toBe(spec.lineIntervalMm);
-      expect(layer.ditherMode).toBe('passthrough');
+      // Pass-Through as the #40 notes record it, over a mode the samples use.
+      expect(layer.passThrough).toBe('1');
+      expect(layer.ditherMode).toBe('threshold');
       const own = shapes.filter((s) => s.cutIndex === c.layer);
       expect(own).toHaveLength(1);
       const s = own[0];
