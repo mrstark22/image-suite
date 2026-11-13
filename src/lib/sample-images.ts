@@ -69,16 +69,16 @@ function drawTone(ctx: CanvasRenderingContext2D, width: number): void {
   // Fine detail: black lines 0.1 to 0.5 mm wide (1 to 5 px), gaps as wide as the lines.
   ctx.fillStyle = '#000000';
   ctx.textAlign = 'center';
-  ctx.font = '18px sans-serif';
-  let x = 500;
+  ctx.font = '15px sans-serif';
+  let x = 480;
   for (let w = 1; w <= 5; w++) {
     const start = x;
     for (let k = 0; k < 6; k++) {
       ctx.fillRect(x, 510, w, 180);
       x += 2 * w;
     }
-    ctx.fillText(`${(w / 10).toFixed(1)} mm`, (start + x - w) / 2, 720);
-    x += 40;
+    ctx.fillText(`${(w / 10).toFixed(1)}`, (start + x - w) / 2, 720);
+    x += 28;
   }
 
   // Small text, 2 to 4 mm high.
@@ -86,10 +86,10 @@ function drawTone(ctx: CanvasRenderingContext2D, width: number): void {
   ctx.textBaseline = 'alphabetic';
   for (const [px, y] of [[40, 560], [30, 620], [20, 670]] as const) {
     ctx.font = `${px}px serif`;
-    ctx.fillText(`Small text ${px / 10} mm`, 830, y);
+    ctx.fillText(`Small text ${px / 10} mm`, 880, y);
   }
   ctx.font = '20px sans-serif';
-  ctx.fillText('120 × 80 mm, 254 DPI', 830, 750);
+  ctx.fillText('120 × 80 mm, 254 DPI', 880, 750);
 }
 
 /** The emblem: solid shapes and text, for a clean trace or a relief. */
