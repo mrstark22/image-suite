@@ -58,3 +58,35 @@ function subscribe(onChange: () => void): () => void {
 export function useLayout(): Layout {
   return useSyncExternalStore(subscribe, currentLayout, () => 'desktop');
 }
+
+/**
+ * A phone held sideways: wide enough for the tablet structure (controls
+ * beside the canvas) but too short for its two-row top bar and roomy panel
+ * header. The top bar and canvas controls take their compact phone forms,
+ * and the panel header shrinks. Stylesheets write the same query out.
+ */
+export const SHORT_LANDSCAPE_QUERY = '(max-height: 500px) and (orientation: landscape)';
+
+function shortLandscape(): boolean {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return false;
+  return window.matchMedia(SHORT_LANDSCAPE_QUERY).matches;
+}
+
+function subscribeShort(onChange: () => void): () => void {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return () => undefined;
+  const list = window.matchMedia(SHORT_LANDSCAPE_QUERY);
+  list.addEventListener('change', onChange);
+  return () => list.removeEventListener('change', onChange);
+}
+
+/** Whether the window is a short landscape one (a phone held sideways). */
+export function useShortLandscape(): boolean {
+  return useSyncExternalStore(subscribeShort, shortLandscape, () => false);
+}
+
+/** The compact top bar and canvas controls: on a phone, or a phone held sideways. */
+export function useCompactChrome(): boolean {
+  const layout = useLayout();
+  const short = useShortLandscape();
+  return layout === 'phone' || short;
+}

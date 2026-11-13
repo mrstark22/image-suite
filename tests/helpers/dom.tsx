@@ -140,6 +140,9 @@ export function fakeViewport(width: number, coarse = false): (nextWidth: number)
       const m = /\((min|max)-width:\s*(\d+)px\)/.exec(part);
       if (m) return m[1] === 'min' ? current >= Number(m[2]) : current <= Number(m[2]);
       if (/\(pointer:\s*coarse\)/.test(part)) return coarse;
+      // A tall window: height and orientation queries answer as for a portrait screen.
+      if (/\(max-height:\s*\d+px\)/.test(part)) return false;
+      if (/\(orientation:\s*landscape\)/.test(part)) return false;
       throw new Error(`fakeViewport cannot answer ${query}`);
     });
   window.matchMedia = (query: string) =>

@@ -14,6 +14,7 @@ import { Section } from '../shared/Section';
 import { DocumentSlider, Slider } from '../shared/Slider';
 import { Progress } from '../shared/Progress';
 import { StatusMessage } from '../shared/StatusMessage';
+import { useLayout } from '../shared/breakpoints';
 import styles from './Panels.module.css';
 import own from './AIPanel.module.css';
 
@@ -90,6 +91,7 @@ export const AIPanel: React.FC = () => {
   const doc = useDocumentStore((s) => s.doc);
   const progress = useBackgroundStore((s) => s.progress);
   const applied = doc?.steps.background.enabled ?? false;
+  const isPhone = useLayout() === 'phone';
 
   // Settings tried before applying; once applied the document's are used.
   const [draft, setDraft] = useState({ cutoff: DEFAULT_BACKGROUND.cutoff, softness: DEFAULT_BACKGROUND.softness });
@@ -212,73 +214,108 @@ export const AIPanel: React.FC = () => {
 
   const shownProgress = busy && progress ? progressLabel(progress) : null;
 
+  const intro = isPhone ? (
+    <p className={own.intro}>
+      Makes the background white so it does not burn. Runs on this device; the model (91 MB) downloads once.
+    </p>
+  ) : (
+    <p className={own.intro}>
+      A segmentation model finds the subject and the rest becomes white, which does not burn. It runs on this
+      device; the image is never uploaded. The first use downloads the model (91 MB) once.
+    </p>
+  );
+
+  const viewSwitch = showPreview && (
+    <div className={styles.segmentedGroup} role="group" aria-label="Show">
+      {VIEWS.map((v) => (
+        <button
+          key={v.value}
+          type="button"
+          className={`${styles.segmentedItem} ${view === v.value ? styles.segmentedItemActive : ''}`}
+          aria-pressed={view === v.value}
+          onClick={() => setView(v.value)}
+        >
+          {v.label}
+        </button>
+      ))}
+    </div>
+  );
+
+  const comparison = showPreview && (
+    <>
+      <div className={own.frame}>
+        <canvas
+          ref={canvas}
+          className={own.canvas}
+          role="img"
+          aria-label={`${VIEWS.find((v) => v.value === view)!.label}: ${removedShare}% of the image is removed`}
+        />
+      </div>
+      <p className={own.caption} aria-live="polite">
+        {applied ? 'Applied.' : 'Not applied yet.'} {removedShare}% of the image is removed
+        {view === 'removed' ? ', shown in red.' : view === 'result' ? ', shown as a checkerboard.' : '.'}
+      </p>
+    </>
+  );
+
+  const status = (
+    <>
+      {shownProgress && <Progress label={shownProgress.label} fraction={shownProgress.fraction} className={own.gap} />}
+      {busy && !shownProgress && <Progress label="Finding the subject" fraction={null} className={own.gap} />}
+
+      {error && (
+        <StatusMessage tone="error" className={styles.statusGap}>
+          Background removal failed: {error} The image has not been changed.
+        </StatusMessage>
+      )}
+    </>
+  );
+
+  const actions = (
+    <div className={`${own.actions} ${isPhone ? own.actionsRow : ''}`}>
+      {applied ? (
+        <Button icon={<RotateCcw size={14} />} onClick={restore}>
+          Restore Background
+        </Button>
+      ) : showPreview ? (
+        <>
+          <Button variant="primary" icon={<Eraser size={14} />} onClick={apply} disabled={busy}>
+            Apply Removal
+          </Button>
+          <Button onClick={cancel}>Cancel</Button>
+        </>
+      ) : (
+        <Button variant="primary" icon={<Sparkles size={14} />} onClick={start} disabled={busy}>
+          {busy ? 'Removing Background…' : 'Remove Background'}
+        </Button>
+      )}
+    </div>
+  );
+
+  // A phone shows the switch and the primary action first, above the fold of
+  // the bottom sheet; the comparison, sliders and explanation follow.
   return (
     <div className={styles.panel}>
       <Section title="Remove background">
-        <p className={own.intro}>
-          A segmentation model finds the subject and the rest becomes white, which does not burn. It runs on this
-          device; the image is never uploaded. The first use downloads the model (91 MB) once.
-        </p>
-
-        {showPreview && (
+        {isPhone ? (
           <>
-            <div className={styles.segmentedGroup} role="group" aria-label="Show">
-              {VIEWS.map((v) => (
-                <button
-                  key={v.value}
-                  type="button"
-                  className={`${styles.segmentedItem} ${view === v.value ? styles.segmentedItemActive : ''}`}
-                  aria-pressed={view === v.value}
-                  onClick={() => setView(v.value)}
-                >
-                  {v.label}
-                </button>
-              ))}
-            </div>
-            <div className={own.frame}>
-              <canvas
-                ref={canvas}
-                className={own.canvas}
-                role="img"
-                aria-label={`${VIEWS.find((v) => v.value === view)!.label}: ${removedShare}% of the image is removed`}
-              />
-            </div>
-            <p className={own.caption} aria-live="polite">
-              {applied ? 'Applied.' : 'Not applied yet.'} {removedShare}% of the image is removed
-              {view === 'removed' ? ', shown in red.' : view === 'result' ? ', shown as a checkerboard.' : '.'}
-            </p>
+            {viewSwitch}
+            {actions}
+            {status}
+            {comparison}
+            {(showPreview || applied) && sliders}
+            {intro}
+          </>
+        ) : (
+          <>
+            {intro}
+            {viewSwitch}
+            {comparison}
+            {(showPreview || applied) && sliders}
+            {status}
+            {actions}
           </>
         )}
-
-        {(showPreview || applied) && sliders}
-
-        {shownProgress && <Progress label={shownProgress.label} fraction={shownProgress.fraction} className={own.gap} />}
-        {busy && !shownProgress && <Progress label="Finding the subject" fraction={null} className={own.gap} />}
-
-        {error && (
-          <StatusMessage tone="error" className={styles.statusGap}>
-            Background removal failed: {error} The image has not been changed.
-          </StatusMessage>
-        )}
-
-        <div className={own.actions}>
-          {applied ? (
-            <Button icon={<RotateCcw size={14} />} onClick={restore}>
-              Restore Background
-            </Button>
-          ) : showPreview ? (
-            <>
-              <Button variant="primary" icon={<Eraser size={14} />} onClick={apply} disabled={busy}>
-                Apply Removal
-              </Button>
-              <Button onClick={cancel}>Cancel</Button>
-            </>
-          ) : (
-            <Button variant="primary" icon={<Sparkles size={14} />} onClick={start} disabled={busy}>
-              {busy ? 'Removing Background…' : 'Remove Background'}
-            </Button>
-          )}
-        </div>
       </Section>
     </div>
   );

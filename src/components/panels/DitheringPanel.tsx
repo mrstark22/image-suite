@@ -7,7 +7,8 @@ import { Button } from '../shared/Button';
 import { Section } from '../shared/Section';
 import { Toggle } from '../shared/Toggle';
 import { DEFAULT_DITHER, resetDither, setDither } from '../../lib/document';
-import { describeDotPitch, profileDither, setDotPitch } from '../../lib/profile-dither';
+import { describeDotPitch, ditherCalibrationNote, profileDither, setDotPitch } from '../../lib/profile-dither';
+import { StatusMessage } from '../shared/StatusMessage';
 import { dotGridTarget, photoPreviewTarget } from '../../lib/render-target';
 import { burnSimulationSettings } from '../../lib/burn-simulation';
 import { MM_PER_INCH } from '../../lib/document-size';
@@ -42,7 +43,7 @@ export const DitheringPanel: React.FC = () => {
   const burnPreview = useUIStore((s) => s.burnPreview);
   const setBurnPreview = useUIStore((s) => s.setBurnPreview);
   const profiles = useProfilesStore();
-  const { machine } = activeProfiles(profiles);
+  const { machine, material } = activeProfiles(profiles);
   const calibration = activeCalibration('engrave', profiles);
   const fromProfile = profileDither(machine, calibration);
   const dither = doc?.steps.dither ?? DEFAULT_DITHER;
@@ -50,6 +51,7 @@ export const DitheringPanel: React.FC = () => {
   const grid = doc ? dotGridTarget(doc) : null;
   const preview = doc ? photoPreviewTarget(doc) : null;
   const sim = burnSimulationSettings(dither.dotPitchMm, machine, calibration);
+  const toneNote = ditherCalibrationNote(material, calibration, dither.toneCurve);
 
   return (
     <div className={styles.panel}>
@@ -58,6 +60,17 @@ export const DitheringPanel: React.FC = () => {
           Reset
         </Button>
       </div>
+
+      {dithered && (
+        <div className={styles.calibrationNote}>
+          <StatusMessage tone={toneNote.tone}>{toneNote.text}</StatusMessage>
+          {toneNote.offerCalibrate && (
+            <Button variant="link" onClick={() => profiles.openCalibrate({ kind: 'engrave' })}>
+              Calibrate tones with a test card…
+            </Button>
+          )}
+        </div>
+      )}
 
       <Section title="Algorithm">
         <div className={styles.gridCards}>

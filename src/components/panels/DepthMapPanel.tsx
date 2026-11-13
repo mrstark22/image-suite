@@ -115,7 +115,7 @@ export const DepthMapPanel: React.FC = () => {
         )}
         {depth.source === 'ai-estimation' && (
           <div className={styles.controlNote}>
-            {DEPTH_MODEL.name} ({DEPTH_MODEL.licence}), run {DEPTH_BACKEND_LABEL}. The image never leaves this computer.
+            {DEPTH_MODEL.name} ({DEPTH_MODEL.licence}), run {DEPTH_BACKEND_LABEL}. The image never leaves this device.
           </div>
         )}
         {relief.model && (

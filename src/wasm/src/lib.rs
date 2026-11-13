@@ -40,6 +40,11 @@ static mut LAST_JSON_BUF: Vec<u8> = Vec::new();
 static mut LAST_DEPTH_BUF: Vec<u16> = Vec::new();
 static mut LAST_DEPTH_SOURCE: u32 = 0;
 
+/// Histogram of the last `process_pipeline` call's `prepared` stage (after
+/// tone, colour, CLAHE, sharpening and threshold, before the dither): 256
+/// bins each of red, green, blue and Rec. 709 luma, in that order.
+static mut PREPARED_HISTOGRAM: [u32; 1024] = [0; 1024];
+
 #[allow(static_mut_refs)]
 static mut LAST_MARKERS: Vec<f32> = Vec::new();
 
@@ -234,6 +239,12 @@ pub extern "C" fn process_pipeline(
         apply_adaptive_threshold(pixels, width, height, adaptive_block, adaptive_c);
     }
 
+    // The histogram the Adjust step shows: the tones the dither receives.
+    let hist = prepared_histogram(pixels);
+    unsafe {
+        PREPARED_HISTOGRAM = hist;
+    }
+
     // 5. Dithering
     let algo = match dither_algo_code {
         1 => DitherAlgo::FloydSteinberg,
@@ -266,6 +277,31 @@ pub extern "C" fn process_pipeline(
             tone_response_lut(&curve)
         };
         apply_dithering(pixels, width, height, &dither_params, lut.as_ref());
+    }
+}
+
+/// 256-bin red, green, blue and Rec. 709 luma histograms of RGBA8 `pixels`.
+pub(crate) fn prepared_histogram(pixels: &[u8]) -> [u32; 1024] {
+    let mut bins = [0u32; 1024];
+    for px in pixels.chunks_exact(4) {
+        let (r, g, b) = (px[0] as u32, px[1] as u32, px[2] as u32);
+        // Rec. 709 weights in 1/10000ths, rounded.
+        let luma = ((2126 * r + 7152 * g + 722 * b + 5000) / 10000).min(255);
+        bins[r as usize] += 1;
+        bins[256 + g as usize] += 1;
+        bins[512 + b as usize] += 1;
+        bins[768 + luma as usize] += 1;
+    }
+    bins
+}
+
+/// Address of the 1024 u32 bins written by the last `process_pipeline`
+/// (see `PREPARED_HISTOGRAM`).
+#[no_mangle]
+pub extern "C" fn get_prepared_histogram() -> *const u32 {
+    #[allow(static_mut_refs)]
+    unsafe {
+        PREPARED_HISTOGRAM.as_ptr()
     }
 }
 

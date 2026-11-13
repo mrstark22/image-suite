@@ -7,7 +7,7 @@ import { useRenderStore } from '../../store/renderStore';
 import { useBackgroundStore } from '../../store/backgroundStore';
 import { showsOrbitView } from '../../lib/workflows';
 import { menuShortcut, ZOOM_STEP } from '../../lib/shortcuts';
-import { useLayout } from '../shared/breakpoints';
+import { useCompactChrome } from '../shared/breakpoints';
 import styles from './ZoomControls.module.css';
 
 /**
@@ -25,14 +25,14 @@ export const ZoomControls: React.FC = () => {
   const job = useUIStore((s) => s.job);
   const canvasTool = useViewStore((s) => s.canvasTool);
 
-  const layout = useLayout();
+  const compact = useCompactChrome();
 
   if (!hasDocument) return null;
   if (showsOrbitView(job, viewMode, canvasTool)) {
     return (
       <>
         <BusyPill />
-        {layout === 'phone' && <HistoryPill />}
+        {compact && <HistoryPill />}
       </>
     );
   }
@@ -40,7 +40,7 @@ export const ZoomControls: React.FC = () => {
   // Phone: pinch does the zooming, so the bar shrinks to one pill in the top
   // corner, clear of the image's bottom edge and the sheet. It reads the zoom
   // and switches between the whole image and 100%, where the dots show.
-  if (layout === 'phone') {
+  if (compact) {
     const toActual = zoom < 1;
     return (
       <>

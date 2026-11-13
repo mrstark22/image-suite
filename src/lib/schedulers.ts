@@ -93,6 +93,7 @@ export function createSchedulers(pipeline: () => Pipeline): Schedulers {
         key: res.key,
         sourceStage: res.sourceStage,
         pixels: res.final.pixels,
+        histogram: res.histogram,
         durationMs: res.durationMs,
       });
       if (!committed) preview.rerun();

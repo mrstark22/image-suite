@@ -36,6 +36,7 @@ import { Dialog } from '../shared/Dialog';
 import { StatusMessage } from '../shared/StatusMessage';
 import { CardPicture, placeAt } from './CardPicture';
 import { ScanReader } from './ScanReader';
+import { mergeScan, scanConflicts } from '../../lib/scan-measure';
 import { CardPhotoReader, ToneCurvePlot, type CardRead } from './CardPhotoReader';
 import styles from './CalibrateDialog.module.css';
 
@@ -973,6 +974,17 @@ const ReliefResults: React.FC<ResultProps> = ({ spec, header, error, submit }) =
   const [firstMark, setFirstMark] = useState<number | null>(null);
   const [scanning, setScanning] = useState(false);
   const [fromScan, setFromScan] = useState<string | null>(null);
+  // A scan reading that would replace typed depths, waiting for the user's choice.
+  const [pendingScan, setPendingScan] = useState<(number | null)[] | null>(null);
+  const takeScan = (scanned: (number | null)[], keepTyped: boolean) => {
+    const kept = keepTyped ? scanConflicts(depths, scanned).length : 0;
+    setDepths(mergeScan(depths, scanned, keepTyped));
+    setPendingScan(null);
+    const left = scanned.filter((d) => d === null).length;
+    setFromScan(
+      `Depths read from the scan are in the fields below; check them and edit any before saving.${kept > 0 ? ` ${kept} typed depth${kept === 1 ? ' was' : 's were'} kept.` : ''}${left > 0 ? ` ${left} step${left === 1 ? ' was' : 's were'} not measured: type ${left === 1 ? 'it' : 'them'}.` : ''}`
+    );
+  };
   const finder = spec.cells.filter((c) => c.role === 'min-power');
   const parsed = depths.map((t) => (t.trim() === '' || !Number.isFinite(Number(t)) ? null : Number(t)));
   let preview: ReturnType<typeof depthCurveFrom> | null = null;
@@ -1004,14 +1016,33 @@ const ReliefResults: React.FC<ResultProps> = ({ spec, header, error, submit }) =
           spec={spec}
           onCancel={() => setScanning(false)}
           onUse={(scanned) => {
-            setDepths((all) => all.map((v, i) => (scanned[i] === null ? v : String(scanned[i]))));
-            const left = scanned.filter((d) => d === null).length;
-            setFromScan(`Depths read from the scan are in the fields below; check them and edit any before saving.${left > 0 ? ` ${left} step${left === 1 ? ' was' : 's were'} not measured: type ${left === 1 ? 'it' : 'them'}.` : ''}`);
             setScanning(false);
+            // Typed depths the scan would change: ask before replacing them.
+            if (scanConflicts(depths, scanned).length > 0) setPendingScan(scanned);
+            else takeScan(scanned, false);
           }}
         />
       )}
-      {fromScan && !scanning && <StatusMessage tone="info">{fromScan}</StatusMessage>}
+      {pendingScan && (
+        <div className={styles.stack} role="group" aria-label="Typed depths and the scan">
+          <StatusMessage tone="warning">
+            The scan would replace depths you typed:{' '}
+            {scanConflicts(depths, pendingScan)
+              .map((c) => `${Math.round(spec.levels[c.index] * 100)}% (${c.typed} typed, ${fmt(c.scanned)} mm scanned)`)
+              .join('; ')}
+            .
+          </StatusMessage>
+          <div className={styles.buttonRow}>
+            <Button variant="primary" compact onClick={() => takeScan(pendingScan, false)}>
+              Use the scan's depths
+            </Button>
+            <Button variant="secondary" compact onClick={() => takeScan(pendingScan, true)}>
+              Keep my typed depths
+            </Button>
+          </div>
+        </div>
+      )}
+      {fromScan && !scanning && !pendingScan && <StatusMessage tone="info">{fromScan}</StatusMessage>}
       <CardPicture spec={spec} label={`Card #${spec.shortId}`}>
         {(layout) =>
           layout.cells

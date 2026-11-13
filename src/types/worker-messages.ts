@@ -1,3 +1,4 @@
+import type { PreparedHistogram } from '../wasm/wasm-bridge';
 import type { ImageDocument } from './document';
 import type { CropRect } from './image';
 import type { RenderOutput, RenderTarget } from './render';
@@ -46,6 +47,8 @@ export interface PreviewRenderResult {
   /** The key of the `source`-stage render this was made from. */
   key: string;
   final: RenderOutput;
+  /** Histogram of the `prepared` stage this render passed through: what the Adjust step shows. */
+  histogram: PreparedHistogram;
   sourceStage: SourceStage | null;
   durationMs: number;
 }

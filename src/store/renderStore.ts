@@ -1,3 +1,4 @@
+import type { PreparedHistogram } from '../wasm/wasm-bridge';
 import type { ResolvedDepthSource } from '../types/depth';
 import type { DepthModelProgress } from '../lib/ai-depth';
 import { create } from 'zustand';
@@ -28,6 +29,11 @@ interface RenderState {
   source: PreviewSource | null;
   /** The latest committed preview, the same size as `source`. */
   processed: ArrayBuffer | null;
+  /**
+   * Histogram of the committed preview's `prepared` stage (after tone,
+   * colour and detail, before the dither): the tones the Adjust step acts on.
+   */
+  preparedHistogram: PreparedHistogram | null;
   /** Increases on every commit to `processed`, so the canvas redraws. */
   previewVersion: number;
   /** The relief heightmap the view shows (16-bit, the size of `source`). The export computes the same at full resolution. */
@@ -77,7 +83,13 @@ interface RenderState {
    * nothing, when the render was made from a `source`-stage render that is
    * neither the one carried nor the one held (the caller renders again).
    */
-  commitRender: (render: { key: string; sourceStage: SourceStage | null; pixels: ArrayBuffer; durationMs: number }) => boolean;
+  commitRender: (render: {
+    key: string;
+    sourceStage: SourceStage | null;
+    pixels: ArrayBuffer;
+    histogram?: PreparedHistogram;
+    durationMs: number;
+  }) => boolean;
   setDepthHeightMap: (buffer: ArrayBuffer | null) => void;
   setRelief: (relief: Partial<ReliefStatus>) => void;
   setVectorResult: (result: VectorResult | null) => void;
@@ -135,6 +147,7 @@ const EMPTY_RELIEF: ReliefStatus = { source: null, model: null, error: null };
 const EMPTY_RESULTS = {
   source: null,
   processed: null,
+  preparedHistogram: null,
   depthHeightMap: null,
   relief: EMPTY_RELIEF,
   vectorResult: null,
@@ -154,7 +167,7 @@ export const useRenderStore = create<RenderState>((set, get) => ({
   errorMessage: null,
   exportProgress: null,
 
-  commitRender: ({ key, sourceStage, pixels, durationMs }) => {
+  commitRender: ({ key, sourceStage, pixels, histogram, durationMs }) => {
     const held = get().source;
     if (!sourceStage && held?.key !== key) return false;
     const doc = useDocumentStore.getState().doc;
@@ -173,6 +186,7 @@ export const useRenderStore = create<RenderState>((set, get) => ({
       return {
         source,
         processed: pixels,
+        preparedHistogram: histogram ?? null,
         previewVersion: s.previewVersion + 1,
         processingDurationMs: durationMs,
       };

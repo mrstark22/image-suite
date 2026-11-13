@@ -1000,7 +1000,7 @@ export const ProfilesDialog: React.FC = () => {
       size="xl"
       footer={
         <div className={styles.footer}>
-          <span className={styles.footNote}>Saved in this browser only. Export a file to move profiles to another computer.</span>
+          <span className={styles.footNote}>Saved in this browser only. Export a file to move profiles to another device.</span>
           <span className={styles.spacer} />
           <input
             ref={fileInput}

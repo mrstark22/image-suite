@@ -393,6 +393,7 @@ export class PipelineWorkerApi {
       const result: PreviewRenderResult = {
         key: sourceStageKey(req.doc, req.target),
         final,
+        histogram: engine.core.preparedHistogram(),
         sourceStage: this.sourceStageFor(engine, req, mask),
         durationMs: performance.now() - start,
       };

@@ -20,6 +20,19 @@
 }
 
 /* A step's actions (Reset, Clear): the step header above already names the step. */
+.calibrationNote {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-1);
+  padding: var(--space-3) var(--space-4) 0;
+}
+
+.calibrationNote > :first-child {
+  margin: 0;
+  align-self: stretch;
+}
+
 .panelActions {
   display: flex;
   justify-content: flex-end;

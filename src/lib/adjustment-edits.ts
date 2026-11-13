@@ -28,7 +28,7 @@ export const ADJUSTMENT_PRESETS: Record<AdjustmentPresetId, DocumentUpdate> = {
   'slate-invert': setTonal({ invert: true, contrast: 35, clarity: 30, grayscaleMode: 'rec709' }),
 };
 
-export type AdjustmentSection = 'tone' | 'levels' | 'detail' | 'color' | 'filters';
+export type AdjustmentSection = 'tone' | 'range' | 'levels' | 'detail' | 'color' | 'filters';
 
 /** The reset icon on each section header: one edit restoring that section. */
 export const SECTION_RESETS: Record<AdjustmentSection, DocumentUpdate> = {
@@ -37,6 +37,8 @@ export const SECTION_RESETS: Record<AdjustmentSection, DocumentUpdate> = {
     brightness: 0,
     contrast: 0,
     midtones: 0,
+  }),
+  range: setTonal({
     highlights: 0,
     shadows: 0,
     whites: 0,

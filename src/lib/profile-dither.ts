@@ -1,6 +1,6 @@
 import type { DocumentUpdate } from '../types/document';
 import type { DitherConfig, DotPitchOrigin } from '../types/dither';
-import type { Calibration, Machine } from '../types/profiles';
+import type { Calibration, Machine, Material } from '../types/profiles';
 import { DEFAULT_DOT_PITCH_MM } from './document';
 import { formatMm } from './profiles';
 
@@ -82,4 +82,40 @@ export function describeDotPitch(dither: DitherConfig, machine: Machine | null):
     default:
       return `${pitch} line interval: a common default. ${machine ? `Set ${machine.name}'s usual line interval in Machines & materials` : 'Choose a machine'} so this matches your laser.`;
   }
+}
+
+/**
+ * What the Dither step says about the engraving calibration in use: whether
+ * the material's measured tone curve is applied before the dither, whether
+ * that calibration is a copy not yet verified, or that there is none.
+ */
+export interface DitherCalibrationNote {
+  tone: 'info' | 'warning';
+  text: string;
+  /** Offer the Calibrate entry point: the tones are not calibrated. */
+  offerCalibrate: boolean;
+}
+
+export function ditherCalibrationNote(
+  material: Material | null,
+  calibration: Calibration | null,
+  appliedCurve: number[] | null
+): DitherCalibrationNote {
+  if (!calibration?.toneCurve || calibration.toneCurve.length < 2 || !appliedCurve) {
+    const what = material ? `for ${material.name}` : 'for this material';
+    return {
+      tone: 'warning',
+      text: `Tones are not calibrated ${what} yet: photos will likely burn too dark in the midtones.`,
+      offerCalibrate: true,
+    };
+  }
+  const on = material ? ` for ${material.name}` : '';
+  if (calibration.status === 'unverified') {
+    return {
+      tone: 'warning',
+      text: `The tone curve${on} is applied before the dither, but it was copied from another material and is not yet verified: burn a test card on this one.`,
+      offerCalibrate: true,
+    };
+  }
+  return { tone: 'info', text: `The measured tone curve${on} is applied before the dither.`, offerCalibrate: false };
 }
