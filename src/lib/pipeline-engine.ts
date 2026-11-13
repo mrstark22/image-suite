@@ -59,7 +59,7 @@ export class PipelineEngine {
   private source: (Held & { sourceId: string }) | null = null;
   private cache: (Held & { key: string }) | null = null;
 
-  constructor(private readonly core: RustWasmEngine) {}
+  constructor(readonly core: RustWasmEngine) {}
 
   /** True when the pixels of `sourceId` are held. */
   hasSource(sourceId: string): boolean {

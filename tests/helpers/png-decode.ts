@@ -3,7 +3,7 @@
  * encoders under test: Node's zlib inflates and computes CRCs. It verifies
  * the signature, every chunk's CRC and the decompressed size, undoes all five
  * filter types, and reads `pHYs`. Non-interlaced greyscale, RGB and RGBA at
- * 8 or 16 bits.
+ * 1, 8 or 16 bits (1-bit greyscale only).
  */
 import zlib from 'zlib';
 
@@ -62,9 +62,22 @@ export function decodePng(bytes: Uint8Array): DecodedPng {
   }
   if (p !== bytes.length) throw new Error('Trailing or truncated data');
   const channels = CHANNELS[colorType];
-  if (!channels || (bitDepth !== 8 && bitDepth !== 16)) throw new Error(`Unsupported colour type ${colorType} / depth ${bitDepth}`);
+  const oneBit = bitDepth === 1 && colorType === 0;
+  if (!channels || (bitDepth !== 8 && bitDepth !== 16 && !oneBit)) throw new Error(`Unsupported colour type ${colorType} / depth ${bitDepth}`);
 
   const raw = zlib.inflateSync(Buffer.concat(idat));
+  if (oneBit) {
+    // One sample per pixel, 0 or 1, most significant bit first; rows padded to a byte. Filter 0 only.
+    const stride1 = Math.ceil(width / 8);
+    if (raw.length !== (stride1 + 1) * height) throw new Error('Unexpected decompressed size');
+    const samples1 = new Uint16Array(width * height);
+    for (let y = 0; y < height; y++) {
+      const base = y * (stride1 + 1);
+      if (raw[base] !== 0) throw new Error('Only filter type 0 is decoded at 1 bit');
+      for (let x = 0; x < width; x++) samples1[y * width + x] = (raw[base + 1 + (x >> 3)] >> (7 - (x & 7))) & 1;
+    }
+    return { width, height, bitDepth, colorType, channels: 1, chunkTypes, phys, samples: samples1 };
+  }
   const bytesPerSample = bitDepth / 8;
   const bpp = channels * bytesPerSample;
   const stride = width * bpp;

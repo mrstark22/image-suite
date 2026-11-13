@@ -9,6 +9,11 @@ interface UIState {
 
   isSplitView: boolean;
   isInvertedView: boolean;
+  /**
+   * The photo preview shows the simulated burn (#41) instead of the dithered
+   * pixels. A view only: the exported file never changes with it.
+   */
+  burnPreview: boolean;
   showRulers: boolean;
   showVectorOverlay: boolean;
   theme: 'dark' | 'light';
@@ -39,6 +44,7 @@ interface UIState {
   goToPreviousStep: () => void;
   toggleSplitView: () => void;
   toggleInvertedView: () => void;
+  setBurnPreview: (on: boolean) => void;
   toggleRulers: () => void;
   toggleVectorOverlay: () => void;
   setTheme: (theme: 'dark' | 'light') => void;
@@ -72,6 +78,7 @@ export const useUIStore = create<UIState>((set, get) => ({
   stepByJob: firstSteps(),
   isSplitView: false,
   isInvertedView: false,
+  burnPreview: false,
   showRulers: true,
   showVectorOverlay: true,
   theme: 'dark',
@@ -99,6 +106,7 @@ export const useUIStore = create<UIState>((set, get) => ({
   },
   toggleSplitView: () => set((state) => ({ isSplitView: !state.isSplitView })),
   toggleInvertedView: () => set((state) => ({ isInvertedView: !state.isInvertedView })),
+  setBurnPreview: (burnPreview) => set({ burnPreview }),
   toggleRulers: () => set((state) => ({ showRulers: !state.showRulers })),
   toggleVectorOverlay: () => set((state) => ({ showVectorOverlay: !state.showVectorOverlay })),
   setTheme: (theme) => {

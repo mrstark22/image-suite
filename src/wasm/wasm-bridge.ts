@@ -45,10 +45,14 @@ export interface WasmPipelineParams {
   sharpenRadius: number;
   // Dither
   ditherAlgorithm: string;
-  ditherThreshold: number;
   ditherSerpentine: boolean;
   ditherScale: number;
-  ditherInverted: boolean;
+  /**
+   * The calibration's tone response, applied before the dither (#39): the
+   * darkness burned (0 to 1) at evenly spaced levels from white to black, or
+   * null for none.
+   */
+  toneCurve: readonly number[] | null;
 }
 
 export interface WasmExports {
@@ -108,10 +112,24 @@ export interface WasmExports {
     sharpenRadius: number,
     // Dither
     ditherAlgoCode: number,
-    ditherThresh: number,
     ditherSerpentine: number,
     ditherScale: number,
-    ditherInverted: number
+    // Tone response before the dither: f32 values at a pointer, and their count (0 for none)
+    toneCurvePtr: number,
+    toneCurveLen: number
+  ) => void;
+  /** Burn simulation preview (#41), in place on a dithered RGBA8 image. */
+  simulate_burn: (
+    ptr: number,
+    width: number,
+    height: number,
+    spotPx: number,
+    baseR: number,
+    baseG: number,
+    baseB: number,
+    burnR: number,
+    burnG: number,
+    burnB: number
   ) => void;
   process_trace: TraceExports['process_trace'];
   get_trace_json_len: () => number;
@@ -137,6 +155,7 @@ const ALGORITHM_CODE_MAP: Record<string, number> = {
   'bayer-2': 4,
   'bayer-4': 5,
   'bayer-8': 6,
+  'blue-noise': 7,
 };
 
 export class RustWasmEngine {
@@ -216,45 +235,76 @@ export class RustWasmEngine {
   public processInPlace(ptr: number, params: WasmPipelineParams): void {
     const { width, height } = params;
     const algoCode = ALGORITHM_CODE_MAP[params.ditherAlgorithm] ?? 0;
-    const grayCodeMap: Record<string, number> = { none: 0, rec709: 1, average: 2, desaturate: 3, max: 4, inverted: 5 };
+    const grayCodeMap: Record<string, number> = {
+      none: 0,
+      rec709: 1,
+      average: 2,
+      desaturate: 3,
+      max: 4,
+      inverted: 5,
+    };
     const grayCode = grayCodeMap[params.grayscaleMode] ?? 0;
 
-    this.wasm.process_pipeline(
-      ptr,
-      width,
-      height,
-      params.exposure ?? 0,
-      params.brightness ?? 0,
-      params.contrast ?? 0,
-      params.midtones ?? 0,
-      params.highlights ?? 0,
-      params.shadows ?? 0,
-      params.whites ?? 0,
-      params.blacks ?? 0,
-      params.clarity ?? 0,
-      params.gamma ?? 1.0,
-      params.blackPoint ?? 0,
-      params.whitePoint ?? 255,
-      params.invert ? 1 : 0,
-      grayCode,
-      params.saturation ?? 0,
-      params.vibrance ?? 0,
-      params.temperature ?? 0,
-      params.tint ?? 0,
-      params.enableClahe ? 1 : 0,
-      params.claheClip ?? 2.5,
-      params.claheGrid ?? 8,
-      params.enableAdaptive ? 1 : 0,
-      params.adaptiveBlock ?? 15,
-      params.adaptiveC ?? 2,
-      params.sharpenAmount ?? 0,
-      params.sharpenRadius ?? 1.5,
-      algoCode,
-      params.ditherThreshold ?? 128,
-      params.ditherSerpentine ? 1 : 0,
-      params.ditherScale ?? 1,
-      params.ditherInverted ? 1 : 0
-    );
+    const curve = params.toneCurve && params.toneCurve.length >= 2 ? params.toneCurve : null;
+    const curveBytes = curve ? curve.length * 4 : 0;
+    const curvePtr = curve ? this.wasm.allocate(curveBytes) : 0;
+    try {
+      if (curve) {
+        // DataView: `allocate` does not promise 4-byte alignment.
+        const view = new DataView(this.wasm.memory.buffer, curvePtr, curve.length * 4);
+        curve.forEach((v, i) => view.setFloat32(i * 4, v, true));
+      }
+      this.wasm.process_pipeline(
+        ptr,
+        width,
+        height,
+        params.exposure ?? 0,
+        params.brightness ?? 0,
+        params.contrast ?? 0,
+        params.midtones ?? 0,
+        params.highlights ?? 0,
+        params.shadows ?? 0,
+        params.whites ?? 0,
+        params.blacks ?? 0,
+        params.clarity ?? 0,
+        params.gamma ?? 1.0,
+        params.blackPoint ?? 0,
+        params.whitePoint ?? 255,
+        params.invert ? 1 : 0,
+        grayCode,
+        params.saturation ?? 0,
+        params.vibrance ?? 0,
+        params.temperature ?? 0,
+        params.tint ?? 0,
+        params.enableClahe ? 1 : 0,
+        params.claheClip ?? 2.5,
+        params.claheGrid ?? 8,
+        params.enableAdaptive ? 1 : 0,
+        params.adaptiveBlock ?? 15,
+        params.adaptiveC ?? 2,
+        params.sharpenAmount ?? 0,
+        params.sharpenRadius ?? 1.5,
+        algoCode,
+        params.ditherSerpentine ? 1 : 0,
+        params.ditherScale ?? 1,
+        curvePtr,
+        curve ? curve.length : 0
+      );
+    } finally {
+      if (curvePtr) this.wasm.deallocate(curvePtr, curveBytes);
+    }
+  }
+
+  /** Burn simulation preview (#41) in place on the dithered RGBA8 image at `ptr`. */
+  public simulateBurnAt(
+    ptr: number,
+    width: number,
+    height: number,
+    spotPx: number,
+    base: readonly [number, number, number],
+    burn: readonly [number, number, number]
+  ): void {
+    this.wasm.simulate_burn(ptr, width, height, spotPx, base[0], base[1], base[2], burn[0], burn[1], burn[2]);
   }
 
   /** Traces the RGBA8 image at `ptr` in WASM memory, in place (see `traceImageAt`). */
@@ -262,12 +312,7 @@ export class RustWasmEngine {
     return traceImageAt(this.wasm, ptr, width, height, pxPerMm, config);
   }
 
-  public processDepth(
-    inputBuffer: ArrayBuffer,
-    width: number,
-    height: number,
-    config: DepthConfig
-  ): DepthResult {
+  public processDepth(inputBuffer: ArrayBuffer, width: number, height: number, config: DepthConfig): DepthResult {
     if (!this.exports) {
       throw new Error('Rust WebAssembly engine is not initialized');
     }
@@ -282,21 +327,10 @@ export class RustWasmEngine {
       const wasmMem = new Uint8Array(this.exports.memory.buffer, ptr, byteLength);
       wasmMem.set(new Uint8Array(inputBuffer));
 
-      const sourceCode =
-        config.source === 'distance-transform'
-          ? 1
-          : config.source === 'ai-estimation'
-          ? 2
-          : 0;
+      const sourceCode = config.source === 'distance-transform' ? 1 : config.source === 'ai-estimation' ? 2 : 0;
 
       const bevelCode =
-        config.bevelStyle === 'dome'
-          ? 1
-          : config.bevelStyle === 'concave'
-          ? 2
-          : config.bevelStyle === 'flat'
-          ? 3
-          : 0;
+        config.bevelStyle === 'dome' ? 1 : config.bevelStyle === 'concave' ? 2 : config.bevelStyle === 'flat' ? 3 : 0;
 
       const outPtr = this.exports.process_depth(
         ptr,

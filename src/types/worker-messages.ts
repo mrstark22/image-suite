@@ -20,6 +20,18 @@ export interface DocumentRenderRequest {
    * `prepared` in the vector job, which shows the image the trace reads.
    */
   stage?: 'prepared' | 'final';
+  /**
+   * Show the `final` stage as it should burn (#41) instead of its pixels.
+   * The preview only; exports never take it.
+   */
+  simulation?: BurnSimulation;
+}
+
+/** Burn simulation settings: spot diameter in pixels of the render, and colours. */
+export interface BurnSimulation {
+  spotPx: number;
+  base: [number, number, number];
+  burn: [number, number, number];
 }
 
 /** The `source`-stage render a result was made from, sent when the main thread does not have it. */

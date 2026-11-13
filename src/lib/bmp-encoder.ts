@@ -156,3 +156,51 @@ export function encodeBmpRgb24(
 
   return buffer;
 }
+
+/**
+ * Encodes a 1-bit black-and-white BMP (a two-colour palette: 0 black, 1
+ * white) from RGBA8 pixels whose red channel is 0 or 255: a dithered image
+ * for LightBurn's Pass-Through mode (#39), with `dpi` written as pixels per
+ * metre. Throws if any pixel is neither black nor white.
+ */
+export function encodeBmp1(rgbaData: Uint8ClampedArray | Uint8Array, width: number, height: number, dpi: number): ArrayBuffer {
+  const rowStride = Math.ceil(width / 32) * 4;
+  const pixelArraySize = rowStride * height;
+  const paletteSize = 2 * 4;
+  const fileOffset = 14 + 40 + paletteSize;
+  const fileSize = fileOffset + pixelArraySize;
+  const buffer = new ArrayBuffer(fileSize);
+  const view = new DataView(buffer);
+  const bytes = new Uint8Array(buffer);
+
+  view.setUint8(0, 0x42); // 'B'
+  view.setUint8(1, 0x4d); // 'M'
+  view.setUint32(2, fileSize, true);
+  view.setUint32(10, fileOffset, true);
+
+  view.setUint32(14, 40, true);
+  view.setInt32(18, width, true);
+  view.setInt32(22, height, true); // positive: bottom-up rows
+  view.setUint16(26, 1, true);
+  view.setUint16(28, 1, true); // 1 bit per pixel
+  view.setUint32(30, 0, true); // no compression
+  view.setUint32(34, pixelArraySize, true);
+  const ppm = Math.round((dpi / 25.4) * 1000);
+  view.setInt32(38, ppm, true);
+  view.setInt32(42, ppm, true);
+  view.setUint32(46, 2, true); // colours used
+  view.setUint32(50, 2, true); // colours important
+
+  // Palette, BGRA: index 0 black, index 1 white.
+  bytes.set([0, 0, 0, 0, 255, 255, 255, 0], 54);
+
+  for (let y = 0; y < height; y++) {
+    const row = fileOffset + (height - 1 - y) * rowStride;
+    for (let x = 0; x < width; x++) {
+      const v = rgbaData[(y * width + x) * 4];
+      if (v === 255) bytes[row + (x >> 3)] |= 0x80 >> (x & 7);
+      else if (v !== 0) throw new Error(`Pixel ${x}, ${y} is grey (${v}), not black or white: the image is not dithered.`);
+    }
+  }
+  return buffer;
+}

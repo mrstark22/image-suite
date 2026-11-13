@@ -42,6 +42,13 @@ export interface DocumentState {
   /** Redoes the last undone entry; during a gesture, cancels the gesture instead. */
   redo(): void;
   /**
+   * Applies `update` to the document and to every document in the history,
+   * without recording an edit. For settings that follow the machine and
+   * calibration in use rather than the user (the dot pitch and tone curve,
+   * #34, #39): undo must not bring back another machine's pitch.
+   */
+  syncAll(update: DocumentUpdate): void;
+  /**
    * Has the pipeline decode `file`, then opens it as a new document, replacing
    * the current one. If another load starts meanwhile, the later one wins.
    */
@@ -224,6 +231,21 @@ export const useDocumentStore = create<DocumentState>((set, get) => {
         past: withEntry(past, doc),
         future: future.slice(1),
         version: version + 1,
+      });
+    },
+
+    syncAll: (update) => {
+      const { doc, past, future, initial, gesture, version } = get();
+      if (!doc) return;
+      const next = update(doc);
+      const changed = !sameValue(next, doc);
+      set({
+        doc: changed ? next : doc,
+        initial: initial && update(initial),
+        past: past.map(update),
+        future: future.map(update),
+        gesture: gesture && { ...gesture, base: update(gesture.base) },
+        version: changed ? version + 1 : version,
       });
     },
 

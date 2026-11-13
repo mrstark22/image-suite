@@ -1,4 +1,5 @@
 import { traceInputRefs } from './trace-inputs';
+import { cropRectOf } from './document-size';
 import type { ImageDocument } from '../types/document';
 import type { DocumentRenderRequest, PreviewRenderResult, ReliefRenderResult, TraceRequest } from '../types/worker-messages';
 import type { VectorResult } from '../types/vector';
@@ -7,7 +8,10 @@ import { useRenderStore } from '../store/renderStore';
 import { useUIStore } from '../store/uiStore';
 import { showsRelief, traces } from './workflows';
 import { RenderScheduler } from './render-scheduler';
-import { previewTarget, sourceStageKey } from './render-target';
+import { photoPreviewTarget, previewTarget, sourceStageKey } from './render-target';
+import { burnSimulationSettings } from './burn-simulation';
+import { activeCalibration, activeProfiles, useProfilesStore } from '../store/profilesStore';
+import type { RenderTarget } from '../types/render';
 import { renderReliefPreview } from './depth-shader';
 import { getPipeline, type Pipeline } from './pipeline-client';
 
@@ -26,21 +30,36 @@ const render = () => useRenderStore.getState();
 /** False while a raster export runs: renders wait for it (design section 5), and run when it ends. */
 const notExporting = () => render().exportProgress === null;
 
-/** Background removal's pixels, when they belong to the render `doc` would use now. */
-function removalFor(doc: ImageDocument): ArrayBuffer | undefined {
+/** Background removal's pixels, when they belong to the render of `doc` at `target`. */
+function removalFor(doc: ImageDocument, target: RenderTarget = previewTarget(doc)): ArrayBuffer | undefined {
   const removal = render().backgroundRemoval;
-  return removal && removal.key === sourceStageKey(doc, previewTarget(doc)) ? removal.pixels.slice(0) : undefined;
+  return removal && removal.key === sourceStageKey(doc, target) ? removal.pixels.slice(0) : undefined;
 }
 
 function renderRequest(doc: ImageDocument): DocumentRenderRequest {
+  const job = useUIStore.getState().job;
+  // The photo is shown on the machine's dot grid, one pixel per laser dot (#34).
+  const target = job === 'photo' ? photoPreviewTarget(doc).target : previewTarget(doc);
+  const stage = traces(job) ? 'prepared' : 'final';
+  let simulation: DocumentRenderRequest['simulation'];
+  if (job === 'photo' && useUIStore.getState().burnPreview && doc.steps.dither.algorithm !== 'none') {
+    const profiles = useProfilesStore.getState();
+    const pitchMm = (physicalSizeWidthMm(doc) ?? target.widthPx * doc.steps.dither.dotPitchMm) / target.widthPx;
+    simulation = burnSimulationSettings(pitchMm, activeProfiles(profiles).machine, activeCalibration('engrave', profiles)).simulation;
+  }
   return {
     doc,
-    target: previewTarget(doc),
+    target,
     haveSourceKey: render().source?.key ?? null,
-    sourceStagePixels: removalFor(doc),
+    sourceStagePixels: removalFor(doc, target),
     // The vector job shows the image the trace reads: adjusted, not dithered (#23).
-    stage: traces(useUIStore.getState().job) ? 'prepared' : 'final',
+    stage,
+    simulation,
   };
+}
+
+function physicalSizeWidthMm(doc: ImageDocument): number | null {
+  return doc.mmPerPx === null ? null : cropRectOf(doc).width * doc.mmPerPx;
 }
 
 function report(prefix: string) {
@@ -176,6 +195,8 @@ export function connectSchedulers(schedulers: Schedulers, pipeline: () => Pipeli
       }
     }),
     useUIStore.subscribe((state, prev) => {
+      // The burn simulation changes only how the preview is drawn.
+      if (state.burnPreview !== prev.burnPreview && state.job === prev.job) schedulers.preview.rerun();
       if (state.job === prev.job) return;
       // The preview and the relief both write the preview: whichever the new job
       // shows renders again, and a result of the other still in flight is dropped.
@@ -187,6 +208,12 @@ export function connectSchedulers(schedulers: Schedulers, pipeline: () => Pipeli
         schedulers.preview.rerun();
       }
       schedulers.trace.refresh();
+    }),
+    // The simulation reads the machine's spot size and the calibration.
+    useProfilesStore.subscribe((state, prev) => {
+      if (useUIStore.getState().burnPreview && (state.data !== prev.data || state.machineId !== prev.machineId || state.materialId !== prev.materialId)) {
+        schedulers.preview.rerun();
+      }
     }),
   ];
   const doc = useDocumentStore.getState().doc;

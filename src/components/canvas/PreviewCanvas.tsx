@@ -431,7 +431,8 @@ export const PreviewCanvas: React.FC = () => {
         // --view-zoom lets the crop handles keep their screen size at any zoom.
         style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`, '--view-zoom': zoom } as React.CSSProperties}
       >
-        <canvas ref={canvasRef} className={styles.mainCanvas} />
+        {/* Square pixels once zoomed in; smooth below 100%, where skipping pixels would turn dots into moiré. */}
+        <canvas ref={canvasRef} className={`${styles.mainCanvas} ${zoom < 1 ? styles.smoothCanvas : ''}`} />
 
         {/* Vector Path Overlay */}
         {showVectorOverlay && vectorResult && (

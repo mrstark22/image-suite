@@ -257,9 +257,9 @@ Labels: `phase` marks the tracking issues; `area: infra`, `area: core`, `area: v
 
 To fix as each piece is ported. Verified in the audit unless marked.
 
-- Clarity is inverted: positive values flatten midtones (`src/wasm/src/tonal.rs:93`).
-- CLAHE darkens the bottom and right bands when the image is not divisible by the grid (`src/wasm/src/clahe.rs`). Reported, reproduced by the audit.
-- The dither threshold slider is a brightness bias that speckles pure white and black (`src/wasm/src/dither.rs:68`). Reported.
+- Clarity is inverted: positive values flatten midtones (`src/wasm/src/tonal.rs:93`). Fixed in #35: positive clarity steepens the midtones (`tests/unit/tonal-pipeline.test.ts`).
+- CLAHE darkens the bottom and right bands when the image is not divisible by the grid (`src/wasm/src/clahe.rs`). Reported, reproduced by the audit. Fixed in #36: even tiles, clip by tile area, all counts redistributed, centre-anchored interpolation (`tests/unit/photo-engraving.test.ts`).
+- The dither threshold slider is a brightness bias that speckles pure white and black (`src/wasm/src/dither.rs:68`). Reported. Fixed in #37: the slider is removed (the tone controls and the calibration's tone curve do its job), and the hidden `invertedBurn` is removed in favour of the Adjust step's visible Invert.
 - Tracing uses the unadjusted render of the crop, ignoring adjustments (the trace scheduler in `src/lib/schedulers.ts`; #23). Fixed in #23: the trace reads the `prepared` stage, and export traces again at full resolution (`src/lib/vector-file-export.ts`).
 - K-means seeds from evenly spaced pixel positions, which often coincide (`src/wasm/src/vector.rs:843`). Fixed in #28: `vector.rs` is replaced by `src/wasm/src/trace/`, whose colour step uses k-means++ in CIELAB (`trace/colour.rs`).
 - "Optimize & Smooth Nodes" throws on WASM trace output (`src/lib/vector-smoother.ts:27`). Fixed in #32: the smoother is removed; curve fitting is part of the tracer (`trace/fit.rs`).

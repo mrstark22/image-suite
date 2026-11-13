@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { useDocumentStore } from '../../store/documentStore';
 import { useRenderStore } from '../../store/renderStore';
+import { useUIStore } from '../../store/uiStore';
 import { DocumentSlider } from '../shared/Slider';
 import { Histogram } from '../shared/Histogram';
 import { Button } from '../shared/Button';
@@ -45,6 +46,9 @@ export const AdjustmentsPanel: React.FC = () => {
   const source = useRenderStore((s) => s.source);
   // Sharpening and the adaptive threshold have lengths in mm, so they need a size.
   const sizeSet = doc?.mmPerPx != null;
+  // A photo is engraved in grey: saturation and vibrance barely move its grey
+  // tones, so they are shown only where colour is kept (the vector job).
+  const photo = useUIStore((s) => s.job) === 'photo';
 
   // Accordion state - Basic Tone and Levels open by default
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
@@ -96,12 +100,12 @@ export const AdjustmentsPanel: React.FC = () => {
   // Preset Handlers: each chip is one edit.
   const applyPreset = (name: AdjustmentPresetId) => edit(ADJUSTMENT_PRESETS[name]);
 
+  // "Invert" is not offered here: the Invert toggle below is the one inversion (#37).
   const grayscaleOptions: Array<{ id: GrayscaleMode; label: string }> = [
-    { id: 'none', label: 'Color' },
+    { id: 'none', label: photo ? 'Standard' : 'Color' },
     { id: 'rec709', label: 'Rec.709' },
     { id: 'average', label: 'Avg' },
     { id: 'desaturate', label: 'Desat' },
-    { id: 'inverted', label: 'Invert' },
   ];
 
   return (
@@ -348,22 +352,32 @@ export const AdjustmentsPanel: React.FC = () => {
           </div>
         </div>
 
-        <DocumentSlider
-          label="Saturation"
-          value={color.saturation}
-          min={-100}
-          max={100}
-          update={(v) => setColor({ saturation: v })}
-          reset={setColor({ saturation: 0 })}
-        />
-        <DocumentSlider
-          label="Vibrance"
-          value={color.vibrance ?? 0}
-          min={-100}
-          max={100}
-          update={(v) => setColor({ vibrance: v })}
-          reset={setColor({ vibrance: 0 })}
-        />
+        {!photo && (
+          <>
+            <DocumentSlider
+              label="Saturation"
+              value={color.saturation}
+              min={-100}
+              max={100}
+              update={(v) => setColor({ saturation: v })}
+              reset={setColor({ saturation: 0 })}
+            />
+            <DocumentSlider
+              label="Vibrance"
+              value={color.vibrance ?? 0}
+              min={-100}
+              max={100}
+              update={(v) => setColor({ vibrance: v })}
+              reset={setColor({ vibrance: 0 })}
+            />
+          </>
+        )}
+        {photo && (
+          <div className={styles.controlNote}>
+            Temperature and Tint act as colour filters before the grey conversion: warm lightens reds and skin and
+            darkens blues; cool does the opposite.
+          </div>
+        )}
         <DocumentSlider
           label="Temperature (Cool / Warm)"
           value={color.temperature}

@@ -42,6 +42,11 @@
   image-rendering: pixelated;
 }
 
+/* Below 100%: smooth, so skipped pixels do not turn dither dots into moiré. */
+.smoothCanvas {
+  image-rendering: auto;
+}
+
 .svgOverlay {
   position: absolute;
   top: 0;

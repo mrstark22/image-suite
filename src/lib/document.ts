@@ -63,13 +63,51 @@ export const DEFAULT_DETAIL: DetailSettings = {
   adaptiveConstant: 2,
 };
 
+/**
+ * The line interval used while neither a calibration nor the machine gives
+ * one: 0.1 mm (254 DPI), a common photo interval on a CO2 laser. The UI says
+ * when it is in use.
+ */
+export const DEFAULT_DOT_PITCH_MM = 0.1;
+
+/**
+ * A new document is dithered with Jarvis-Judice-Ninke error diffusion,
+ * serpentine, at the machine's dot pitch: the best general-purpose choice
+ * for photos on wood with a CO2 laser. Error diffusion follows the image, so
+ * edges and fine texture (hair, grain, eyes) stay sharp at one dot per
+ * pixel, which an ordered (Bayer or blue-noise) mask cannot match; Jarvis
+ * spreads each error over 12 neighbours, which gives smoother midtones and
+ * fewer "worm" streaks than Floyd-Steinberg. Blue noise is offered for large
+ * flat areas, where it has no streaks at all.
+ */
 export const DEFAULT_DITHER: DitherConfig = {
-  algorithm: 'none',
-  threshold: 128,
+  algorithm: 'jarvis',
   serpentine: true,
   matrixScale: 1,
-  invertedBurn: false,
+  dotPitchMm: DEFAULT_DOT_PITCH_MM,
+  dotPitchOrigin: 'default',
+  toneCurve: null,
 };
+
+/**
+ * The dither settings the user chooses, as opposed to the dot pitch and tone
+ * curve, which come from the machine and calibration in use. Resetting the
+ * dither or applying a recipe changes only these.
+ */
+type ChosenDither = Pick<DitherConfig, 'algorithm' | 'serpentine' | 'matrixScale'>;
+
+/**
+ * The chosen settings in `params`. A recipe saved before #37 may also carry
+ * `threshold` (a brightness bias, removed) and `invertedBurn` (removed: the
+ * Adjust step's Invert is the one inversion); they are dropped.
+ */
+function chosenDither(params: Partial<DitherConfig>): Partial<ChosenDither> {
+  const out: Partial<ChosenDither> = {};
+  if (params.algorithm !== undefined) out.algorithm = params.algorithm;
+  if (params.serpentine !== undefined) out.serpentine = params.serpentine;
+  if (params.matrixScale !== undefined) out.matrixScale = params.matrixScale;
+  return out;
+}
 
 export const DEFAULT_VECTOR: VectorConfig = {
   colorMode: 'mono',
@@ -266,7 +304,8 @@ export const resetAdjustments: DocumentUpdate = (d) =>
   withSteps(d, { tonal: { ...DEFAULT_TONAL }, color: { ...DEFAULT_COLOR }, detail: { ...DEFAULT_DETAIL } });
 
 /** Restores the dither settings. */
-export const resetDither: DocumentUpdate = (d) => withSteps(d, { dither: { ...DEFAULT_DITHER } });
+export const resetDither: DocumentUpdate = (d) =>
+  withSteps(d, { dither: { ...d.steps.dither, ...chosenDither(DEFAULT_DITHER) } });
 
 /** Restores the tracing settings. */
 export const resetVector: DocumentUpdate = (d) => ({ ...d, vector: { ...DEFAULT_VECTOR } });
@@ -288,14 +327,14 @@ export function applyRecipe(recipe: EditRecipe): DocumentUpdate {
     const tonal = { ...DEFAULT_TONAL };
     const color = { ...DEFAULT_COLOR };
     const detail = { ...DEFAULT_DETAIL };
-    const dither = { ...DEFAULT_DITHER };
+    const dither = { ...d.steps.dither, ...chosenDither(DEFAULT_DITHER) };
     const vector = { ...DEFAULT_VECTOR };
     const depth = { ...DEFAULT_DEPTH };
     for (const step of recipe.steps) {
       if (step.type === 'tonal') Object.assign(tonal, step.params);
       if (step.type === 'color') Object.assign(color, step.params);
       if (step.type === 'detail') Object.assign(detail, step.params);
-      if (step.type === 'dither') Object.assign(dither, step.params);
+      if (step.type === 'dither') Object.assign(dither, chosenDither(step.params));
       // Only settings the tracer still has: a recipe saved before phase 2 carries old ones (#32).
       if (step.type === 'vectorize') Object.assign(vector, knownKeys(step.params, DEFAULT_VECTOR));
       if (step.type === 'depth') Object.assign(depth, step.params);

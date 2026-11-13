@@ -114,7 +114,7 @@ describe('tonal lookup table', () => {
 
   // Known defect, issue #35: the clarity term has the wrong sign, so positive
   // clarity flattens the midtones. Clarity should raise midtone contrast.
-  it.fails('positive clarity steepens the midtones and negative clarity flattens them (issue #35)', () => {
+  it('positive clarity steepens the midtones and negative clarity flattens them (issue #35)', () => {
     expect(midtoneSlope(wasmLut({ clarity: 100 }))).toBeGreaterThan(1);
     expect(midtoneSlope(wasmLut({ clarity: -100 }))).toBeLessThan(1);
     expect(midtoneSlope(tsLut({ clarity: 100 }))).toBeGreaterThan(1);
@@ -221,7 +221,7 @@ describe('CLAHE', () => {
 
   // Known defect, issue #36: when the image size is not divisible by the grid,
   // a sliver tile along the bottom and right edges is mis-equalised and darkens.
-  it.fails('keeps pure white pure white when the size does not divide by the grid (issue #36)', () => {
+  it('keeps pure white pure white when the size does not divide by the grid (issue #36)', () => {
     const out = redChannel(runPipeline(wasm, grayImage(400, 300, () => 255), 400, 300, { clahe: { clip: 2.5, grid: 8 } }));
     expect(Math.min(...out)).toBe(255);
   });

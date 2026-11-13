@@ -13,7 +13,7 @@ import { applyRecipe, resetAll, setCrop, setDither, setScale, setTonal, setVecto
 import { RECIPE_VERSION } from '../../src/types/recipe';
 import type { LoadedSource } from '../../src/lib/image-loader';
 import type { VectorResult } from '../../src/types/vector';
-import { currentDoc, labelledImage, previewMismatches, resetStores } from '../helpers/documents';
+import { currentDoc, greyscale, labelledImage, previewMismatches, resetStores } from '../helpers/documents';
 import { loadPixels, startTestPipeline, type TestPipeline } from '../helpers/pipeline';
 
 const store = () => useDocumentStore.getState();
@@ -34,6 +34,7 @@ const fakeDecode = async (file: File, sourceId: string): Promise<LoadedSource> =
 /** Opens a `width` x `height` labelled image and waits for its renders. */
 async function openLabelled(width: number, height: number, name = 'test.png', mmPerPx: number | null = null) {
   store().open(await loadPixels(pipeline.api, labelledImage(width, height), width, height, name), mmPerPx);
+  greyscale();
   await pipeline.settled();
 }
 
@@ -164,6 +165,7 @@ describe('results in renderStore', () => {
     render().setDepthHeightMap(new ArrayBuffer(8));
     const next = await loadPixels(pipeline.api, labelledImage(5, 5), 5, 5);
     store().open(next);
+    greyscale();
     expect(render().vectorResult).toBeNull();
     expect(render().depthHeightMap).toBeNull();
     expect(render().source).toBeNull();

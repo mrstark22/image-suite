@@ -8,6 +8,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { useDocumentStore, HISTORY_LIMIT, hasUnsavedEdits, setGestureEndTarget } from '../../src/store/documentStore';
 import {
   applyRecipe,
+  DEFAULT_DITHER,
   resetAll,
   setColor,
   setCrop,
@@ -73,7 +74,7 @@ const EDITS: Array<[string, DocumentUpdate]> = [
       name: 'r',
       createdAt: 0,
       updatedAt: 0,
-      steps: [{ id: '1', type: 'dither', enabled: true, timestamp: 0, params: { algorithm: 'jarvis', threshold: 100, serpentine: true, matrixScale: 1, invertedBurn: false } }],
+      steps: [{ id: '1', type: 'dither', enabled: true, timestamp: 0, params: { ...DEFAULT_DITHER, algorithm: 'floyd-steinberg' } }],
     }),
   ],
 ];
@@ -255,7 +256,7 @@ describe('interrupted gestures', () => {
     store().updateGesture(token, setTonal({ brightness: 30 }));
     const afterGesture = snapshot(currentDoc());
 
-    store().edit(setDither({ algorithm: 'jarvis' }));
+    store().edit(setDither({ algorithm: 'atkinson' }));
 
     expect(store().gesture).toBeNull();
     expect(store().past.length).toBe(2);
