@@ -808,6 +808,46 @@ export function scanEntries(steps: readonly StepReading[]): (number | null)[] {
   return steps.map((s) => (s.depthMm === null ? null : Math.max(0, Math.round(s.depthMm * 100) / 100)));
 }
 
+/** A typed depth that a scan's reading would replace. */
+export interface ScanConflict {
+  index: number;
+  typed: string;
+  scanned: number;
+}
+
+/**
+ * The typed depths (`typed`, as the fields hold them) that the scan's
+ * `scanned` depths would change. An empty field, a step the scan did not
+ * measure, a value equal to the scan's, and the white step's preset 0 are
+ * not conflicts.
+ */
+export function scanConflicts(typed: readonly string[], scanned: readonly (number | null)[]): ScanConflict[] {
+  const out: ScanConflict[] = [];
+  typed.forEach((t, i) => {
+    const s = scanned[i];
+    const v = t.trim();
+    if (s === null || s === undefined || v === '') return;
+    if (i === 0 && v === '0') return;
+    if (Number(v) === s) return;
+    out.push({ index: i, typed: v, scanned: s });
+  });
+  return out;
+}
+
+/**
+ * The fields after taking the scan: every measured step from the scan, or
+ * with `keepTyped`, only the fields that are empty (or the white step's
+ * preset 0); steps the scan did not measure keep what is typed.
+ */
+export function mergeScan(typed: readonly string[], scanned: readonly (number | null)[], keepTyped: boolean): string[] {
+  const kept = new Set(keepTyped ? scanConflicts(typed, scanned).map((c) => c.index) : []);
+  return typed.map((t, i) => {
+    const s = scanned[i];
+    if (s === null || s === undefined || kept.has(i)) return t;
+    return String(s);
+  });
+}
+
 /** A placement the user set by nudging, turning or flipping: scored, and taken as checked. */
 export function userAlign(prep: PreparedScan, spec: CardSpec, alignment: ScanAlignment, previous: AlignResult): AlignResult {
   const s = score(prep.grid, cardSamples(spec, 2), alignment);

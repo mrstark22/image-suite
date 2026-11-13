@@ -2,7 +2,8 @@
 /**
  * "Read from a 3D scan…" in the relief results step (#61): a scan fills the
  * typed depth fields, a step that did not scan is left for the user to
- * type, and saving goes through the same path as typed depths.
+ * type, saving goes through the same path as typed depths, and a scan that
+ * would replace typed depths asks first and can keep them.
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { act } from 'react';
@@ -83,5 +84,47 @@ describe('Read from a 3D scan', () => {
     const typed = reliefFromDepths(spec, [...filled.slice(0, n - 1), '1.2'].map(Number));
     expect(cal.depthCurve).toEqual(typed.entry.depthCurve);
     expect(cal.maxDepthMm).toBe(typed.entry.maxDepthMm);
+  });
+
+  it.each(['keep', 'replace'] as const)('asks before a scan replaces typed depths (%s)', async (choice) => {
+    act(() => useProfilesStore.getState().openCalibrate({ kind: 'relief' }));
+    await settle(() => click(button(dialog(), /Next: settings/)));
+    await settle(() => click(button(dialog(), /Next: preview card/)));
+    await settle(() => click(button(dialog(), /I burned it/)));
+    const spec = live(useProfilesStore.getState().data.cards)[0].spec;
+    const planted = spec.levels.map((l) => Number((1.2 * l).toFixed(3)));
+    const depthInputs = () => [...dialog().querySelectorAll<HTMLInputElement>('input')].filter((i) => /^Depth of the/.test(accessibleName(i)));
+    // The user typed the darkest step before reading the scan.
+    const last = spec.levels.length - 1;
+    setInputValue(depthInputs()[last], '9');
+    const pts = syntheticScan(spec, { depths: planted, points: 120000, angleDeg: 62, mmPerUnit: 1000, tiltDeg: 2 });
+
+    const read = async () => {
+      await settle(() => click(button(dialog(), /Read from a 3D scan/)));
+      const input = dialog().querySelector<HTMLInputElement>('input[type=file]')!;
+      const bytes = toPlyBinary(pts, true);
+      const file = new File([bytes], 'card.ply');
+      Object.defineProperty(file, 'arrayBuffer', { value: async () => bytes.slice(0) });
+      Object.defineProperty(input, 'files', { value: [file], configurable: true });
+      await settle(() => input.dispatchEvent(new Event('change', { bubbles: true })));
+      for (let i = 0; i < 200 && !/Use these \d+ depths/.test(dialog().textContent!); i++) await settle(() => new Promise((r) => setTimeout(r, 20)));
+      await settle(() => click(button(dialog(), /Use these \d+ depths/)));
+    };
+
+    await read();
+    // Nothing replaced yet: the typed value stays and the dialog says which would change.
+    expect(depthInputs()[last].value).toBe('9');
+    expect(dialog().textContent).toContain('The scan would replace depths you typed');
+    expect(dialog().textContent).toContain(`${Math.round(spec.levels[last] * 100)}% (9 typed`);
+    if (choice === 'keep') {
+      await settle(() => click(button(dialog(), /Keep my typed depths/)));
+      expect(depthInputs()[last].value).toBe('9');
+      expect(dialog().textContent).toContain('1 typed depth was kept');
+    } else {
+      await settle(() => click(button(dialog(), /Use the scan's depths/)));
+      expect(Math.abs(Number(depthInputs()[last].value) - planted[last])).toBeLessThan(0.03);
+    }
+    // Either way the other steps come from the scan.
+    expect(Math.abs(Number(depthInputs()[1].value) - planted[1])).toBeLessThan(0.03);
   });
 });
