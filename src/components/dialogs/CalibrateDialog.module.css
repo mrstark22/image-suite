@@ -509,7 +509,8 @@
 }
 
 .olStep {
-  stroke: #1fd16b;
+  stroke: rgba(31, 209, 107, 0.85);
+  stroke-width: 1;
 }
 
 .olRef {

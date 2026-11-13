@@ -837,6 +837,26 @@ const ToneResults: React.FC<ResultProps> = ({ spec, header, error, submit, known
         </button>
       </div>
       <p className={styles.instruction}>Compare neighbouring steps on the burned card. Steps that look the same as bare material, or the same as full black, carry no detail.</p>
+      <div className={styles.fieldRow}>
+        <label className={styles.field}>
+          <span className={styles.fieldLabel}>Last step that looks bare</span>
+          <select className={styles.select} value={blank ?? ''} onChange={(e) => { setSource('eye'); setBlank(Number(e.target.value)); setMarking('solid'); }}>
+            <option value="" disabled>Choose a step</option>
+            {spec.levels.map((_, i) => (
+              <option key={i} value={i}>{pct(i)}</option>
+            ))}
+          </select>
+        </label>
+        <label className={styles.field}>
+          <span className={styles.fieldLabel}>First step that looks fully black</span>
+          <select className={styles.select} value={solid ?? ''} onChange={(e) => { setSource('eye'); setSolid(Number(e.target.value)); }}>
+            <option value="" disabled>Choose a step</option>
+            {spec.levels.map((_, i) => (
+              <option key={i} value={i}>{pct(i)}</option>
+            ))}
+          </select>
+        </label>
+      </div>
       <CardPicture spec={spec} label={`Card #${spec.shortId}`}>
         {(layout) => {
           const b = layout.cells[0];
