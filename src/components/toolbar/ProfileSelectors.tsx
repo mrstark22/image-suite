@@ -17,7 +17,7 @@ const MANAGE = '__manage__';
 export const ProfileSelectors: React.FC = () => {
   const job = useUIStore((s) => s.job);
   const profiles = useProfilesStore();
-  const { data, machineId, materialId, thicknessId, selectMachine, selectMaterial, selectThickness, openManager } = profiles;
+  const { data, machineId, materialId, thicknessId, selectMachine, selectMaterial, selectThickness, openManager, openCalibrate } = profiles;
   const { machine, material, thickness } = activeProfiles(profiles);
   const kind = JOB_CALIBRATION[job];
   const calibration = activeCalibration(kind, profiles);
@@ -28,6 +28,8 @@ export const ProfileSelectors: React.FC = () => {
   const status = calibration
     ? `${KIND_LABEL[kind]} calibration in use${calibration.status === 'unverified' ? ' (copied, not yet verified)' : ''}`
     : noCalibrationText(kind, machine, material, thickness);
+  // Without a calibration, and with what it needs chosen, the chip offers to make one.
+  const calibratable = !calibration && !!machine && !!material && (kind !== 'cut' || !!thickness);
   const statusTone = calibration ? (calibration.status === 'verified' ? styles.calOk : styles.calWarn) : styles.calNone;
 
   return (
@@ -104,12 +106,17 @@ export const ProfileSelectors: React.FC = () => {
       <button
         type="button"
         className={`${styles.calChip} ${statusTone} ${material ? '' : styles.calIdle}`}
-        title={`${status} Open Machines & Materials.`}
-        aria-label={`${status} Open Machines & Materials.`}
-        onClick={() => openManager(material ? { tab: 'materials', id: material.id } : { tab: machine ? 'materials' : 'machines', id: null })}
+        title={`${status} ${calibratable ? 'Calibrate now.' : 'Open Machines & Materials.'}`}
+        aria-label={`${status} ${calibratable ? 'Calibrate now.' : 'Open Machines & Materials.'}`}
+        onClick={() => {
+          // Without a calibration the chip starts the card that makes one (#40, #85, #47).
+          if (calibratable) openCalibrate({ kind });
+          else openManager(material ? { tab: 'materials', id: material.id } : { tab: machine ? 'materials' : 'machines', id: null });
+        }}
       >
         <span className={styles.calDot} aria-hidden="true" />
         <span className={styles.calText}>{status}</span>
+        {calibratable && <span className={styles.calAction}>Calibrate</span>}
       </button>
     </>
   );

@@ -5,7 +5,6 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { useDocumentStore } from '../../src/store/documentStore';
 import { traceIsCurrent, useRenderStore } from '../../src/store/renderStore';
-import { generateTestGridVector } from '../../src/lib/test-grid-generator';
 import { useUIStore } from '../../src/store/uiStore';
 import { applyRecipe, recipeFromDocument, setTonal, setVector } from '../../src/lib/document';
 import { editPalette, paletteFromResult } from '../../src/lib/trace-palette';
@@ -271,9 +270,9 @@ describe('second review of #84', () => {
   it('1: a test grid stays exportable when settings change', async () => {
     store().open(await loadPixels(pipeline.api, colourBlocks(80, 40, [[255, 255, 255], [0, 0, 0]]), 80, 40), 0.1);
     await pipeline.settled();
-    render().addVectorLayer(
-      generateTestGridVector({ rows: 2, cols: 2, boxSizeMm: 2, gapMm: 1, dpi: 254, type: 'power-matrix' } as Parameters<typeof generateTestGridVector>[0])
-    );
+    // Paths added as a layer, not traced from the image.
+    const d = 'M 0 0 L 20 0 L 20 20 L 0 20 Z';
+    render().addVectorLayer({ id: 'grid', name: 'Grid', color: '#ff0000', paletteIndex: null, visible: true, totalNodes: 4, paths: [{ id: 'box', kind: 'cut', isClosed: true, nodeCount: 4, d }] });
     store().edit(setTonal({ contrast: 30 }));
     store().edit(setVector({ threshold: 90 }));
     expect(render().isVectorStale).toBe(false);

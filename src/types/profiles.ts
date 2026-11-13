@@ -6,6 +6,7 @@
  * and a `deleted` flag, so a deletion is recorded as a tombstone instead of
  * the record disappearing.
  */
+import type { CardRecordFields } from './calibration-card';
 
 export interface SyncRecord {
   /** Stable id, never reused. */
@@ -81,6 +82,8 @@ export interface CalibrationSettings {
   depthCurve: number[] | null;
   /** Cutting: the width of the cut in mm, when measured. */
   kerfMm: number | null;
+  /** Relief: the deepest the material burns at full black, in mm, from a depth card; null or absent when not measured. */
+  maxDepthMm?: number | null;
 }
 
 export interface Calibration extends SyncRecord, CalibrationSettings {
@@ -96,6 +99,9 @@ export interface Calibration extends SyncRecord, CalibrationSettings {
   notes: string;
 }
 
+/** A calibration card that was made, kept so its results can be entered later (#40). */
+export interface CalibrationCard extends SyncRecord, CardRecordFields {}
+
 /** Everything in the profile store, tombstones included. */
 export interface ProfileData {
   machines: Machine[];
@@ -103,6 +109,7 @@ export interface ProfileData {
   materials: Material[];
   thicknesses: Thickness[];
   calibrations: Calibration[];
+  cards: CalibrationCard[];
 }
 
 export type ProfileCollection = keyof ProfileData;

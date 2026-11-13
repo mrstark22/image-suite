@@ -288,6 +288,15 @@
   white-space: nowrap;
 }
 
+.calAction {
+  flex-shrink: 0;
+  padding: 0 6px;
+  border-radius: var(--radius-full);
+  background: var(--sel-bg);
+  color: var(--on-sel);
+  font-weight: var(--weight-medium);
+}
+
 .calDot {
   flex-shrink: 0;
   width: 7px;

@@ -28,7 +28,6 @@ interface UIState {
 
   // Modal Dialogs
   isSizeDialogOpen: boolean;
-  isTestGridDialogOpen: boolean;
   isShortcutsDialogOpen: boolean;
   /**
    * A file that was too large to open at its own size, with why and its
@@ -53,7 +52,6 @@ interface UIState {
   setSheetOpen: (open: boolean) => void;
 
   setSizeDialogOpen: (open: boolean) => void;
-  setTestGridDialogOpen: (open: boolean) => void;
   setShortcutsDialogOpen: (open: boolean) => void;
   setReducedOpenOffer: (offer: UIState['reducedOpenOffer']) => void;
 }
@@ -86,7 +84,6 @@ export const useUIStore = create<UIState>((set, get) => ({
   isSheetOpen: true,
 
   isSizeDialogOpen: false,
-  isTestGridDialogOpen: false,
   isShortcutsDialogOpen: false,
   reducedOpenOffer: null,
 
@@ -118,7 +115,6 @@ export const useUIStore = create<UIState>((set, get) => ({
   setSheetOpen: (isSheetOpen) => set({ isSheetOpen }),
 
   setSizeDialogOpen: (isSizeDialogOpen) => set({ isSizeDialogOpen }),
-  setTestGridDialogOpen: (isTestGridDialogOpen) => set({ isTestGridDialogOpen }),
   setShortcutsDialogOpen: (isShortcutsDialogOpen) => set({ isShortcutsDialogOpen }),
   setReducedOpenOffer: (reducedOpenOffer) => set({ reducedOpenOffer }),
 }));

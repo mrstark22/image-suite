@@ -75,7 +75,7 @@ export const MENUS: readonly Menu[] = [
       [
         commandItem('export', 'Go to Export', 'export'),
         { id: 'profiles', label: 'Machines & Materials…', enabled: () => true, run: () => useProfilesStore.getState().openManager() },
-        { id: 'test-card', label: 'Calibration Test Card…', enabled: () => true, run: () => ui().setTestGridDialogOpen(true) },
+        { id: 'calibrate', label: 'Calibrate…', enabled: () => true, run: () => useProfilesStore.getState().openCalibrate() },
       ],
       [{ id: 'close', label: 'Close Image', enabled: hasDoc, run: () => docs().close(), danger: true }],
     ],

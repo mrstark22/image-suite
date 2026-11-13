@@ -43,7 +43,7 @@ function type(el: HTMLInputElement | HTMLTextAreaElement, value: string): void {
 }
 
 const dialog = () => document.querySelector<HTMLElement>('[role=dialog]')!;
-const chip = (root: ParentNode) => [...root.querySelectorAll('button')].find((b) => /Open Machines & Materials/.test(accessibleName(b)))!;
+const chip = (root: ParentNode) => [...root.querySelectorAll('button')].find((b) => /Open Machines & Materials\.|Calibrate now\.$/.test(accessibleName(b)))!;
 
 beforeEach(async () => {
   localStorage.clear();

@@ -40,7 +40,7 @@ const effects: Record<string, { setup?: () => void; changed: () => boolean }> = 
   open: { changed: () => vi.mocked(openImagePicker).mock.calls.length === 1 },
   size: { changed: () => ui().isSizeDialogOpen },
   export: { changed: () => currentStep(ui()) === 'export' },
-  'test-card': { changed: () => ui().isTestGridDialogOpen },
+  calibrate: { changed: () => useProfilesStore.getState().calibrateOpen },
   close: { changed: () => docs().doc === null },
   undo: {
     setup: () => docs().edit(setTonal({ contrast: 30 })),
@@ -100,7 +100,6 @@ describe('menus', () => {
       showVectorOverlay: true,
       theme: 'dark',
       isSizeDialogOpen: false,
-      isTestGridDialogOpen: false,
       isShortcutsDialogOpen: false,
     });
     useProfilesStore.getState().closeManager();
@@ -140,7 +139,7 @@ describe('menus', () => {
 
   it('with no image open, only the items that need none are enabled', () => {
     const enabled = items.filter((i) => i.enabled()).map((i) => i.id).sort();
-    expect(enabled).toEqual(['keep-settings', 'open', 'profiles', 'shortcuts', 'test-card', 'theme']);
+    expect(enabled).toEqual(['calibrate', 'keep-settings', 'open', 'profiles', 'shortcuts', 'theme']);
   });
 
   it('Split View works in the vector job, whose canvas shows the adjusted image the trace reads (#23)', () => {
