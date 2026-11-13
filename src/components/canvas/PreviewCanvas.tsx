@@ -1,15 +1,15 @@
-import React, { useRef, useEffect, useState, useMemo } from 'react';
+import React, { useRef, useEffect, useState, useMemo, useId } from 'react';
 import { useDocumentStore } from '../../store/documentStore';
 import { pxPerMmOfSource, useRenderStore } from '../../store/renderStore';
 import { useViewStore } from '../../store/viewStore';
 import { openImageFiles, confirmReplaceInBrowser } from '../../lib/open-image';
 import { DEFAULT_DEPTH } from '../../lib/document';
 import { fitsDimensions } from '../../lib/crop';
-import { fromCentre } from '../../lib/viewport';
+import { fromCentre, panForKey } from '../../lib/viewport';
 import { ActivePointers, pinchView, type PointerPair } from '../../lib/gestures';
 import { isTypingTarget } from '../../lib/shortcuts';
 import { useUIStore } from '../../store/uiStore';
-import { canvasImage, showsOrbitView } from '../../lib/workflows';
+import { showsOrbitView } from '../../lib/workflows';
 import { DropZone } from '../shared/DropZone';
 import { DepthViewer3D } from './DepthViewer3D';
 import { CanvasRulers } from './CanvasRulers';
@@ -24,11 +24,9 @@ export const PreviewCanvas: React.FC = () => {
 
   const source = useRenderStore((s) => s.source);
   const previewBuffer = source?.buffer ?? null;
-  // What the job's output is made from: in the vector job, the image the trace reads.
+  // The processed preview: in the vector job, the adjusted image the trace reads (`canvasImage`).
   const job = useUIStore((s) => s.job);
-  const shows = canvasImage(job);
-  const processedRender = useRenderStore((s) => s.processed);
-  const processedBuffer = shows === 'source' ? previewBuffer : processedRender;
+  const processedBuffer = useRenderStore((s) => s.processed);
   const depthHeightMapBuffer = useRenderStore((s) => s.depthHeightMap);
   const previewVersion = useRenderStore((s) => s.previewVersion);
   const docId = useDocumentStore((s) => s.doc?.id ?? null);
@@ -54,8 +52,7 @@ export const PreviewCanvas: React.FC = () => {
     [dimsWidth, dimsHeight]
   );
 
-  // With the source shown there is no before and after to split.
-  const isSplitView = useUIStore((s) => s.isSplitView) && shows !== 'source';
+  const isSplitView = useUIStore((s) => s.isSplitView);
   const isInvertedView = useUIStore((s) => s.isInvertedView);
   const showVectorOverlay = useUIStore((s) => s.showVectorOverlay);
 
@@ -69,6 +66,7 @@ export const PreviewCanvas: React.FC = () => {
   // Where the crop tool puts its Apply and Cancel bar: over the canvas at screen
   // size, not on the image, where it would scale with the zoom (#54).
   const [cropBarHost, setCropBarHost] = useState<HTMLDivElement | null>(null);
+  const panHintId = useId();
 
   // The pointers down on the canvas, and the gesture they make (#54): one
   // pointer pans (with the pan tool, the middle or right button, or Space),
@@ -314,6 +312,20 @@ export const PreviewCanvas: React.FC = () => {
     }
   };
 
+  // The canvas takes focus (Tab, or a click) and the arrow keys pan it, Shift
+  // further (#81). Only keys pressed on the canvas itself: the crop box and
+  // the split divider inside it keep their own arrows, and nothing outside
+  // it (a slider, a field) loses them.
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.target !== e.currentTarget || e.ctrlKey || e.metaKey || e.altKey) return;
+    const view = useViewStore.getState();
+    const next = panForKey(view, view.container, view.image, e);
+    if (!next) return;
+    e.preventDefault();
+    // A key that moves nothing (a fitted image cannot pan) must not end fit-to-window.
+    if (next.x !== view.pan.x || next.y !== view.pan.y) setPan(next);
+  };
+
   // The split divider follows the pointer until it is released anywhere.
   useEffect(() => {
     if (!isDraggingSplit) return;
@@ -380,6 +392,11 @@ export const PreviewCanvas: React.FC = () => {
     <div
       ref={setContainer}
       className={`${styles.canvasContainer} ${styles.canvasContainerPan} ${isDragOverCanvas ? styles.dragOver : ''}`}
+      tabIndex={0}
+      role="region"
+      aria-label="Image canvas"
+      aria-describedby={panHintId}
+      onKeyDown={handleKeyDown}
       onPointerEnter={() => (pointerOverCanvasRef.current = true)}
       onPointerLeave={() => (pointerOverCanvasRef.current = false)}
       onPointerDownCapture={handlePointerDownCapture}
@@ -392,6 +409,10 @@ export const PreviewCanvas: React.FC = () => {
       onDrop={handleDrop}
       onContextMenu={(e) => e.preventDefault()}
     >
+      <span id={panHintId} className={styles.visuallyHidden}>
+        Arrow keys pan the image; Shift pans further.
+      </span>
+
       {/* Interactive Physical Canvas Rulers (mm, in, px) */}
       <CanvasRulers />
 
@@ -414,22 +435,22 @@ export const PreviewCanvas: React.FC = () => {
 
         {/* Vector Path Overlay */}
         {showVectorOverlay && vectorResult && (
+          // Drawn in the overlay colour, not the layer's (black ink would vanish on a
+          // dark image); a cutline keeps its red. Paths are in traced pixels.
           <svg
             className={styles.svgOverlay}
-            viewBox={`0 0 ${dims.width} ${dims.height}`}
+            viewBox={`0 0 ${vectorResult.dimensions.width} ${vectorResult.dimensions.height}`}
           >
             {vectorResult.layers.map((layer) =>
               layer.visible ? (
-                <g
-                  key={layer.id}
-                  stroke={layer.color}
-                  fill="none"
-                  strokeWidth="1.5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
+                <g key={layer.id} fill="none" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                   {layer.paths.map((p) => (
-                    <path key={p.id} d={p.svgPathData} />
+                    <path
+                      key={p.id}
+                      d={p.d}
+                      className={p.kind === 'cut' ? styles.cutPath : styles.tracePath}
+                      vectorEffect="non-scaling-stroke"
+                    />
                   ))}
                 </g>
               ) : null

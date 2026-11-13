@@ -95,7 +95,8 @@ beforeEach(async () => {
   for (const call of leftover) await call.release();
   useUIStore.setState({ job: 'photo' });
   render().setAutoTrace(true);
-  store().open(await loadPixels(pipeline.api, labelledImage(40, 30), 40, 30));
+  // Tracing settings are in millimetres, so the document has a size.
+  store().open(await loadPixels(pipeline.api, labelledImage(40, 30), 40, 30), 0.1);
   await pipeline.settled();
   commits = [];
   holding = true;
@@ -236,16 +237,20 @@ describe('each flow has the steps that reach its output (#53)', () => {
     setDither({ algorithm: 'floyd-steinberg' }),
   ];
 
-  it('the vector job: Adjust and Dither change nothing it traces, so they are not its steps', async () => {
+  it('the vector job: Adjust changes what it traces and Dither does not, so Adjust is its step (#23)', async () => {
     useUIStore.getState().setJob('vector');
     await pending('trace')[0].release();
-    for (const update of photoEdits) store().edit(update);
-    expect(pending('trace')).toHaveLength(1);
-    expect(FLOWS.vector).not.toContain('adjust');
+    for (const update of photoEdits.slice(0, 3)) {
+      const before = pending('trace').length;
+      store().edit(update);
+      expect(pending('trace').length).toBe(before + 1);
+      await pending('trace')[before].release();
+    }
+    const before = pending('trace').length;
+    store().edit(setDither({ algorithm: 'floyd-steinberg' }));
+    expect(pending('trace')).toHaveLength(before);
+    expect(FLOWS.vector).toContain('adjust');
     expect(FLOWS.vector).not.toContain('dither');
-    // Its own step, Trace, does.
-    store().edit(setVector({ threshold: 90 }));
-    expect(pending('trace')).toHaveLength(2);
     expect(FLOWS.vector).toContain('trace');
   });
 

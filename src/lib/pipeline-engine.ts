@@ -120,6 +120,25 @@ export class PipelineEngine {
    * must name the source this engine holds.
    */
   render(doc: ImageDocument, target: RenderTarget, stage: Stage, options: RenderOptions = {}): RenderOutput {
+    const bytes = target.widthPx * target.heightPx * 4;
+    return this.renderWith(doc, target, stage, options, (ptr, pxPerMm) =>
+      output(new Uint8Array(this.core.wasm.memory.buffer, ptr, bytes).slice().buffer, target, pxPerMm)
+    );
+  }
+
+  /**
+   * Renders `doc` at `target`, up to `stage`, and calls `use` with the
+   * address of the pixels in WASM memory, which are freed (or stay cached)
+   * when it returns. `use` must only read them. The tracer reads them there,
+   * so a full-resolution trace makes no copy of the image (review of #84).
+   */
+  renderWith<T>(
+    doc: ImageDocument,
+    target: RenderTarget,
+    stage: Stage,
+    options: RenderOptions,
+    use: (ptr: number, pxPerMm: number | null) => T
+  ): T {
     const pxPerMm = pxPerMmOf(doc, target);
     const bytes = target.widthPx * target.heightPx * 4;
     const wasm = this.core.wasm;
@@ -165,9 +184,7 @@ export class PipelineEngine {
     }
 
     try {
-      if (stage === 'source') {
-        return output(new Uint8Array(wasm.memory.buffer, input, bytes).slice().buffer, target, pxPerMm);
-      }
+      if (stage === 'source') return use(input, pxPerMm);
       // Steps 4 to 6 run in place: on the owned buffer, or on a working copy of the cached one.
       let work = owned;
       if (work === null) {
@@ -176,8 +193,7 @@ export class PipelineEngine {
       }
       try {
         this.core.processInPlace(work, toRunParams(doc.steps, pxPerMm, target, stage));
-        // Re-read the view: processing may have grown memory.
-        return output(new Uint8Array(wasm.memory.buffer, work, bytes).slice().buffer, target, pxPerMm);
+        return use(work, pxPerMm);
       } finally {
         if (work !== owned) wasm.deallocate(work, bytes);
       }

@@ -63,7 +63,7 @@ const EDITS: Array<[string, DocumentUpdate]> = [
   ['dither', setDither({ algorithm: 'atkinson' })],
   ['crop', setCrop({ x: 4, y: 3, width: 20, height: 10 })],
   ['scale', setScale(0.1)],
-  ['tracing', setVector({ mode: 'centerline', threshold: 90 })],
+  ['tracing', setVector({ shapes: 'centerline', threshold: 90 })],
   ['relief', setDepth({ depthScale: 5 })],
   ['reset all', (d) => resetAll(setTonal({ brightness: 10 })(d))],
   [

@@ -1,9 +1,9 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState, useCallback, useId } from 'react';
 import { RotateCcw, Box, Compass, Layers, Grid } from 'lucide-react';
 import { useDocumentStore } from '../../store/documentStore';
 import { DEFAULT_DEPTH } from '../../lib/document';
 import { ActivePointers, type PointerPair } from '../../lib/gestures';
-import { DEFAULT_CAMERA, dollyBy, orbitBy, panBy, pinchCamera, type OrbitCamera } from '../../lib/orbit-camera';
+import { DEFAULT_CAMERA, cameraForKey, dollyBy, orbitBy, panBy, pinchCamera, type OrbitCamera } from '../../lib/orbit-camera';
 import styles from './DepthViewer3D.module.css';
 
 interface DepthViewer3DProps {
@@ -37,6 +37,14 @@ export const DepthViewer3D: React.FC<DepthViewer3DProps> = ({
 
   // Camera Orbit State
   const [camera, setCamera] = useState<OrbitCamera>(DEFAULT_CAMERA);
+  // The camera as last moved with the keys: what screen readers are told. A
+  // drag or pinch changes the camera on every frame, and announcing each one
+  // would flood the reader, so pointer moves are not announced (review of #84).
+  const [announcedCamera, setAnnouncedCamera] = useState<OrbitCamera>(DEFAULT_CAMERA);
+
+  // The view takes focus, and then the arrow keys orbit and + and - zoom (#81).
+  const [isFocused, setIsFocused] = useState(false);
+  const keysHintId = useId();
 
   const [showToolpaths, setShowToolpaths] = useState(false);
   const [wireframeMode, setWireframeMode] = useState(false);
@@ -55,6 +63,7 @@ export const DepthViewer3D: React.FC<DepthViewer3DProps> = ({
   const handleResetCamera = useCallback(() => {
     needsRenderRef.current = true;
     setCamera(DEFAULT_CAMERA);
+    setAnnouncedCamera(DEFAULT_CAMERA);
   }, []);
 
   // Top-Down View
@@ -597,6 +606,17 @@ export const DepthViewer3D: React.FC<DepthViewer3DProps> = ({
     gestureRef.current = rest ? { kind: 'orbit', pointerId: rest.id, x: rest.at.x, y: rest.at.y } : null;
   };
 
+  // Keys pressed on the view itself; the HUD's buttons keep theirs.
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.target !== e.currentTarget || e.ctrlKey || e.metaKey || e.altKey) return;
+    const next = cameraForKey(camera, e);
+    if (!next) return;
+    e.preventDefault();
+    needsRenderRef.current = true;
+    setCamera(next);
+    setAnnouncedCamera(next);
+  };
+
   // Non-passive wheel event listener to avoid [Intervention] preventDefault browser errors
   useEffect(() => {
     const container = containerRef.current;
@@ -618,6 +638,13 @@ export const DepthViewer3D: React.FC<DepthViewer3DProps> = ({
     <div
       ref={containerRef}
       className={styles.viewerContainer}
+      tabIndex={0}
+      role="region"
+      aria-label="3D relief view"
+      aria-describedby={keysHintId}
+      onKeyDown={handleKeyDown}
+      onFocus={(e) => e.target === e.currentTarget && setIsFocused(true)}
+      onBlur={(e) => e.target === e.currentTarget && setIsFocused(false)}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerEnd}
@@ -672,8 +699,17 @@ export const DepthViewer3D: React.FC<DepthViewer3DProps> = ({
         </div>
       </div>
 
-      <div className={styles.hudHint}>
-        Drag: Orbit • Right-Drag or Two Fingers: Pan • Scroll or Pinch: Zoom
+      {/* With focus, the hint shows the keys; the camera is read out for screen readers. */}
+      <span id={keysHintId} className={styles.visuallyHidden}>
+        Arrow keys orbit, Shift for a larger step; plus and minus zoom.
+      </span>
+      <div className={styles.hudHint} aria-hidden="true">
+        {isFocused
+          ? 'Arrows: Orbit • Shift + Arrows: Larger Step • + / −: Zoom'
+          : 'Drag: Orbit • Right-Drag or Two Fingers: Pan • Scroll or Pinch: Zoom'}
+      </div>
+      <div className={styles.visuallyHidden} role="status" aria-live="polite">
+        {`Camera ${Math.round(((announcedCamera.azimuth % 360) + 360) % 360)}° around, ${Math.round(announcedCamera.elevation)}° above the surface, distance ${announcedCamera.distance.toFixed(2)}`}
       </div>
     </div>
   );

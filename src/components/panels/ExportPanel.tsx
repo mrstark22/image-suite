@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
 import { Download, CheckCircle, FileCode, Box } from 'lucide-react';
 import { useDocumentStore } from '../../store/documentStore';
-import { useRenderStore } from '../../store/renderStore';
+import { traceIsCurrent, useRenderStore } from '../../store/renderStore';
 import { useUIStore } from '../../store/uiStore';
 import { encodePngGrayscale16 } from '../../lib/png-encoder';
-import { generateProductionSVG } from '../../lib/svg-export';
-import { generateDXF } from '../../lib/dxf-export';
+import { vectorExportRequest, vectorExportSource, vectorFile, type VectorFormat } from '../../lib/vector-file-export';
+import { traceSizeMm } from '../../lib/vector-export';
+import { getPipeline } from '../../lib/pipeline-client';
 import { recipeFromDocument } from '../../lib/document';
 import { exportResolution, fromMm, physicalSize } from '../../lib/document-size';
 import { exportPlan } from '../../lib/render-target';
@@ -47,8 +48,9 @@ function download(parts: BlobPart[], type: string, fileName: string): void {
  * size and the LightBurn settings to use. Raster export runs the pipeline in
  * the worker at the source's full resolution for the crop and writes the
  * document's DPI into the file (#17); the size and DPI shown come from the
- * same plan the worker uses. The trace and heightmap are still preview-sized
- * (#30, #42, #46) and carry the DPI of the preview.
+ * same plan the worker uses. Vector files are traced again at full resolution
+ * and written in millimetres (#23, #30). The heightmap is still preview-sized
+ * (#42, #46) and carries the DPI of the preview.
  */
 export const ExportPanel: React.FC = () => {
   const doc = useDocumentStore((s) => s.doc);
@@ -56,9 +58,11 @@ export const ExportPanel: React.FC = () => {
   const processedBuffer = useRenderStore((s) => s.processed);
   const depthHeightMapBuffer = useRenderStore((s) => s.depthHeightMap);
   const vectorResult = useRenderStore((s) => s.vectorResult);
+  const tracedInputs = useRenderStore((s) => s.tracedInputs);
+  const isVectorStale = useRenderStore((s) => s.isVectorStale);
+  const isTracing = useRenderStore((s) => s.isTracing);
+  const backgroundRemoval = useRenderStore((s) => s.backgroundRemoval);
   const progress = useRenderStore((s) => s.exportProgress);
-  // Read so the panel updates when background removal is applied or restored.
-  useRenderStore((s) => s.backgroundRemoval);
   const job = useUIStore((s) => s.job);
   const machine = useUIStore((s) => machineById(s.machineId));
   const material = useUIStore((s) => materialById(s.materialId));
@@ -68,6 +72,8 @@ export const ExportPanel: React.FC = () => {
   const [format, setFormat] = useState<RasterFormat>('png');
   const [isDone, setIsDone] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [vectorBusy, setVectorBusy] = useState<VectorFormat | null>(null);
+  const [vectorError, setVectorError] = useState<string | null>(null);
 
   if (!doc || !source || !processedBuffer) {
     return (
@@ -116,6 +122,33 @@ export const ExportPanel: React.FC = () => {
     setTimeout(() => setIsDone(false), 3000);
   };
 
+  const vectorSource = vectorResult
+    ? vectorExportSource(vectorResult, tracedInputs !== null, backgroundRemoval !== null)
+    : null;
+
+  // The file must be what is on screen: no export of a trace older than the document (review of #84).
+  const traceCurrent = vectorResult !== null && !isVectorStale && !isTracing && traceIsCurrent();
+  const canExportVector = vectorResult !== null && vectorResult.pxPerMm !== null && traceCurrent && vectorBusy === null;
+
+  const handleVectorExport = async (fmt: VectorFormat) => {
+    if (!vectorResult || !vectorSource || !canExportVector) return;
+    setVectorBusy(fmt);
+    setVectorError(null);
+    try {
+      const { text, mimeType } =
+        vectorSource === 'as-shown'
+          ? vectorFile(vectorResult, fmt)
+          : await getPipeline().exportVectorFile(
+              vectorExportRequest(doc, vectorResult, vectorSource, backgroundRemoval, fmt)
+            );
+      download([text], mimeType, `${baseName}-vectors.${fmt}`);
+    } catch (err) {
+      setVectorError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setVectorBusy(null);
+    }
+  };
+
   const handleRecipe = () => {
     const recipe = recipeFromDocument(doc, `${baseName} recipe`);
     download([JSON.stringify(recipe, null, 2)], 'application/json', `${baseName}-recipe.imgsuite`);
@@ -145,11 +178,8 @@ export const ExportPanel: React.FC = () => {
                 {file.widthPx} × {file.heightPx} px at {file.dpi.toFixed(1)} DPI
               </strong>
             </div>
-            {job !== 'photo' && (
-              <div className={styles.controlNote}>
-                {job === 'vector' ? 'Traced' : 'The heightmap is computed'} at preview resolution until{' '}
-                {job === 'vector' ? '#30' : '#46'}.
-              </div>
+            {job === 'relief' && (
+              <div className={styles.controlNote}>The heightmap is computed at preview resolution until #46.</div>
             )}
           </div>
         ) : (
@@ -199,36 +229,56 @@ export const ExportPanel: React.FC = () => {
       {job === 'vector' && (
         <Section title="Vector Files">
           {!vectorResult && <div className={styles.controlNote}>Nothing traced yet: go back to the Trace step.</div>}
+          {vectorResult && vectorResult.pxPerMm !== null && (
+            <div className={styles.controlNote}>
+              {(() => {
+                const { widthMm, heightMm } = traceSizeMm(vectorResult);
+                return `${widthMm.toFixed(1)} × ${heightMm.toFixed(1)} mm, written in millimetres in both files.`;
+              })()}
+            </div>
+          )}
           <div className={styles.buttonRow}>
             <Button
               icon={<Download size={14} />}
-              disabled={!vectorResult || !previewResolution}
-              onClick={() => {
-                if (!vectorResult || !previewResolution) return;
-                const svg = generateProductionSVG(vectorResult, {
-                  strokeWidth: doc.vector.strokeWidth,
-                  physicalUnits: 'mm',
-                  dpi: previewResolution.dpi,
-                });
-                download([svg], 'image/svg+xml', `${baseName}-vectors.svg`);
-              }}
+              disabled={!canExportVector}
+              onClick={() => void handleVectorExport('svg')}
             >
-              SVG (mm)
+              SVG
             </Button>
             <Button
               icon={<FileCode size={14} />}
-              disabled={!vectorResult}
-              onClick={() => {
-                if (!vectorResult) return;
-                download([generateDXF(vectorResult)], 'application/dxf', `${baseName}-vectors.dxf`);
-              }}
+              disabled={!canExportVector}
+              onClick={() => void handleVectorExport('dxf')}
             >
-              DXF (pixels)
+              DXF
             </Button>
           </div>
-          <div className={`${styles.controlNote} ${styles.stackGap}`}>
-            The DXF has no units: its coordinates are preview pixels, so scale it on import (#30).
-          </div>
+          {vectorResult && !traceCurrent && (
+            <StatusMessage tone="warning" className={styles.stackGap}>
+              {isTracing
+                ? 'Tracing… the files can be saved when it finishes.'
+                : 'The image or settings changed since the last trace: go back to the Trace step and trace again.'}
+            </StatusMessage>
+          )}
+          {vectorBusy && (
+            <Progress className={styles.stackGap} label="Tracing at full resolution" fraction={null} />
+          )}
+          {vectorSource === 'full-resolution' && (
+            <div className={`${styles.controlNote} ${styles.stackGap}`}>
+              The files are traced again from the full-resolution image, so they hold detail the preview cannot: small
+              corners and short straight edges can come out crisper than they look on screen.
+            </div>
+          )}
+          {vectorSource === 'preview-background-removed' && (
+            <div className={`${styles.controlNote} ${styles.stackGap}`}>
+              Background removal works on the preview, so these files are traced at preview resolution.
+            </div>
+          )}
+          {vectorError && (
+            <StatusMessage tone="error" className={styles.stackGap}>
+              Export failed: {vectorError}
+            </StatusMessage>
+          )}
         </Section>
       )}
 

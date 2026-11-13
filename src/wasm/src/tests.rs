@@ -7,7 +7,6 @@
 use crate::dither::{apply_dithering, DitherAlgo, DitherParams};
 use crate::threshold::apply_adaptive_threshold;
 use crate::tonal::{compute_tonal_lut, TonalParams};
-use crate::vector::{vectorize_to_json_string, VectorConfig};
 
 fn gray_image(width: usize, height: usize, f: impl Fn(usize, usize) -> u8) -> Vec<u8> {
     let mut px = vec![255u8; width * height * 4];
@@ -137,35 +136,6 @@ fn adaptive_threshold_turns_a_flat_image_white() {
     let mut px = gray_image(40, 40, |_, _| 100);
     apply_adaptive_threshold(&mut px, 40, 40, 15, 2.0);
     assert_eq!(white_fraction(&px), 1.0);
-}
-
-#[test]
-fn tracer_gives_exact_corners_for_a_square() {
-    let px = gray_image(32, 32, |x, y| {
-        if (10..22).contains(&x) && (10..22).contains(&y) {
-            0
-        } else {
-            255
-        }
-    });
-    let cfg = VectorConfig {
-        mode: 0,
-        color_count: 4,
-        threshold: 128,
-        rdp_tolerance: 1.0,
-        curve_fitting: false,
-        min_path_area: 4.0,
-        denoise: 0.0,
-        canny_low: 30.0,
-        canny_high: 80.0,
-        invert: false,
-        bezier_tolerance: 1.0,
-    };
-    let json = vectorize_to_json_string(&px, 32, 32, &cfg);
-    assert!(
-        json.contains("M 10.00 10.00 L 22.00 10.00 L 22.00 22.00 L 10.00 22.00 Z"),
-        "unexpected trace: {json}"
-    );
 }
 
 #[test]

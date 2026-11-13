@@ -130,11 +130,11 @@ describe('shortcuts', () => {
     });
   }
 
-  it('Split View does nothing, and keeps the key, in the vector job: its canvas has no before and after (#53)', () => {
+  it('Split View works in the vector job: before is the crop, after the adjusted image it traces (#23)', () => {
     useDocumentStore.getState().open(decodedImage(900, 600));
     useUIStore.getState().setJob('vector');
-    expect(runCommand('toggleSplit')).toBe(false);
-    expect(useUIStore.getState().isSplitView).toBe(false);
+    expect(runCommand('toggleSplit')).toBe(true);
+    expect(useUIStore.getState().isSplitView).toBe(true);
   });
 
   it('Go to Export and Close Dialog do nothing, and keep the key, when they do not apply', () => {

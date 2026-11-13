@@ -50,7 +50,7 @@ Run `npm run typecheck` and `npm test` before every commit. Run `npm run test:ru
 3. Run `npm test`. The tests load `src/wasm/pkg/image_suite_wasm.wasm`, so they only see your change after step 2.
 4. Commit the rebuilt `.wasm` together with the source. It is committed on purpose: the Vercel build has no Rust toolchain. CI tests the committed binary and then a fresh build, so a stale binary fails.
 
-The exported functions take long positional argument lists. Their order is written in three places that must agree: `src/wasm/src/lib.rs`, `src/wasm/wasm-bridge.ts` and `tests/helpers/wasm.ts`.
+The exported functions take long positional argument lists, and the call must match the Rust signature in `src/wasm/src/lib.rs` exactly: WASM ignores extra arguments and fills missing ones with zero, so a mismatch shifts settings silently. For `process_pipeline` and `process_depth` the order is also written in `src/wasm/wasm-bridge.ts` and `tests/helpers/wasm.ts`. For `process_trace` it is written once, in `traceImageAt` in `src/lib/trace-call.ts`, which the bridge and the tests both call.
 
 ## Architecture rules
 
@@ -58,7 +58,7 @@ The exported functions take long positional argument lists. Their order is writt
 2. **Heavy work runs in the worker**, not on the main thread.
 3. **Transfer, do not copy**: pass `ArrayBuffer`s as transferables; never encode images as Base64.
 4. **Free WASM memory**: every `allocate` has a `deallocate` in a `finally` block, and views are re-read after any call that can grow memory.
-5. **Physical units**: anything measured in the real world is stored in millimetres. Raster export renders at the source's full resolution and writes the document's DPI (#17); the trace and heightmap exports stay preview-sized until phases 2 and 4.
+5. **Physical units**: anything measured in the real world is stored in millimetres. Raster export renders at the source's full resolution and writes the document's DPI (#17); vector exports trace again at full resolution and are written in millimetres (#23, #30); the heightmap export stays preview-sized until phase 4.
 
 ## Tests
 

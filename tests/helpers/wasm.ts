@@ -6,6 +6,9 @@
  */
 import fs from 'fs';
 import path from 'path';
+import { traceImage, type TraceExports } from '../../src/lib/trace-call';
+import { DEFAULT_VECTOR } from '../../src/lib/document';
+import type { VectorConfig, VectorResult } from '../../src/types/vector';
 
 const WASM_PATH = path.resolve(__dirname, '../../src/wasm/pkg/image_suite_wasm.wasm');
 
@@ -49,38 +52,6 @@ export interface PipelineOptions {
   invertedBurn?: boolean;
 }
 
-export interface VectorOptions {
-  /** 0 outline, 1 multi-colour, 2 edge detect, 3 centreline. */
-  mode?: number;
-  colorCount?: number;
-  threshold?: number;
-  rdpTolerance?: number;
-  curveFitting?: boolean;
-  minPathArea?: number;
-  denoise?: number;
-  cannyLow?: number;
-  cannyHigh?: number;
-  invert?: boolean;
-  bezierTolerance?: number;
-}
-
-export interface TracedPath {
-  svgPathData: string;
-  isClosed: boolean;
-  nodeCount: number;
-  [key: string]: unknown;
-}
-
-export interface TracedLayer {
-  paths: TracedPath[];
-  [key: string]: unknown;
-}
-
-export interface TraceResult {
-  layers: TracedLayer[];
-  [key: string]: unknown;
-}
-
 // SAFETY: the WebAssembly export object is untyped; this interface lists the
 // exports the tests call, matching src/wasm/src/lib.rs.
 interface WasmExports {
@@ -90,8 +61,8 @@ interface WasmExports {
   deallocate(ptr: number, size: number): void;
   prepare_source(...args: number[]): number;
   process_pipeline(...args: number[]): void;
-  process_vector(...args: number[]): number;
-  get_vector_json_len(): number;
+  process_trace: TraceExports['process_trace'];
+  get_trace_json_len(): number;
   process_depth(...args: number[]): number;
   get_depth_buf_len(): number;
 }
@@ -204,41 +175,19 @@ export function runPipeline(
   }
 }
 
-/** Runs the tracer and returns its parsed JSON result. */
-export function runVector(
+/**
+ * Traces `rgba` through the same call the app makes (`traceImage`), with the
+ * default settings changed by `o`. `pxPerMm` defaults to 10, so 0.1 mm is a pixel.
+ */
+export function runTrace(
   wasm: Wasm,
   rgba: Uint8Array,
   width: number,
   height: number,
-  o: VectorOptions = {}
-): TraceResult {
-  const e = wasm.exports;
-  const size = width * height * 4;
-  const ptr = e.allocate(size);
-  try {
-    new Uint8Array(e.memory.buffer, ptr, size).set(rgba);
-    const outPtr = e.process_vector(
-      ptr,
-      width,
-      height,
-      o.mode ?? 0,
-      o.colorCount ?? 4,
-      o.threshold ?? 128,
-      o.rdpTolerance ?? 1,
-      o.curveFitting ? 1 : 0,
-      o.minPathArea ?? 4,
-      o.denoise ?? 0,
-      o.cannyLow ?? 30,
-      o.cannyHigh ?? 80,
-      o.invert ? 1 : 0,
-      o.bezierTolerance ?? 1
-    );
-    const len = e.get_vector_json_len();
-    const json = new TextDecoder().decode(new Uint8Array(e.memory.buffer, outPtr, len));
-    return JSON.parse(json) as TraceResult;
-  } finally {
-    e.deallocate(ptr, size);
-  }
+  o: Partial<VectorConfig> = {},
+  pxPerMm = 10
+): VectorResult {
+  return traceImage(wasm.exports, rgba, width, height, pxPerMm, { ...DEFAULT_VECTOR, ...o });
 }
 
 /** One vertex of a traced path, in image pixel coordinates. */

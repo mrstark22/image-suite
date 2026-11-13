@@ -1,9 +1,7 @@
 /**
  * The menu bar's menus (#53), as data, so a test can run every item and check
  * that it does something. An item is enabled only when it would: Zoom with no
- * image, Split View in the vector job (whose canvas shows the image the trace
- * reads, so there is no before and after) and Trace Overlay with no trace are
- * disabled rather than doing nothing. So are the view items while the relief's
+ * image and Trace Overlay with no trace are disabled rather than doing nothing. So are the view items while the relief's
  * 3D orbit view is shown, since it draws none of them.
  */
 import { useDocumentStore } from '../store/documentStore';
@@ -91,10 +89,8 @@ export const MENUS: readonly Menu[] = [
       ],
       [
         {
-          // Unavailable in the vector job (see `isAvailable` in shortcuts.ts).
           ...commandItem('split', 'Split View (Before / After)', 'toggleSplit', hasDoc),
           checked: () => ui().isSplitView,
-          disabledReason: 'The vector job shows the image the trace reads: there is no before and after',
         },
         { ...commandItem('invert', 'Inverted View', 'toggleInvertedView', hasDoc), checked: () => ui().isInvertedView },
         {

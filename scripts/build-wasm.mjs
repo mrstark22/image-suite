@@ -25,6 +25,7 @@ try {
   execFileSync(
     'rustc',
     [
+      '--edition', '2021',
       '--crate-type', 'cdylib',
       '--target', 'wasm32-unknown-unknown',
       '-C', 'opt-level=3',

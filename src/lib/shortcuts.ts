@@ -52,6 +52,18 @@ export const SHORTCUT_GROUPS: { category: string; items: Shortcut[] }[] = [
       { keys: 'H', desc: 'Pan Tool', command: 'panTool' },
       { keys: 'C', desc: 'Crop Tool', command: 'cropTool' },
       { keys: 'Space + Drag', desc: 'Pan While Held, With Any Tool', handledBy: 'PreviewCanvas' },
+      // The arrows act on whichever of these has focus (Tab to it, or click it).
+      {
+        keys: 'Arrows',
+        desc: 'Pan the Canvas / Move the Crop Box / Orbit the 3D View (Whichever Has Focus)',
+        handledBy: 'PreviewCanvas, CanvasCropOverlay, DepthViewer3D',
+      },
+      {
+        keys: 'Shift + Arrows',
+        desc: 'Pan Further / Size the Crop Box From Its Bottom-Right Corner / Orbit Further',
+        handledBy: 'PreviewCanvas, CanvasCropOverlay, DepthViewer3D',
+      },
+      { keys: 'Alt + Arrows', desc: 'Move or Size the Crop Box by 1 px', handledBy: 'CanvasCropOverlay' },
       { keys: 'Enter', desc: 'Apply Crop', handledBy: 'CanvasCropOverlay' },
       { keys: 'Esc', desc: 'Cancel Crop / Close Dialog', command: 'closeDialog', handledBy: 'CanvasCropOverlay' },
     ],
@@ -61,6 +73,7 @@ export const SHORTCUT_GROUPS: { category: string; items: Shortcut[] }[] = [
     items: [
       { keys: 'Ctrl + +', desc: 'Zoom In', command: 'zoomIn' },
       { keys: 'Ctrl + -', desc: 'Zoom Out', command: 'zoomOut' },
+      { keys: '+ / -', desc: 'Zoom the Focused 3D View In / Out', handledBy: 'DepthViewer3D' },
       { keys: 'Ctrl + 0', desc: 'Fit to Screen', command: 'fit' },
       { keys: 'Ctrl + 1', desc: 'Actual Size (100%)', command: 'actualSize' },
       { keys: 'Ctrl + R', desc: 'Toggle Physical Rulers', command: 'toggleRulers' },
@@ -180,9 +193,8 @@ export function isAvailable(command: ShortcutCommand): boolean {
       return docs.gesture !== null || docs.future.length > 0;
     case 'export':
       return docs.doc !== null;
-    // The vector job's canvas shows the image the trace reads: there is no before and after.
     case 'toggleSplit':
-      return ui.job !== 'vector' && canvasIsFlat();
+      return canvasIsFlat();
     case 'zoomIn':
     case 'zoomOut':
     case 'fit':

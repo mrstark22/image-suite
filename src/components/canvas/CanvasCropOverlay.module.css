@@ -17,6 +17,13 @@
   box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.8);
   pointer-events: auto;
   cursor: move;
+  outline: none;
+}
+
+/* Focused from the keyboard, the box gets a second ring that keeps its screen width at any zoom. */
+.cropBox:focus-visible {
+  outline: calc(2px / var(--view-zoom)) dashed var(--focus);
+  outline-offset: calc(3px / var(--view-zoom));
 }
 
 .gridLineH1, .gridLineH2, .gridLineV1, .gridLineV2 {
@@ -78,6 +85,21 @@
 .cropDimLabel {
   font-size: 10px;
   color: var(--text-2);
+}
+
+/* The box's keys, shown while it has focus (#79). */
+.keyHint {
+  font-size: 10px;
+  color: var(--text-3);
+}
+
+.visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
 }
 
 .btnCancel {

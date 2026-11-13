@@ -1,429 +1,197 @@
-import { describe, it, expect } from 'vitest';
-import fs from 'fs';
-import path from 'path';
-import { generateDXF } from '../../src/lib/dxf-export';
-import { generateProductionSVG } from '../../src/lib/svg-export';
-import type { VectorResult } from '../../src/types/vector';
+/**
+ * Colour tracing (#28) and the SVG and DXF exports at physical size (#30).
+ */
+import { describe, it, expect, beforeAll } from 'vitest';
+import { loadWasm, runTrace, type Wasm } from '../helpers/wasm';
+import { encodePalette } from '../../src/lib/trace-call';
+import { editPalette } from '../../src/lib/trace-palette';
+import { layerColourIndexes, parsePathData, traceToDxf, traceToSvg } from '../../src/lib/vector-export';
+import type { PaletteEntry, VectorResult } from '../../src/types/vector';
 
-describe('Rust WebAssembly Vectorization & CAD Export Engine', () => {
-  it('instantiates the WASM module and executes outline vectorization', async () => {
-    const wasmPath = path.resolve(__dirname, '../../src/wasm/pkg/image_suite_wasm.wasm');
-    const wasmBuffer = fs.readFileSync(wasmPath);
-    const wasmModule = await WebAssembly.instantiate(wasmBuffer, { env: {} });
-    const exports = wasmModule.instance.exports as any;
+let wasm: Wasm;
+beforeAll(async () => {
+  wasm = await loadWasm();
+});
 
-    expect(typeof exports.process_vector).toBe('function');
-    expect(typeof exports.get_vector_json_len).toBe('function');
+const RED: [number, number, number] = [220, 30, 30];
+const BLUE: [number, number, number] = [30, 60, 220];
+const GREEN: [number, number, number] = [40, 170, 60];
 
-    const width = 32;
-    const height = 32;
-    const byteLength = width * height * 4;
-    const ptr = exports.allocate(byteLength);
-
-    // Create a 10x10 square in the center (black foreground on white background)
-    const wasmMem = new Uint8Array(exports.memory.buffer, ptr, byteLength);
-    wasmMem.fill(255); // White background
-
-    for (let y = 10; y < 22; y++) {
-      for (let x = 10; x < 22; x++) {
-        const idx = (y * width + x) * 4;
-        wasmMem[idx] = 0;
-        wasmMem[idx + 1] = 0;
-        wasmMem[idx + 2] = 0;
-        wasmMem[idx + 3] = 255;
-      }
+/** White, with red, blue and green 20 px squares. */
+function threeSquares(): Uint8Array {
+  const [w, h] = [90, 40];
+  const img = new Uint8Array(w * h * 4).fill(255);
+  [RED, BLUE, GREEN].forEach((rgb, k) => {
+    for (let y = 10; y < 30; y++) {
+      for (let x = 10 + k * 25; x < 30 + k * 25; x++) img.set(rgb, (y * w + x) * 4);
     }
+  });
+  return img;
+}
 
-    // Run Mode 0: Outline
-    const outPtr = exports.process_vector(
-      ptr,
-      width,
-      height,
-      0,    // Mode: outline
-      4,    // Color count
-      128,  // Threshold
-      1.0,  // RDP tolerance
-      1,    // Curve fitting
-      4.0,  // Min path area
-      0.0,  // Denoise
-      30.0, // Canny low
-      80.0, // Canny high
-      0     // Invert
-    );
+const rgbOf = (hex: string) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+const near = (hex: string, rgb: number[]) => rgbOf(hex).every((v, i) => Math.abs(v - rgb[i]) <= 3);
 
-    const outLen = exports.get_vector_json_len();
-    expect(outPtr).toBeGreaterThan(0);
-    expect(outLen).toBeGreaterThan(0);
-
-    const jsonBytes = new Uint8Array(exports.memory.buffer, outPtr, outLen);
-    const jsonStr = new TextDecoder().decode(jsonBytes);
-    const parsed = JSON.parse(jsonStr);
-
-    expect(parsed.layers).toBeDefined();
-    expect(parsed.layers.length).toBeGreaterThan(0);
-    expect(parsed.layers[0].paths.length).toBeGreaterThan(0);
-    expect(parsed.layers[0].paths[0].isClosed).toBe(true);
-    expect(parsed.layers[0].paths[0].svgPathData).toContain('M ');
-    expect(parsed.layers[0].paths[0].svgPathData).toContain('Z');
-
-    exports.deallocate(ptr, byteLength);
+describe('colour tracing (#28)', () => {
+  it('three squares at four colours give white, red, blue and green layers with exact square outlines', () => {
+    const result = runTrace(wasm, threeSquares(), 90, 40, { colorMode: 'color', colorCount: 4, shapes: 'outline' });
+    expect(result.layers).toHaveLength(4);
+    for (const want of [[255, 255, 255], RED, BLUE, GREEN]) {
+      expect(result.layers.some((l) => near(l.color, want)), `${want}`).toBe(true);
+    }
+    for (const rgb of [RED, BLUE, GREEN]) {
+      const layer = result.layers.find((l) => near(l.color, rgb))!;
+      expect(layer.paths).toHaveLength(1);
+      const cmds = parsePathData(layer.paths[0].d);
+      expect(cmds.filter((c) => c.op === 'L')).toHaveLength(4);
+    }
   });
 
-  it('runs K-Means multi-color segmentation (Mode 2) and creates multi-layer vector output', async () => {
-    const wasmPath = path.resolve(__dirname, '../../src/wasm/pkg/image_suite_wasm.wasm');
-    const wasmBuffer = fs.readFileSync(wasmPath);
-    const wasmModule = await WebAssembly.instantiate(wasmBuffer, { env: {} });
-    const exports = wasmModule.instance.exports as any;
-
-    const width = 32;
-    const height = 32;
-    const byteLength = width * height * 4;
-    const ptr = exports.allocate(byteLength);
-
-    const wasmMem = new Uint8Array(exports.memory.buffer, ptr, byteLength);
-    // Draw 3 colored stripes (Red, Green, Blue)
-    for (let y = 0; y < height; y++) {
-      for (let x = 0; x < width; x++) {
-        const idx = (y * width + x) * 4;
-        if (x < 10) {
-          wasmMem[idx] = 255; wasmMem[idx + 1] = 0; wasmMem[idx + 2] = 0;
-        } else if (x < 20) {
-          wasmMem[idx] = 0; wasmMem[idx + 1] = 255; wasmMem[idx + 2] = 0;
-        } else {
-          wasmMem[idx] = 0; wasmMem[idx + 1] = 0; wasmMem[idx + 2] = 255;
-        }
-        wasmMem[idx + 3] = 255;
+  it('an anti-aliased two-colour logo gives two layers and no slivers', () => {
+    const [w, h] = [120, 120];
+    const img = new Uint8Array(w * h * 4);
+    const ink = [20, 30, 90];
+    const paper = [245, 235, 210];
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        let c = 0;
+        for (let sy = 0; sy < 8; sy++)
+          for (let sx = 0; sx < 8; sx++) {
+            const r = Math.hypot(x + (sx + 0.5) / 8 - 60, y + (sy + 0.5) / 8 - 60);
+            if (r < 40 && r >= 18) c++;
+          }
+        const a = c / 64;
+        for (let k = 0; k < 3; k++) img[(y * w + x) * 4 + k] = Math.round(ink[k] * a + paper[k] * (1 - a));
+        img[(y * w + x) * 4 + 3] = 255;
       }
     }
-
-    // Run Mode 2: Multi-Color with k=3
-    const outPtr = exports.process_vector(
-      ptr, width, height,
-      2, 3, 128, 1.0, 1, 4.0, 0.0, 30.0, 80.0, 0
-    );
-
-    const outLen = exports.get_vector_json_len();
-    const jsonBytes = new Uint8Array(exports.memory.buffer, outPtr, outLen);
-    const jsonStr = new TextDecoder().decode(jsonBytes);
-    const parsed = JSON.parse(jsonStr);
-
-    expect(parsed.layers.length).toBe(3);
-    for (const layer of parsed.layers) {
-      expect(layer.color).toMatch(/^#[0-9a-f]{6}$/i);
-    }
-
-    exports.deallocate(ptr, byteLength);
+    const result = runTrace(wasm, img, w, h, { colorMode: 'color', colorCount: 4, shapes: 'outline' });
+    expect(result.layers).toHaveLength(2);
+    // The ink layer is the ring: an outer and an inner boundary, nothing else.
+    expect(result.layers.find((l) => near(l.color, ink))!.paths).toHaveLength(2);
   });
 
-  it('runs Canny Edge Detection (Mode 3) vectorization', async () => {
-    const wasmPath = path.resolve(__dirname, '../../src/wasm/pkg/image_suite_wasm.wasm');
-    const wasmBuffer = fs.readFileSync(wasmPath);
-    const wasmModule = await WebAssembly.instantiate(wasmBuffer, { env: {} });
-    const exports = wasmModule.instance.exports as any;
-
-    const width = 32;
-    const height = 32;
-    const byteLength = width * height * 4;
-    const ptr = exports.allocate(byteLength);
-
-    const wasmMem = new Uint8Array(exports.memory.buffer, ptr, byteLength);
-    wasmMem.fill(255);
-    // Draw high-contrast box
-    for (let y = 8; y < 24; y++) {
-      for (let x = 8; x < 24; x++) {
-        const idx = (y * width + x) * 4;
-        wasmMem[idx] = 0; wasmMem[idx + 1] = 0; wasmMem[idx + 2] = 0;
-      }
-    }
-
-    // Run Mode 3: Canny
-    const outPtr = exports.process_vector(
-      ptr, width, height,
-      3, 4, 128, 1.0, 1, 4.0, 0.0, 20.0, 60.0, 0
-    );
-
-    const outLen = exports.get_vector_json_len();
-    const jsonBytes = new Uint8Array(exports.memory.buffer, outPtr, outLen);
-    const jsonStr = new TextDecoder().decode(jsonBytes);
-    const parsed = JSON.parse(jsonStr);
-
-    expect(parsed.layers.length).toBeGreaterThan(0);
-    exports.deallocate(ptr, byteLength);
+  it('the number of colours sets how many layers are found', () => {
+    const at = (colorCount: number) =>
+      runTrace(wasm, threeSquares(), 90, 40, { colorMode: 'color', colorCount, shapes: 'outline' }).layers.length;
+    expect(at(2)).toBe(2);
+    expect(at(4)).toBe(4);
   });
 
-  it('generates valid AutoCAD R12 DXF string for laser & CNC machines', () => {
-    const mockResult: VectorResult = {
-      layers: [
-        {
-          id: 'layer-cut',
-          name: 'Outer Cut',
-          color: '#ff0000',
-          visible: true,
-          totalNodes: 4,
-          paths: [
-            {
-              id: 'p-1',
-              color: '#ff0000',
-              isClosed: true,
-              nodeCount: 4,
-              segments: [],
-              svgPathData: 'M 10 10 L 50 10 L 50 50 L 10 50 Z',
-            },
-          ],
-        },
-      ],
-      totalPaths: 1,
-      totalNodes: 4,
-      svgString: '<svg></svg>',
-      dimensions: { width: 100, height: 100 },
-    };
-
-    const dxf = generateDXF(mockResult);
-
-    expect(dxf).toContain('SECTION');
-    expect(dxf).toContain('HEADER');
-    expect(dxf).toContain('AC1009'); // AutoCAD R12 ASCII version
-    expect(dxf).toContain('TABLES');
-    expect(dxf).toContain('Outer_Cut');
-    expect(dxf).toContain('ENTITIES');
-    expect(dxf).toContain('POLYLINE');
-    expect(dxf).toContain('VERTEX');
-    expect(dxf).toContain('SEQEND');
-    expect(dxf).toContain('EOF');
+  it('a fixed palette can remove a colour and merge two', () => {
+    const palette: PaletteEntry[] = [
+      { color: '#ffffff', removed: true, mergeInto: null },
+      { color: '#dc1e1e', removed: false, mergeInto: null },
+      { color: '#1e3cdc', removed: false, mergeInto: 1 },
+      { color: '#28aa3c', removed: false, mergeInto: null },
+    ];
+    const result = runTrace(wasm, threeSquares(), 90, 40, { colorMode: 'color', palette, shapes: 'outline' });
+    expect(result.layers.map((l) => [l.color, l.paths.length])).toEqual([
+      ['#dc1e1e', 2], // red and blue squares
+      ['#28aa3c', 1],
+    ]);
   });
 
-  it('generates production SVG with physical dimensions and grouped layer metadata', () => {
-    const mockResult: VectorResult = {
-      layers: [
-        {
-          id: 'layer-1',
-          name: 'Engrave Contours',
-          color: '#38bdf8',
-          visible: true,
-          totalNodes: 4,
-          paths: [
-            {
-              id: 'path-1',
-              color: '#38bdf8',
-              isClosed: true,
-              nodeCount: 4,
-              segments: [],
-              svgPathData: 'M 10 10 L 90 10 L 90 90 L 10 90 Z',
-            },
-          ],
-        },
-      ],
-      totalPaths: 1,
-      totalNodes: 4,
-      svgString: '<svg></svg>',
-      dimensions: { width: 384, height: 384 },
-    };
+  it('merges follow a colour that is merged or removed itself', () => {
+    let p: PaletteEntry[] = ['#000000', '#ff0000', '#00ff00'].map((color) => ({ color, removed: false, mergeInto: null }));
+    p = editPalette(p, 2, 'merge:1');
+    p = editPalette(p, 1, 'merge:0');
+    expect(p[2].mergeInto).toBe(0);
+    p = editPalette(p, 0, 'remove');
+    expect(p.every((e) => e.removed)).toBe(true);
+    expect([...encodePalette(p)].filter((_, i) => i % 4 === 3)).toEqual([255, 255, 255]);
+  });
+});
 
-    const svgMm = generateProductionSVG(mockResult, {
-      strokeWidth: 1.5,
-      physicalUnits: 'mm',
-      dpi: 96,
-    });
+/** A result of one 1000 px wide trace at the given scale. */
+function oneSquare(pxPerMm: number, visible = true): VectorResult {
+  return {
+    layers: [
+      {
+        id: 'ink',
+        name: 'Ink',
+        color: '#000000',
+        paletteIndex: null,
+        visible,
+        totalNodes: 5,
+        paths: [{ id: 'p', kind: 'fill', isClosed: true, nodeCount: 5, d: 'M 0 0 L 1000 0 L 1000 500 L 0 500 Z' }],
+      },
+      {
+        id: 'cutline',
+        name: 'Cutline',
+        color: '#ff0000',
+        paletteIndex: null,
+        visible: true,
+        totalNodes: 2,
+        paths: [{ id: 'c', kind: 'cut', isClosed: true, nodeCount: 2, d: 'M 100 100 C 200 100 200 200 100 200 Z' }],
+      },
+    ],
+    palette: [],
+    totalPaths: 2,
+    totalNodes: 7,
+    dimensions: { width: 1000, height: 500 },
+    pxPerMm,
+  };
+}
 
-    expect(svgMm).toContain('width="101.60mm"');
-    expect(svgMm).toContain('height="101.60mm"');
-    expect(svgMm).toContain('viewBox="0 0 384 384"');
-    expect(svgMm).toContain('xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"');
-    expect(svgMm).toContain('inkscape:label="Engrave Contours"');
-    expect(svgMm).toContain('stroke="#38bdf8"');
-    expect(svgMm).toContain('stroke-width="1.5"');
-    expect(svgMm).toContain('<path id="path-1"');
+/** Group code / value pairs of a DXF. */
+function dxfPairs(dxf: string): Array<[number, string]> {
+  const lines = dxf.trim().split('\n');
+  const out: Array<[number, string]> = [];
+  for (let i = 0; i + 1 < lines.length; i += 2) out.push([Number(lines[i]), lines[i + 1]]);
+  return out;
+}
+
+describe('SVG and DXF at physical size (#30)', () => {
+  // A 1000 px image set to 84.7 mm wide.
+  const ppm = 1000 / 84.7;
+
+  it('the SVG measures 84.7 mm wide, with a matching viewBox in millimetres', () => {
+    const svg = traceToSvg(oneSquare(ppm));
+    expect(svg).toMatch(/width="84\.7mm"/);
+    expect(svg).toMatch(/viewBox="0 0 84\.7 42\.35"/);
+    const d = /<path id="p" d="([^"]+)"/.exec(svg)![1];
+    const xs = parsePathData(d).flatMap((c) => (c.op === 'Z' ? [] : [c.p.x]));
+    expect(Math.max(...xs)).toBeCloseTo(84.7, 3);
   });
 
-  it('collapses rectangular pixel staircases into exact straight lines with 4 sharp corners', async () => {
-    const wasmPath = path.resolve(__dirname, '../../src/wasm/pkg/image_suite_wasm.wasm');
-    const wasmBuffer = fs.readFileSync(wasmPath);
-    const wasmModule = await WebAssembly.instantiate(wasmBuffer, { env: {} });
-    const exports = wasmModule.instance.exports as any;
-
-    const width = 64;
-    const height = 64;
-    const byteLength = width * height * 4;
-    const ptr = exports.allocate(byteLength);
-
-    const wasmMem = new Uint8Array(exports.memory.buffer, ptr, byteLength);
-    wasmMem.fill(255); // White background
-
-    // Draw 30x20 black rectangle
-    for (let y = 15; y < 35; y++) {
-      for (let x = 10; x < 40; x++) {
-        const idx = (y * width + x) * 4;
-        wasmMem[idx] = 0;
-        wasmMem[idx + 1] = 0;
-        wasmMem[idx + 2] = 0;
-        wasmMem[idx + 3] = 255;
-      }
-    }
-
-    const outPtr = exports.process_vector(
-      ptr, width, height,
-      0, 4, 128, 1.0, 1, 4.0, 0.0, 30.0, 80.0, 0, 1.0
-    );
-
-    const outLen = exports.get_vector_json_len();
-    const jsonBytes = new Uint8Array(exports.memory.buffer, outPtr, outLen);
-    const jsonStr = new TextDecoder().decode(jsonBytes);
-    const parsed = JSON.parse(jsonStr);
-
-    expect(parsed.layers.length).toBe(1);
-    const path0 = parsed.layers[0].paths[0];
-    expect(path0.isClosed).toBe(true);
-    // Should have exactly 4-5 nodes (4 corners) with only straight L commands
-    expect(path0.nodeCount).toBeLessThanOrEqual(5);
-    expect(path0.svgPathData).toContain('L ');
-    expect(path0.svgPathData).toContain('Z');
-
-    exports.deallocate(ptr, byteLength);
+  it('the DXF declares millimetres and measures 84.7 mm wide', () => {
+    const pairs = dxfPairs(traceToDxf(oneSquare(ppm)));
+    const header = (name: string) => pairs[pairs.findIndex(([c, v]) => c === 9 && v === name) + 1];
+    expect(header('$INSUNITS')).toEqual([70, '4']);
+    expect(header('$MEASUREMENT')).toEqual([70, '1']);
+    const xs = pairs.filter(([c]) => c === 10).map(([, v]) => Number(v));
+    expect(Math.max(...xs)).toBeCloseTo(84.7, 3);
   });
 
-  it('traces both outer boundary and inner hole for hollow ring shapes', async () => {
-    const wasmPath = path.resolve(__dirname, '../../src/wasm/pkg/image_suite_wasm.wasm');
-    const wasmBuffer = fs.readFileSync(wasmPath);
-    const wasmModule = await WebAssembly.instantiate(wasmBuffer, { env: {} });
-    const exports = wasmModule.instance.exports as any;
-
-    const width = 64;
-    const height = 64;
-    const byteLength = width * height * 4;
-    const ptr = exports.allocate(byteLength);
-
-    const wasmMem = new Uint8Array(exports.memory.buffer, ptr, byteLength);
-    wasmMem.fill(255);
-
-    // Draw outer box 40x40 with inner hole 20x20
-    for (let y = 12; y < 52; y++) {
-      for (let x = 12; x < 52; x++) {
-        const isHole = x >= 22 && x < 42 && y >= 22 && y < 42;
-        if (!isHole) {
-          const idx = (y * width + x) * 4;
-          wasmMem[idx] = 0;
-          wasmMem[idx + 1] = 0;
-          wasmMem[idx + 2] = 0;
-          wasmMem[idx + 3] = 255;
-        }
-      }
-    }
-
-    const outPtr = exports.process_vector(
-      ptr, width, height,
-      0, 4, 128, 1.0, 1, 4.0, 0.0, 30.0, 80.0, 0, 1.0
-    );
-
-    const outLen = exports.get_vector_json_len();
-    const jsonBytes = new Uint8Array(exports.memory.buffer, outPtr, outLen);
-    const jsonStr = new TextDecoder().decode(jsonBytes);
-    const parsed = JSON.parse(jsonStr);
-
-    expect(parsed.layers[0].paths.length).toBe(2); // Outer contour + Inner hole
-    exports.deallocate(ptr, byteLength);
+  it('DXF polylines are closed by their flag, without a repeated vertex', () => {
+    const pairs = dxfPairs(traceToDxf(oneSquare(ppm)));
+    const first = pairs.findIndex(([c, v]) => c === 0 && v === 'POLYLINE');
+    const end = pairs.findIndex(([c, v], i) => i > first && c === 0 && v === 'SEQEND');
+    const poly = pairs.slice(first, end);
+    expect(poly.find(([c]) => c === 70)).toEqual([70, '1']);
+    expect(poly.filter(([c, v]) => c === 0 && v === 'VERTEX')).toHaveLength(4);
   });
 
-  it('executes Zhang-Suen skeletonization for Centerline mode (Mode 1)', async () => {
-    const wasmPath = path.resolve(__dirname, '../../src/wasm/pkg/image_suite_wasm.wasm');
-    const wasmBuffer = fs.readFileSync(wasmPath);
-    const wasmModule = await WebAssembly.instantiate(wasmBuffer, { env: {} });
-    const exports = wasmModule.instance.exports as any;
-
-    const width = 64;
-    const height = 64;
-    const byteLength = width * height * 4;
-    const ptr = exports.allocate(byteLength);
-
-    const wasmMem = new Uint8Array(exports.memory.buffer, ptr, byteLength);
-    wasmMem.fill(255);
-
-    // Draw a thick T-stroke (width ~6px)
-    for (let y = 10; y < 16; y++) {
-      for (let x = 10; x < 54; x++) {
-        const idx = (y * width + x) * 4;
-        wasmMem[idx] = 0; wasmMem[idx + 1] = 0; wasmMem[idx + 2] = 0;
-      }
-    }
-    for (let y = 16; y < 54; y++) {
-      for (let x = 29; x < 35; x++) {
-        const idx = (y * width + x) * 4;
-        wasmMem[idx] = 0; wasmMem[idx + 1] = 0; wasmMem[idx + 2] = 0;
-      }
-    }
-
-    // Run Mode 1: Centerline
-    const outPtr = exports.process_vector(
-      ptr, width, height,
-      1, 4, 128, 1.0, 1, 4.0, 0.0, 30.0, 80.0, 0, 1.0
-    );
-
-    const outLen = exports.get_vector_json_len();
-    const jsonBytes = new Uint8Array(exports.memory.buffer, outPtr, outLen);
-    const jsonStr = new TextDecoder().decode(jsonBytes);
-    const parsed = JSON.parse(jsonStr);
-
-    expect(parsed.layers.length).toBe(1);
-    expect(parsed.layers[0].name).toBe('Centerlines');
-    expect(parsed.layers[0].paths.length).toBeGreaterThan(0);
-    // Centerline strokes are open paths (isClosed: false)
-    expect(parsed.layers[0].paths[0].isClosed).toBe(false);
-
-    exports.deallocate(ptr, byteLength);
+  it('DXF y points up, and curves are flattened to within 0.005 mm', () => {
+    const pairs = dxfPairs(traceToDxf(oneSquare(10)));
+    // The square's top edge (y = 0 px) is at the top of the drawing: y = 50 mm.
+    const ys = pairs.filter(([c]) => c === 20).map(([, v]) => Number(v));
+    expect(Math.max(...ys)).toBeCloseTo(50, 6);
+    // The cutline curve becomes many vertices.
+    expect(pairs.filter(([c, v]) => c === 0 && v === 'VERTEX').length).toBeGreaterThan(20);
   });
 
-  it('traces diagonal letterforms (like letter V) with straight lines and sharp corners', async () => {
-    const wasmPath = path.resolve(__dirname, '../../src/wasm/pkg/image_suite_wasm.wasm');
-    const wasmBuffer = fs.readFileSync(wasmPath);
-    const wasmModule = await WebAssembly.instantiate(wasmBuffer, { env: {} });
-    const exports = wasmModule.instance.exports as any;
+  it('each DXF layer gets its own colour, and hidden layers are left out', () => {
+    expect(layerColourIndexes(['#000000', '#ff0000'])).toEqual([7, 1]);
+    expect(new Set(layerColourIndexes(['#ff0000', '#ee1111', '#dd2222'])).size).toBe(3);
+    const pairs = dxfPairs(traceToDxf(oneSquare(ppm, false)));
+    const layerNames = pairs.filter(([c], i) => c === 2 && pairs[i - 1]?.[1] === 'LAYER').map(([, v]) => v);
+    expect(layerNames).toEqual(['Cutline']);
+    expect(traceToSvg(oneSquare(ppm, false))).not.toContain('id="ink"');
+  });
 
-    const width = 64;
-    const height = 64;
-    const byteLength = width * height * 4;
-    const ptr = exports.allocate(byteLength);
-
-    const wasmMem = new Uint8Array(exports.memory.buffer, ptr, byteLength);
-    wasmMem.fill(255);
-
-    // Draw diagonal 'V' letter shape: apex at (32, 50), top-left at (10, 10), top-right at (54, 10)
-    for (let y = 10; y <= 50; y++) {
-      const progress = (y - 10) / 40.0;
-      // Left leg
-      const leftCenterX = 14 + progress * 18;
-      for (let x = Math.round(leftCenterX - 3); x <= Math.round(leftCenterX + 3); x++) {
-        if (x >= 0 && x < width && y >= 0 && y < height) {
-          const idx = (y * width + x) * 4;
-          wasmMem[idx] = 0; wasmMem[idx + 1] = 0; wasmMem[idx + 2] = 0;
-        }
-      }
-      // Right leg
-      const rightCenterX = 50 - progress * 18;
-      for (let x = Math.round(rightCenterX - 3); x <= Math.round(rightCenterX + 3); x++) {
-        if (x >= 0 && x < width && y >= 0 && y < height) {
-          const idx = (y * width + x) * 4;
-          wasmMem[idx] = 0; wasmMem[idx + 1] = 0; wasmMem[idx + 2] = 0;
-        }
-      }
-    }
-
-    const outPtr = exports.process_vector(
-      ptr, width, height,
-      0, 4, 128, 1.0, 1, 1.0, 0.0, 30.0, 80.0, 0, 1.0
-    );
-
-    const outLen = exports.get_vector_json_len();
-    const jsonBytes = new Uint8Array(exports.memory.buffer, outPtr, outLen);
-    const jsonStr = new TextDecoder().decode(jsonBytes);
-    const parsed = JSON.parse(jsonStr);
-
-    expect(parsed.layers.length).toBe(1);
-    expect(parsed.layers[0].paths.length).toBeGreaterThan(0);
-    const vPath = parsed.layers[0].paths[0];
-    expect(vPath.isClosed).toBe(true);
-    expect(vPath.nodeCount).toBeLessThanOrEqual(24);
-    // Straight lines present
-    expect(vPath.svgPathData).toContain('L ');
-
-    exports.deallocate(ptr, byteLength);
+  it('refuses a trace without a size', () => {
+    expect(() => traceToSvg(oneSquare(0 as number) && { ...oneSquare(1), pxPerMm: null })).toThrow(/size/);
   });
 });

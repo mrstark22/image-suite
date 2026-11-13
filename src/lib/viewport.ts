@@ -63,6 +63,57 @@ export function fitView(container: Size, image: Size): View {
   return { zoom: clampZoom(scale), pan: { x: 0, y: 0 } };
 }
 
+/** How far one arrow key pans the focused canvas, in screen pixels (#81); Shift pans `PAN_KEY_STEP_LARGE`. */
+export const PAN_KEY_STEP = 40;
+export const PAN_KEY_STEP_LARGE = 200;
+
+/** How far past the container's edge a keyboard pan stops the image's edge: clear of the rulers. */
+export const PAN_KEY_MARGIN = FIT_PADDING / 2;
+
+/** One axis of a keyboard pan: move by `d`, but not past `limit` either way, and never jump back. */
+function panAxis(p: number, d: number, limit: number): number {
+  if (d > 0) return Math.max(p, Math.min(p + d, limit));
+  return Math.min(p, Math.max(p + d, -limit));
+}
+
+/**
+ * How far a keyboard pan may take the pan along one axis: until the image's
+ * far edge is `PAN_KEY_MARGIN` inside the container. An image that already
+ * shows that edge clear of the margin does not pan along the axis.
+ */
+function panAxisLimit(container: number, image: number, zoom: number): number {
+  return Math.max(0, (image * zoom - container) / 2 + PAN_KEY_MARGIN);
+}
+
+/**
+ * The pan after the arrow key `press` on the focused canvas (#81), or null
+ * for any other key. Like scrolling, Right shows more of the image's right
+ * side, so the image moves left. The pan stops when the image's far edge is
+ * `PAN_KEY_MARGIN` inside the container, so each corner can be brought into
+ * view and the image is not lost off screen; a pan already further out (by a
+ * drag) is not pulled back. Without the sizes it is not limited.
+ */
+export function panForKey(
+  view: View,
+  container: Size | null,
+  image: Size | null,
+  press: { key: string; shiftKey: boolean },
+): Point | null {
+  const step = press.shiftKey ? PAN_KEY_STEP_LARGE : PAN_KEY_STEP;
+  const deltas: Record<string, [number, number]> = {
+    ArrowLeft: [step, 0],
+    ArrowRight: [-step, 0],
+    ArrowUp: [0, step],
+    ArrowDown: [0, -step],
+  };
+  const d = deltas[press.key];
+  if (!d) return null;
+  const sized = container && image && container.width > 0 && container.height > 0;
+  const limitX = sized ? panAxisLimit(container.width, image.width, view.zoom) : Infinity;
+  const limitY = sized ? panAxisLimit(container.height, image.height, view.zoom) : Infinity;
+  return { x: panAxis(view.pan.x, d[0], limitX), y: panAxis(view.pan.y, d[1], limitY) };
+}
+
 /** The point `client` (as in a mouse event) relative to the centre of `rect`. */
 export function fromCentre(client: Point, rect: { left: number; top: number; width: number; height: number }): Point {
   return { x: client.x - rect.left - rect.width / 2, y: client.y - rect.top - rect.height / 2 };

@@ -90,25 +90,28 @@ describe('opening an image', () => {
 
 const TRACE: VectorResult = {
   totalPaths: 2,
-  totalNodes: 8,
-  svgString: '<svg></svg>',
+  totalNodes: 4,
+  palette: [],
   dimensions: { width: 20, height: 10 },
+  pxPerMm: 1,
   layers: [
     {
       id: 'vlayer-1',
       name: 'Layer 1',
       color: '#ff0000',
+      paletteIndex: null,
       visible: true,
-      totalNodes: 4,
-      paths: [{ id: 'p1', color: '#ff0000', svgPathData: 'M 0 0 L 10 10', isClosed: true, nodeCount: 4, segments: [] }],
+      totalNodes: 2,
+      paths: [{ id: 'p1', kind: 'fill', d: 'M 0 0 L 10 10 Z', isClosed: true, nodeCount: 2 }],
     },
     {
       id: 'vlayer-2',
       name: 'Layer 2',
       color: '#00ff00',
+      paletteIndex: null,
       visible: true,
-      totalNodes: 4,
-      paths: [{ id: 'p2', color: '#00ff00', svgPathData: 'M 2 2 L 3 3', isClosed: true, nodeCount: 4, segments: [] }],
+      totalNodes: 2,
+      paths: [{ id: 'p2', kind: 'stroke', d: 'M 2 2 L 3 3', isClosed: false, nodeCount: 2 }],
     },
   ],
 };
@@ -119,19 +122,15 @@ describe('results in renderStore', () => {
     render().setVectorResult(TRACE);
   });
 
-  it('trace edits do not enter the undo history (#32)', () => {
-    render().removeVectorLayer('vlayer-1');
+  it('hiding a layer and clearing the trace do not enter the undo history', () => {
     render().toggleVectorLayer('vlayer-2');
     render().clearVectors();
     expect(store().past.length).toBe(0);
   });
 
-  it('removes and toggles vector layers, keeping the totals right', () => {
-    render().removeVectorLayer('vlayer-1');
-    expect(render().vectorResult?.layers.map((l) => l.id)).toEqual(['vlayer-2']);
-    expect(render().vectorResult?.totalPaths).toBe(1);
+  it('toggles a vector layer', () => {
     render().toggleVectorLayer('vlayer-2');
-    expect(render().vectorResult?.layers[0].visible).toBe(false);
+    expect(render().vectorResult?.layers.map((l) => l.visible)).toEqual([true, false]);
   });
 
   it('clearing vectors turns auto-trace off; a tracing change then marks the trace stale', () => {
@@ -215,9 +214,8 @@ describe('results in renderStore', () => {
     expect(render().replaceSourcePixels(result, from)).toBe(true);
   });
 
-  it('Reset All or a recipe that leaves the tracing settings equal does not mark the trace stale (review finding 8)', () => {
+  it('Reset All or a recipe that leaves what the trace reads equal does not mark the trace stale (review finding 8)', () => {
     render().setAutoTrace(false);
-    store().edit(setTonal({ contrast: 20 }));
     store().edit(resetAll);
     store().edit(applyRecipe({ version: RECIPE_VERSION, name: 'r', createdAt: 0, updatedAt: 0, steps: [] }));
     expect(render().isVectorStale).toBe(false);
@@ -225,85 +223,19 @@ describe('results in renderStore', () => {
     expect(render().isVectorStale).toBe(true);
   });
 
+  it('an adjustment or a new size marks the trace stale too: the trace reads them (review of #84)', () => {
+    render().setAutoTrace(false);
+    store().edit(setTonal({ contrast: 20 }));
+    expect(render().isVectorStale).toBe(true);
+    render().setVectorResult(TRACE);
+    expect(render().isVectorStale).toBe(false);
+    store().edit(setScale(0.5));
+    expect(render().isVectorStale).toBe(true);
+  });
+
   it('closing the document clears the error banner (review finding 9)', () => {
     render().setErrorMessage('Tracing failed');
     store().close();
     expect(render().errorMessage).toBeNull();
-  });
-});
-
-describe('cutline', () => {
-  /** Opens a 50x50 white image with a centred black 20x20 box. */
-  async function openBoxImage() {
-    const w = 50;
-    const data = new Uint8Array(w * w * 4).fill(255);
-    for (let y = 15; y < 35; y++) {
-      for (let x = 15; x < 35; x++) {
-        const i = (y * w + x) * 4;
-        data[i] = data[i + 1] = data[i + 2] = 0;
-      }
-    }
-    store().open(await loadPixels(pipeline.api, data.buffer, w, w));
-    await pipeline.settled();
-  }
-
-  it('refuses while the size is not set, since its offset is in mm', async () => {
-    await openBoxImage();
-    expect(render().generateCutline(1.0, 2)).toBe(false);
-    expect(render().vectorResult).toBeNull();
-  });
-
-  it('generates a red contour around the subject once the size is set', async () => {
-    await openBoxImage();
-    store().edit(setScale(25.4 / 300));
-    await pipeline.settled();
-    expect(render().generateCutline(1.0, 2)).toBe(true);
-    const vr = render().vectorResult;
-    expect(vr?.layers.length).toBe(1);
-    expect(vr?.layers[0].color).toBe('#ff0000');
-    expect(vr?.layers[0].paths.length).toBeGreaterThanOrEqual(1);
-  });
-});
-
-describe('node smoothing', () => {
-  it('reduces the node count of a traced zigzag and fits curves', async () => {
-    await openLabelled(100, 100);
-    const segments = [
-      { type: 'M' as const, points: [{ x: 0, y: 0 }] },
-      ...[[10, 20], [20, 35], [30, 45], [40, 50], [50, 45], [60, 35], [70, 20], [80, 0]].map(([x, y]) => ({
-        type: 'L' as const,
-        points: [{ x, y }],
-      })),
-      { type: 'Z' as const, points: [] },
-    ];
-    render().setVectorResult({
-      totalPaths: 1,
-      totalNodes: 10,
-      svgString: '',
-      dimensions: { width: 100, height: 100 },
-      layers: [
-        {
-          id: 'l1',
-          name: 'Layer 1',
-          color: '#000',
-          visible: true,
-          totalNodes: 10,
-          paths: [
-            {
-              id: 'p1',
-              color: '#000',
-              isClosed: true,
-              nodeCount: 10,
-              svgPathData: 'M 0 0 L 10 20 L 20 35 L 30 45 L 40 50 L 50 45 L 60 35 L 70 20 L 80 0 Z',
-              segments,
-            },
-          ],
-        },
-      ],
-    });
-    render().smoothVectors(2.0, true);
-    const smoothed = render().vectorResult!;
-    expect(smoothed.totalNodes).toBeLessThan(10);
-    expect(smoothed.layers[0].paths[0].svgPathData).toContain('C');
   });
 });

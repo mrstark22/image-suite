@@ -46,6 +46,7 @@ These come from the problems that motivated the project. Each becomes an automat
 |---|---|
 | Export does not match the screen | One heightmap is computed and both the 3D view and the export read it. Every control that changes the view changes the file, or is labelled as view-only. |
 | No way to calibrate depth | A depth calibration card per machine and material, so a grey value maps to a known depth. |
+| Cut settings found by trial and error | A cut calibration card per machine, material and thickness, so a cut goes through cleanly at known speed, power and passes. |
 | Options that do nothing | Every control is honoured in every mode, or removed. |
 
 ## Scope
@@ -137,10 +138,24 @@ Test burns cannot be removed, because the result depends on the physical machine
 ### Profiles
 
 - **Machine.** Name, source type (CO2 tube or diode), rated wattage, spot size, minimum power at which it fires reliably, usual line interval. Initially: 60 W CO2 and 155 W CO2.
-- **Material.** Name and notes (species, thickness, finish).
-- **Calibration.** One per machine, material and job type (photo or relief). Holds the speed, power range, line interval, passes and the measured response curve.
+- **Category.** Made by the user, for organising materials (for example "Hardwoods" or "Acrylics"). A category only groups materials in lists. It never selects, shares or stands in for a calibration. There are no built-in categories.
+- **Material.** One specific material: name (white oak and red oak are two materials, never one "hardwood" entry), finish, optional supplier or batch, notes, and its category.
+- **Thickness.** A thickness in millimetres, belonging to one material. A material can have several.
+- **Calibrations.** Each belongs to one machine, and sits under the material it was burned on:
 
-Selecting a machine and material loads the matching calibration. A calibration made on the 60 W is never offered for the 155 W. Profiles are stored locally and can be exported and imported as files. Signing in syncs them across computers (see Accounts and sync).
+  ```
+  Material (in a category)
+  ├── Engraving calibration      one per machine
+  ├── 3D relief calibration      one per machine
+  └── Thickness (mm)
+      └── Cutting calibration    one per machine
+  ```
+
+  Engraving and relief do not depend on thickness: focus is set from the material's surface. Cutting does, so its calibrations sit under each thickness. All of a material's calibrations are shown together under it.
+
+Selecting a machine and a material (and, for cutting, a thickness) loads exactly the matching calibration. Nothing is matched loosely. No calibration is offered for a different machine, a different material or, for cutting, a different thickness. Starting a new material or thickness from an existing calibration is an explicit copy, marked as not yet verified until that material's own card is burned. The hard-coded material presets inherited from the old code base (with categories such as "Hardwood") are removed.
+
+Profiles are stored locally and can be exported and imported as files. Signing in syncs them across computers (see Accounts and sync).
 
 ### Photo calibration
 
@@ -156,6 +171,13 @@ Instead of judging the card by eye, the user can photograph or scan it and let t
 - The tool measures each patch's darkness relative to the bare material, builds the tone response curve from the measurements, ranks the power and speed cells by usable tone range, and flags cells with discolouration around the patch.
 - The tool proposes; the user confirms or overrides. Choosing by eye stays available.
 - Limits: phone cameras apply their own tone processing, so readings are relative within one photo, and a flatbed scan is the most repeatable. A photo cannot measure depth, so relief calibration still uses measured depths.
+
+### Cut calibration
+
+- **Card, per thickness.** A grid of small closed shapes, for example 10 mm squares. Each is cut at one combination of speed, power and passes, on its own LightBurn layer, so the same 30-cell limit applies (see "Getting cards into LightBurn").
+- **Read.** The user marks the shapes that dropped out cleanly, and whether the edge charred. The tool proposes the fastest clean cut at the lowest power; the user confirms or overrides.
+- **Kerf (optional).** The user measures a cut shape of known size with calipers, and the kerf is stored with the calibration. Applying it to vector export (offsetting cut paths) is a later step.
+- **Result.** Speed, power, passes and, if measured, kerf, for that machine, material and thickness.
 
 ### Relief calibration
 
@@ -207,7 +229,7 @@ A real segmentation model run in the browser, replacing the flood fill. The mode
 1. **Core.** Document, pipeline, units, transparency. Full-resolution export with correct physical size.
    - **UI redesign**, alongside phase 1: design direction, workflow-based shell, responsive layout, shared components. Each later phase builds its panels in the new design.
 2. **Vector workflow.** Segmentation, sub-pixel boundaries, stroke and fill classification, centreline, curve fitting, export in real units.
-3. **Profiles and photo workflow.** Machine, material and calibration profiles; device-grid resampling, clarity and CLAHE fixes, real blue noise, 1-bit export, photo calibration cards.
+3. **Profiles and photo workflow.** Machine, category, material, thickness and calibration profiles; device-grid resampling, clarity and CLAHE fixes, real blue noise, 1-bit export, photo calibration cards, cut calibration cards.
 4. **Relief workflow.** Single heightmap for view and export, model handling, option clean-up, depth calibration.
 5. **Background removal.**
 6. **Accounts and profile sync.** Backend and sign-in choice, local-first sync of profiles. A paid plan is recorded but not scheduled.
@@ -223,7 +245,7 @@ Work is tracked in GitHub issues. Each phase has a tracking issue with its work 
 | 0. Safety net and cleanup | #1 | #7 to #14 |
 | 1. Core | #2 | #15 to #22 |
 | 2. Vector | #3 | #23 to #32 |
-| 3. Profiles and photo | #4 | #33 to #41, #56 |
+| 3. Profiles and photo | #4 | #33 to #41, #56, #85 |
 | 4. Relief | #5 | #42 to #48, #61 |
 | 5. Background removal | #6 | #49 to #50 |
 | 6. Accounts and sync | #57 | #58 to #60 |
@@ -238,10 +260,10 @@ To fix as each piece is ported. Verified in the audit unless marked.
 - Clarity is inverted: positive values flatten midtones (`src/wasm/src/tonal.rs:93`).
 - CLAHE darkens the bottom and right bands when the image is not divisible by the grid (`src/wasm/src/clahe.rs`). Reported, reproduced by the audit.
 - The dither threshold slider is a brightness bias that speckles pure white and black (`src/wasm/src/dither.rs:68`). Reported.
-- Tracing uses the unadjusted render of the crop, ignoring adjustments (the trace scheduler in `src/lib/schedulers.ts`; #23).
-- K-means seeds from evenly spaced pixel positions, which often coincide (`src/wasm/src/vector.rs:843`).
-- "Optimize & Smooth Nodes" throws on WASM trace output (`src/lib/vector-smoother.ts:27`).
-- Tracing stops silently at 4,000 contours (`src/wasm/src/vector.rs:153`). Reported.
+- Tracing uses the unadjusted render of the crop, ignoring adjustments (the trace scheduler in `src/lib/schedulers.ts`; #23). Fixed in #23: the trace reads the `prepared` stage, and export traces again at full resolution (`src/lib/vector-file-export.ts`).
+- K-means seeds from evenly spaced pixel positions, which often coincide (`src/wasm/src/vector.rs:843`). Fixed in #28: `vector.rs` is replaced by `src/wasm/src/trace/`, whose colour step uses k-means++ in CIELAB (`trace/colour.rs`).
+- "Optimize & Smooth Nodes" throws on WASM trace output (`src/lib/vector-smoother.ts:27`). Fixed in #32: the smoother is removed; curve fitting is part of the tracer (`trace/fit.rs`).
+- Tracing stops silently at 4,000 contours (`src/wasm/src/vector.rs:153`). Reported. Fixed in #29: the tracer has no caps (`tests/unit/tracer-geometry.test.ts`, "nothing is truncated").
 - Checkboxes, preset chips and reset buttons in the adjustments panel are not undoable. Reported. Fixed in #15 (part 2) and #21: every control changes the document through `edit` or a gesture in `src/store/documentStore.ts`, and `tests/unit/undo-every-control.test.ts` undoes each kind of edit.
 - Stale worker results can overwrite the current preview. Reported. Fixed in #19: the schedulers in `src/lib/render-scheduler.ts` commit a result only if nothing it read has changed.
 - Relief: transparent pixels count as ink, so a logo on a transparent background gives a flat map (`src/wasm/src/depth.rs:40`). Reported. Fixed by flattening transparency in the core: since #16 the relief reads the flattened `source` stage; #18 adds its test.

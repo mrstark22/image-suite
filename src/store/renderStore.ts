@@ -5,16 +5,16 @@ import type { PreviewSource } from '../lib/crop';
 import { MM_PER_INCH } from '../lib/document-size';
 import { sameValue } from '../lib/document';
 import type { ExportProgress, SourceStage } from '../types/worker-messages';
-import { generateCutlineLayer } from '../lib/cutline-generator';
-import { smoothVectorResult } from '../lib/vector-smoother';
 import { useDocumentStore } from './documentStore';
+import { layerKey } from '../lib/trace-view';
 
 /**
  * Results derived from the document, and the status of producing them. None
  * of this is undoable: it is recomputed from the document.
  *
- * Trace edits (cutlines, node smoothing, removing or hiding vector layers) act
- * on the trace result here, so they are not undoable until phase 2 (#32).
+ * Hiding a layer is a view setting and acts on the trace result here. What is
+ * traced (colours, merges and removals, the cutline) is in the document's
+ * tracing settings, so it is undoable (#32).
  */
 /** Background removal's result: replaces the `source`-stage render it was computed from. */
 interface BackgroundRemoval {
@@ -42,8 +42,26 @@ interface RenderState {
   autoTrace: boolean;
   /** True when the tracing settings changed while auto-trace was off. */
   isVectorStale: boolean;
-  /** The tracing settings `vectorResult` was traced with, or null when it was not traced (a test grid overlay). */
-  tracedVector: ImageDocument['vector'] | null;
+  /**
+   * Everything in the document that `vectorResult` was traced from, or null
+   * when it was not traced (a test grid overlay). The trace is stale when any
+   * of it changes: the trace reads the adjustments and the size as well as
+   * the tracing settings (#23, review of #84).
+   */
+  tracedInputs: TraceInputs | null;
+  /**
+   * The background-removed pixels the trace shown read, or null if it read the
+   * image as opened. Removal is not in the document, so it is recorded beside
+   * `tracedInputs` (review of #84).
+   */
+  tracedRemoval: ArrayBuffer | null;
+  /**
+   * The layers hidden on screen, by `layerKey`, kept across traces so a
+   * re-trace does not show them again. A colour layer is known by its
+   * colour, not its position, so a re-clustering that renumbers the colours
+   * hides the same colour or, if it is gone, nothing (review of #84).
+   */
+  hiddenLayers: string[];
   /**
    * Increases when the user asks for a trace, so one runs even if nothing
    * changed, and when the user cancels one. The trace scheduler reads it, so
@@ -91,16 +109,39 @@ interface RenderState {
    */
   cancelTrace: () => void;
   setIsTracing: (tracing: boolean) => void;
+  /** Shows `layer` (a test grid's cut paths) as the vector result, in place of any trace. */
   addVectorLayer: (layer: VectorLayer) => void;
-  /** Adds a cutline around the image. Refuses (returns false) while the size is not set. */
-  generateCutline: (offsetMm?: number, smoothness?: number) => boolean;
-  smoothVectors: (tolerance?: number, fitCurves?: boolean) => void;
   clearVectors: () => void;
-  removeVectorLayer: (layerId: string) => void;
   toggleVectorLayer: (layerId: string) => void;
   setIsProcessing: (processing: boolean) => void;
   setErrorMessage: (message: string | null) => void;
   setExportProgress: (progress: ExportProgress | null) => void;
+}
+
+/** What a trace reads from the document. */
+export interface TraceInputs {
+  source: ImageDocument['source'];
+  mmPerPx: ImageDocument['mmPerPx'];
+  steps: Pick<ImageDocument['steps'], 'crop' | 'tonal' | 'color' | 'detail'>;
+  vector: ImageDocument['vector'];
+}
+
+export function traceInputsOf(doc: ImageDocument): TraceInputs {
+  const { crop, tonal, color, detail } = doc.steps;
+  return { source: doc.source, mmPerPx: doc.mmPerPx, steps: { crop, tonal, color, detail }, vector: doc.vector };
+}
+
+/**
+ * True when the trace shown was made from the document as it is now (or is
+ * not a trace at all, like a test grid), so exporting it writes what is on
+ * screen. False while a newer trace is due or the settings changed.
+ */
+export function traceIsCurrent(): boolean {
+  const { vectorResult, tracedInputs, tracedRemoval, backgroundRemoval } = useRenderStore.getState();
+  const doc = useDocumentStore.getState().doc;
+  if (!vectorResult || !doc) return false;
+  if (tracedInputs === null) return true;
+  return sameValue(tracedInputs, traceInputsOf(doc)) && tracedRemoval === (backgroundRemoval?.pixels ?? null);
 }
 
 /**
@@ -128,6 +169,15 @@ function summed(layers: VectorLayer[]): Pick<VectorResult, 'totalPaths' | 'total
   };
 }
 
+/**
+ * True when changing background removal leaves the trace on screen out of
+ * date: a trace is shown and none will replace it, as auto-trace is off. With
+ * auto-trace on, the scheduler traces again (review of #84).
+ */
+function removalOutdatesTrace(s: Pick<RenderState, 'vectorResult' | 'tracedInputs' | 'autoTrace'>): boolean {
+  return s.vectorResult !== null && s.tracedInputs !== null && !s.autoTrace;
+}
+
 const EMPTY_RESULTS = {
   source: null,
   processed: null,
@@ -136,7 +186,9 @@ const EMPTY_RESULTS = {
   vectorResult: null,
   autoTrace: true,
   isVectorStale: false,
-  tracedVector: null,
+  tracedInputs: null,
+  tracedRemoval: null,
+  hiddenLayers: [] as string[],
   isProcessing: false,
   processingDurationMs: 0,
 };
@@ -185,10 +237,11 @@ export const useRenderStore = create<RenderState>((set, get) => ({
     const same = current !== null && current.key === from.key && buffer.byteLength === current.width * current.height * 4;
     if (!same) return false;
     const original = get().backgroundRemoval?.original ?? current.buffer;
-    set({
+    set((s) => ({
       source: { ...current, buffer },
       backgroundRemoval: { key: current.key, pixels: buffer, original },
-    });
+      isVectorStale: s.isVectorStale || removalOutdatesTrace(s),
+    }));
     return true;
   },
 
@@ -198,13 +251,28 @@ export const useRenderStore = create<RenderState>((set, get) => ({
       set({ backgroundRemoval: null });
       return;
     }
-    set({ source: { ...source, buffer: backgroundRemoval.original }, backgroundRemoval: null });
+    set((s) => ({
+      source: { ...source, buffer: backgroundRemoval.original },
+      backgroundRemoval: null,
+      isVectorStale: s.isVectorStale || removalOutdatesTrace(s),
+    }));
   },
 
   // Called with a trace's result only while nothing it read has changed, so the
   // document's tracing settings are the ones it was traced with.
-  setVectorResult: (vectorResult) =>
-    set({ vectorResult, isVectorStale: false, tracedVector: useDocumentStore.getState().doc?.vector ?? null }),
+  setVectorResult: (vectorResult) => {
+    const doc = useDocumentStore.getState().doc;
+    const hidden = new Set(get().hiddenLayers);
+    set({
+      vectorResult: vectorResult && {
+        ...vectorResult,
+        layers: vectorResult.layers.map((l) => ({ ...l, visible: !hidden.has(layerKey(l)) })),
+      },
+      isVectorStale: false,
+      tracedInputs: doc ? traceInputsOf(doc) : null,
+      tracedRemoval: get().backgroundRemoval?.pixels ?? null,
+    });
+  },
 
   setAutoTrace: (autoTrace) => set({ autoTrace }),
 
@@ -213,70 +281,53 @@ export const useRenderStore = create<RenderState>((set, get) => ({
   // The paths left on screen are stale if the cancelled trace was for changed settings.
   cancelTrace: () =>
     set((s) => {
-      const vector = useDocumentStore.getState().doc?.vector;
-      const changed = s.vectorResult !== null && s.tracedVector !== null && !sameValue(vector, s.tracedVector);
+      const doc = useDocumentStore.getState().doc;
+      const changed =
+        s.vectorResult !== null &&
+        s.tracedInputs !== null &&
+        (!doc || !sameValue(traceInputsOf(doc), s.tracedInputs) || s.tracedRemoval !== (s.backgroundRemoval?.pixels ?? null));
       return { autoTrace: false, traceRequest: s.traceRequest + 1, isTracing: false, isVectorStale: s.isVectorStale || changed };
     }),
 
   setIsTracing: (isTracing) => set({ isTracing }),
 
   addVectorLayer: (layer) => {
-    const vr = get().vectorResult;
-    if (!vr) {
-      const source = get().source;
-      set({
-        // Not a trace, so not traced with any settings.
-        tracedVector: null,
-        vectorResult: {
-          totalPaths: layer.paths.length,
-          totalNodes: layer.totalNodes,
-          svgString: '',
-          dimensions: { width: source?.width ?? 1000, height: source?.height ?? 1000 },
-          layers: [layer],
-        },
-      });
-      return;
-    }
-    const layers = [layer, ...vr.layers.filter((l) => l.id !== layer.id)];
-    set({ vectorResult: { ...vr, layers, ...summed(layers) } });
-  },
-
-  generateCutline: (offsetMm = 2.0, smoothness = 3) => {
     const source = get().source;
     const dpi = previewDpi();
-    if (!source || dpi === null) return false;
-    const layer = generateCutlineLayer(source.buffer, source.width, source.height, {
-      offsetMm,
-      dpi,
-      smoothness,
-      color: '#ff0000',
+    const layers = [layer];
+    set({
+      // Not a trace, so not traced with any settings.
+      tracedInputs: null,
+      tracedRemoval: null,
+      // Nor can it be out of date: a flag left by an earlier change would block its export.
+      isVectorStale: false,
+      autoTrace: false,
+      vectorResult: {
+        layers,
+        palette: [],
+        ...summed(layers),
+        dimensions: { width: source?.width ?? 1000, height: source?.height ?? 1000 },
+        pxPerMm: dpi === null ? null : dpi / MM_PER_INCH,
+      },
     });
-    get().addVectorLayer(layer);
-    return true;
   },
 
-  smoothVectors: (tolerance = 1.5, fitCurves = true) => {
-    const vr = get().vectorResult;
-    if (!vr) return;
-    set({ vectorResult: smoothVectorResult(vr, tolerance, fitCurves).result });
-  },
-
-  clearVectors: () => set({ vectorResult: null, autoTrace: false, isVectorStale: false, tracedVector: null }),
-
-  removeVectorLayer: (layerId) => {
-    const vr = get().vectorResult;
-    if (!vr) return;
-    const layers = vr.layers.filter((l) => l.id !== layerId);
-    set({ vectorResult: layers.length === 0 ? null : { ...vr, layers, ...summed(layers) } });
-  },
+  clearVectors: () =>
+    set({ vectorResult: null, autoTrace: false, isVectorStale: false, tracedInputs: null, tracedRemoval: null, hiddenLayers: [] }),
 
   toggleVectorLayer: (layerId) => {
     const vr = get().vectorResult;
     if (!vr) return;
+    const layer = vr.layers.find((l) => l.id === layerId);
+    if (!layer) return;
+    const key = layerKey(layer);
+    const hidden = get().hiddenLayers;
+    const hiddenLayers = hidden.includes(key) ? hidden.filter((k) => k !== key) : [...hidden, key];
     set({
+      hiddenLayers,
       vectorResult: {
         ...vr,
-        layers: vr.layers.map((l) => (l.id === layerId ? { ...l, visible: !l.visible } : l)),
+        layers: vr.layers.map((l) => ({ ...l, visible: !hiddenLayers.includes(layerKey(l)) })),
       },
     });
   },
@@ -290,7 +341,7 @@ export const useRenderStore = create<RenderState>((set, get) => ({
 
 // Keep the derived results in step with the document. A new document starts
 // with no results (the schedulers render it); a new crop drops the relief;
-// changing the tracing settings while auto-trace is off marks the trace stale.
+// changing what the trace reads while auto-trace is off marks the trace stale.
 useDocumentStore.subscribe((state, prev) => {
   const doc = state.doc;
   const before = prev.doc;
@@ -305,8 +356,13 @@ useDocumentStore.subscribe((state, prev) => {
     useRenderStore.setState({ depthHeightMap: null });
   }
 
-  // By value: Reset All and recipes build a new vector object even when nothing in it changes.
-  if (!sameValue(doc.vector, before.vector) && !useRenderStore.getState().autoTrace) {
+  // By value: Reset All and recipes build new objects even when nothing in them changes.
+  // Any input of the trace counts: adjustments and the size as well as the tracing settings.
+  // A test grid's paths are not a trace of the image, so nothing makes them
+  // stale and they stay exportable (review of #84).
+  const render = useRenderStore.getState();
+  const showsTestGrid = render.vectorResult !== null && render.tracedInputs === null;
+  if (!render.autoTrace && !showsTestGrid && !sameValue(traceInputsOf(doc), traceInputsOf(before))) {
     useRenderStore.setState({ isVectorStale: true });
   }
 });

@@ -17,9 +17,11 @@ import type { VectorResult } from '../types/vector';
 import type { DepthResult } from '../types/depth';
 import { removeBackground } from '../lib/bg-removal';
 import { PipelineEngine } from '../lib/pipeline-engine';
-import { exportPlan, sourceStageKey } from '../lib/render-target';
+import { exportPlan, previewTarget, sameTarget, sourceStageKey } from '../lib/render-target';
 import { cropRectOf } from '../lib/document-size';
 import { encodeRaster } from '../lib/raster-encode';
+import { vectorFile, type VectorExportRequest } from '../lib/vector-file-export';
+import { withView } from '../lib/trace-view';
 import type { ImageDocument } from '../types/document';
 import type { RustWasmEngine } from '../wasm/wasm-bridge';
 
@@ -133,7 +135,7 @@ export class PipelineWorkerApi {
     const engine = await this.engine();
     const start = performance.now();
     const options = { cache: true, sourceStagePixels: req.sourceStagePixels };
-    const final = engine.render(req.doc, req.target, 'final', options);
+    const final = engine.render(req.doc, req.target, req.stage ?? 'final', options);
     const result: PreviewRenderResult = {
       key: sourceStageKey(req.doc, req.target),
       final,
@@ -164,13 +166,37 @@ export class PipelineWorkerApi {
     return Comlink.transfer(result, transferables(depth.heightMapBuffer, result.sourceStage));
   }
 
-  /** Traces the `source` stage at the request's target with the document's tracing settings. */
+  /**
+   * Traces the document at the request's target: the `prepared` stage, so
+   * every adjustment applies to the trace (#23), with the document's tracing
+   * settings. The live trace uses the preview target; export traces at the
+   * source's full resolution. Refuses while the size is not set, as the
+   * tracing settings are lengths in millimetres.
+   */
   public async traceDocument(req: TraceRequest): Promise<VectorResult> {
     await this.exportIdle;
     const engine = await this.engine();
     const core = await this.core();
-    const source = engine.render(req.doc, req.target, 'source', { cache: true, sourceStagePixels: req.sourceStagePixels });
-    return core.vectorize(source.pixels, req.target.widthPx, req.target.heightPx, req.doc.vector);
+    // The preview's target shares the cached source stage; a full-resolution
+    // export trace renders its own and frees it, leaving the cache alone.
+    const options = {
+      cache: sameTarget(req.target, previewTarget(req.doc)),
+      sourceStagePixels: req.sourceStagePixels,
+    };
+    return engine.renderWith(req.doc, req.target, 'prepared', options, (ptr, pxPerMm) => {
+      if (pxPerMm === null) throw new Error('Set the size of the image before tracing.');
+      return core.traceAt(ptr, req.target.widthPx, req.target.heightPx, pxPerMm, req.doc.vector);
+    });
+  }
+
+  /**
+   * Traces and writes a vector file (#23, #30): the trace at the request's
+   * target, shown as on screen, as SVG or DXF text. Both the trace and the
+   * writing run here, off the main thread (architecture rule 2).
+   */
+  public async exportVectorFile(req: VectorExportRequest): Promise<{ text: string; mimeType: string }> {
+    const result = await this.traceDocument({ doc: req.doc, target: req.target, sourceStagePixels: req.sourceStagePixels });
+    return vectorFile(withView(result, req.view), req.format);
   }
 
   /**
