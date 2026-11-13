@@ -67,7 +67,7 @@ const COLOR_MODES: Array<{ id: TraceColorMode; title: string; desc: string }> = 
 const SHAPE_MODES: Array<{ id: TraceShapes; title: string; desc: string }> = [
   { id: 'auto', title: 'Auto', desc: 'Thin lines get one centre path; filled shapes get an outline' },
   { id: 'outline', title: 'Outline', desc: 'Every shape is traced around its edge' },
-  { id: 'centerline', title: 'Centreline', desc: 'Every shape is traced along its middle' },
+  { id: 'centerline', title: 'Centreline', desc: 'Every shape is traced along its middle; solid areas wider than 1 mm keep an outline' },
 ];
 
 /**

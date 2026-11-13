@@ -598,3 +598,43 @@ fn tiny_shapes_are_outlined_not_mangled() {
         }
     }
 }
+
+/// Centreline mode: a small dot is a point, but a large solid shape has no
+/// centre line that describes it and keeps its outline (review of #84).
+#[test]
+fn centreline_mode_outlines_a_large_solid_shape() {
+    let img = render(100, 80, |x, y| {
+        ((20.0..60.0).contains(&x) && (20.0..60.0).contains(&y)) || (x - 85.0).hypot(y - 15.0) < 3.0
+    });
+    let res = trace(&img, 100, 80, &cfg(Shapes::Centreline));
+    let paths = all_paths(&res);
+    assert_eq!(paths.len(), 2);
+    let square = paths
+        .iter()
+        .find(|p| p.kind == Kind::Fill)
+        .expect("an outline");
+    assert_eq!(
+        square.path.segs.len(),
+        4,
+        "the 4 mm square: {:?}",
+        square.path.segs
+    );
+    let xs: Vec<f64> = sample(&square.path).iter().map(|q| q.x).collect();
+    let (lo, hi) = (
+        xs.iter().copied().fold(f64::MAX, f64::min),
+        xs.iter().copied().fold(f64::MIN, f64::max),
+    );
+    assert!(
+        (lo - 20.0).abs() < 0.2 && (hi - 60.0).abs() < 0.2,
+        "{lo} to {hi}"
+    );
+    let dot = paths
+        .iter()
+        .find(|p| p.kind == Kind::Stroke)
+        .expect("a dot");
+    assert!(
+        dot.path.start.dist(P::new(85.0, 15.0)) < 0.5,
+        "the 0.6 mm dot: {:?}",
+        dot.path.start
+    );
+}

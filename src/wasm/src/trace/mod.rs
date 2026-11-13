@@ -109,8 +109,16 @@ struct LayerParams {
     shapes: Shapes,
     max_stroke_px: f64,
     min_area_px: f64,
+    /// Centreline mode: the widest solid shape, in pixels, drawn as a dot or a short line.
+    dot_max_px: f64,
     fit: FitOptions,
 }
+
+/// Centreline mode: a solid shape with no centreline (a dot, a blob) up to
+/// this wide, in millimetres, is drawn as a point or a short line along its
+/// middle. A wider one has no middle line that describes it, so it keeps its
+/// outline instead of shrinking to a dot (review of #84).
+const DOT_MAX_MM: f64 = 1.0;
 
 /// Traces `rgba` (`w` x `h`, RGBA8) with `cfg`.
 pub fn trace(rgba: &[u8], w: usize, h: usize, cfg: &TraceConfig) -> TraceResult {
@@ -119,6 +127,7 @@ pub fn trace(rgba: &[u8], w: usize, h: usize, cfg: &TraceConfig) -> TraceResult 
         shapes: cfg.shapes,
         max_stroke_px: cfg.max_stroke_mm * ppm,
         min_area_px: cfg.min_area_mm2 * ppm * ppm,
+        dot_max_px: DOT_MAX_MM * ppm,
         fit: FitOptions {
             tolerance: (cfg.tolerance_mm * ppm).max(0.02),
             corner_angle: cfg.corner_angle_deg.clamp(1.0, 179.0).to_radians(),
@@ -486,7 +495,8 @@ fn trace_layer(
             // In Centreline mode every shape is traced along its middle, including
             // dots and blobs whose skeleton gives no path: each becomes a centre
             // line along its main axis, as long as the shape is longer than wide,
-            // or a point for a round dot (review of #84).
+            // or a point for a round dot (review of #84). A solid shape wider
+            // than `DOT_MAX_MM` is the exception: it keeps its outline.
             if p.shapes == Shapes::Centreline {
                 // Per shape: pixel count, sums of x, y, x², y², xy.
                 let mut mom = vec![[0.0f64; 6]; nc];
@@ -520,6 +530,9 @@ fn trace_layer(
                     let u = geom::P::new(angle.cos(), angle.sin());
                     // A uniform bar of length a has variance a² / 12 along it.
                     let half = 0.5 * ((12.0 * major).sqrt() - (12.0 * minor).sqrt()).max(0.0);
+                    if (12.0 * minor).sqrt() > p.dot_max_px {
+                        continue;
+                    }
                     let (a, b) = (c.sub(u.scale(half)), c.add(u.scale(half)));
                     out.push(TracedPath {
                         kind: Kind::Stroke,
