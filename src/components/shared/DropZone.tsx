@@ -1,10 +1,13 @@
 import React, { useRef, useState } from 'react';
 import { Upload, Image, ShieldCheck, Sparkles } from 'lucide-react';
-import { generateTestPattern } from '../../lib/sample-images';
+import { generateTestPattern, SAMPLES, type SampleKind } from '../../lib/sample-images';
 import { openImageFiles } from '../../lib/open-image';
 import { useRenderStore } from '../../store/renderStore';
 import { Button } from './Button';
 import styles from './DropZone.module.css';
+
+const SAMPLE_ICON = { tone: Sparkles, emblem: ShieldCheck, drawing: Image } as const;
+const SAMPLE_ICON_CLASS = { tone: styles.sampleIconWarm, emblem: styles.sampleIconNeutral, drawing: styles.sampleIconGreen } as const;
 
 /** The empty canvas: drop an image here, browse for one, or open a test pattern. */
 export const DropZone: React.FC = () => {
@@ -44,7 +47,7 @@ export const DropZone: React.FC = () => {
     }
   };
 
-  const loadSample = async (type: 'gradient' | 'emblem' | 'grid') => {
+  const loadSample = async (type: SampleKind) => {
     const file = await generateTestPattern(type);
     await handleProcessFiles([file]);
   };
@@ -94,18 +97,15 @@ export const DropZone: React.FC = () => {
       <div className={styles.samplesSection}>
         <div className={styles.samplesTitle}>Or try a sample image</div>
         <div className={styles.samplesGrid}>
-          <button type="button" className={styles.sampleButton} onClick={() => loadSample('gradient')}>
-            <Sparkles size={14} className={`${styles.sampleIcon} ${styles.sampleIconWarm}`} />
-            Gradient Ramp
-          </button>
-          <button type="button" className={styles.sampleButton} onClick={() => loadSample('emblem')}>
-            <ShieldCheck size={14} className={`${styles.sampleIcon} ${styles.sampleIconNeutral}`} />
-            Laser Emblem
-          </button>
-          <button type="button" className={styles.sampleButton} onClick={() => loadSample('grid')}>
-            <Image size={14} className={`${styles.sampleIcon} ${styles.sampleIconGreen}`} />
-            Calibration Grid
-          </button>
+          {SAMPLES.map(({ kind, label, use }) => {
+            const Icon = SAMPLE_ICON[kind];
+            return (
+              <button key={kind} type="button" className={styles.sampleButton} title={use} onClick={() => loadSample(kind)}>
+                <Icon size={14} className={`${styles.sampleIcon} ${SAMPLE_ICON_CLASS[kind]}`} />
+                {label}
+              </button>
+            );
+          })}
         </div>
       </div>
     </div>

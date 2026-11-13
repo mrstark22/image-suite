@@ -1,4 +1,5 @@
 import { loadPinnedModel, ModelDownloadCancelledError, type PinnedModelFile } from './model-file';
+import { loadOrt, type Ort } from './ort-runtime';
 
 /**
  * AI depth estimation (#43): Depth Anything V2 Small, run with ONNX Runtime
@@ -91,7 +92,6 @@ export async function loadModelBytes(
   }
 }
 
-type Ort = typeof import('onnxruntime-web/wasm');
 type Session = import('onnxruntime-web/wasm').InferenceSession;
 
 /** The session, shared by concurrent requests; cleared after a failure so the next request tries again. */
@@ -103,10 +103,7 @@ async function createSession(
 ): Promise<{ ort: Ort; session: Session }> {
   const bytes = await loadModelBytes(onProgress, signal);
   onProgress({ phase: 'loading', fraction: null });
-  const ort = await import('onnxruntime-web/wasm');
-  const wasmUrl = (await import('onnxruntime-web/ort-wasm-simd-threaded.wasm?url')).default;
-  ort.env.wasm.wasmPaths = { wasm: wasmUrl };
-  ort.env.wasm.numThreads = 1;
+  const ort = await loadOrt();
   try {
     const session = await ort.InferenceSession.create(new Uint8Array(bytes), { executionProviders: ['wasm'] });
     return { ort, session };

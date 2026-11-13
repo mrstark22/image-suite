@@ -326,19 +326,19 @@ describe('orbiting the 3D view from the keyboard (#81)', () => {
     const view = mounted!.container.querySelector<HTMLElement>('[role="region"][aria-label="3D relief view"]')!;
     expect(view.tabIndex).toBe(0);
     act(() => view.focus());
-    expect(readout()).toBe('Camera 45° around, 35° above the surface, distance 2.60');
+    expect(readout()).toBe('Camera 45° around, 35° above the surface, zoom 100%');
 
     // Down to the lowest tilt, and round to 90°: looking along the surface from its side.
     for (let i = 0; i < 4; i++) press('ArrowDown');
     for (let i = 0; i < 3; i++) press('ArrowRight');
-    expect(readout()).toBe(`Camera 90° around, ${MIN_ELEVATION}° above the surface, distance 2.60`);
+    expect(readout()).toBe(`Camera 90° around, ${MIN_ELEVATION}° above the surface, zoom 100%`);
 
     press('+');
     expect(readout()).toBe(
-      `Camera 90° around, ${MIN_ELEVATION}° above the surface, distance ${(2.6 / DOLLY_KEY_FACTOR).toFixed(2)}`,
+      `Camera 90° around, ${MIN_ELEVATION}° above the surface, zoom ${Math.round(100 * DOLLY_KEY_FACTOR)}%`,
     );
     press('-');
-    expect(readout()).toMatch(/distance 2\.60$/);
+    expect(readout()).toMatch(/zoom 100%$/);
   });
 
   it("keys on the view's own buttons are the buttons'", () => {

@@ -1,5 +1,5 @@
-import * as ort from 'onnxruntime-web';
-import { ORT_WASM_PATHS } from './ort-runtime';
+import type { InferenceSession } from 'onnxruntime-web/wasm';
+import { loadOrt } from './ort-runtime';
 import type { MaskModel, ModelProgress } from './background';
 import { loadPinnedModel, type PinnedModelFile } from './model-file';
 
@@ -17,12 +17,6 @@ export const ISNET_FILE: PinnedModelFile = {
 
 /** ISNet's fixed input size. */
 const SIZE = 1024;
-
-if (ort.env) {
-  // Served by the app, shared with the relief's depth model (src/lib/ort-runtime.ts).
-  ort.env.wasm.wasmPaths = ORT_WASM_PATHS;
-  ort.env.wasm.numThreads = typeof crossOriginIsolated !== 'undefined' && crossOriginIsolated ? Math.min(4, navigator.hardwareConcurrency || 1) : 1;
-}
 
 /**
  * The model's input: RGB as floats, channel-planar, `x / 255 - 0.5` (ISNet's
@@ -46,17 +40,19 @@ export function probabilityBytes(p: Float32Array | Uint16Array | ArrayLike<numbe
 }
 
 /**
- * ISNet run with ONNX Runtime Web: WebGPU when the browser has it, else
- * WebAssembly (the same model either way). The session is created once.
+ * ISNet run with ONNX Runtime Web on the WebAssembly (CPU) backend, the
+ * runtime shared with the depth model (ort-runtime.ts). The session is
+ * created once.
  */
 export function createIsnetModel(file: PinnedModelFile = ISNET_FILE): MaskModel {
-  let session: Promise<ort.InferenceSession> | null = null;
+  let session: Promise<InferenceSession> | null = null;
   const load = (onProgress: (p: ModelProgress) => void) => {
     session ??= (async () => {
       const bytes = await loadPinnedModel(file, onProgress);
       onProgress({ stage: 'starting', loadedBytes: file.bytes, totalBytes: file.bytes });
+      const ort = await loadOrt();
       try {
-        return await ort.InferenceSession.create(new Uint8Array(bytes), { executionProviders: ['webgpu', 'wasm'] });
+        return await ort.InferenceSession.create(new Uint8Array(bytes), { executionProviders: ['wasm'] });
       } catch (err) {
         throw new Error(`The background removal model could not be started: ${err instanceof Error ? err.message : String(err)}`);
       }
@@ -70,6 +66,7 @@ export function createIsnetModel(file: PinnedModelFile = ISNET_FILE): MaskModel 
     async predict(rgba, onProgress) {
       const s = await load(onProgress);
       onProgress({ stage: 'running', loadedBytes: file.bytes, totalBytes: file.bytes });
+      const ort = await loadOrt();
       const input = new ort.Tensor('float32', isnetInput(rgba, SIZE * SIZE), [1, 3, SIZE, SIZE]);
       let data: ArrayLike<number>;
       try {

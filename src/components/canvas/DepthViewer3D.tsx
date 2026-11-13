@@ -3,7 +3,7 @@ import { RotateCcw, Box, Compass } from 'lucide-react';
 import { useDocumentStore } from '../../store/documentStore';
 import { DEFAULT_DEPTH } from '../../lib/document';
 import { ActivePointers, type PointerPair } from '../../lib/gestures';
-import { DEFAULT_CAMERA, cameraForKey, dollyBy, orbitBy, panBy, pinchCamera, type OrbitCamera } from '../../lib/orbit-camera';
+import { DEFAULT_CAMERA, FOV_Y_DEG, cameraForKey, framingDistance, dollyBy, orbitBy, panBy, pinchCamera, type OrbitCamera } from '../../lib/orbit-camera';
 import type { ReliefMaterial } from '../../types/depth';
 import styles from './DepthViewer3D.module.css';
 
@@ -341,8 +341,10 @@ export const DepthViewer3D: React.FC<DepthViewer3DProps> = ({ depthBuffer, width
       const half = { x: (widthMm * worldPerMm) / 2, y: (heightMm * worldPerMm) / 2 };
       const depthWorld = maxDepthMm * exaggeration * worldPerMm;
 
-      const proj = perspective((45 * Math.PI) / 180, w / h, 0.05, 100);
-      const view = orbitView(camera.azimuth, camera.elevation, camera.distance, camera.panX, camera.panY, -depthWorld / 2);
+      // The camera's distance and pan are relative to the distance that frames the whole plate.
+      const frame = framingDistance({ halfX: half.x, halfY: half.y, depth: depthWorld }, camera.elevation, w / h);
+      const proj = perspective((FOV_Y_DEG * Math.PI) / 180, w / h, 0.05, 100 + frame * 4);
+      const view = orbitView(camera.azimuth, camera.elevation, camera.distance * frame, camera.panX * frame, camera.panY * frame, -depthWorld / 2);
       gl.uniformMatrix4fv(u.u_mvp, false, new Float32Array(multiply(proj, view)));
       gl.uniform2f(u.u_meshHalf, half.x, half.y);
       gl.uniform1f(u.u_depth, depthWorld);
@@ -474,7 +476,7 @@ export const DepthViewer3D: React.FC<DepthViewer3DProps> = ({ depthBuffer, width
           : 'Drag: Orbit • Right-Drag or Two Fingers: Pan • Scroll or Pinch: Zoom'}
       </div>
       <div className={styles.visuallyHidden} role="status" aria-live="polite">
-        {`Camera ${Math.round(((announcedCamera.azimuth % 360) + 360) % 360)}° around, ${Math.round(announcedCamera.elevation)}° above the surface, distance ${announcedCamera.distance.toFixed(2)}`}
+        {`Camera ${Math.round(((announcedCamera.azimuth % 360) + 360) % 360)}° around, ${Math.round(announcedCamera.elevation)}° above the surface, zoom ${Math.round(100 / announcedCamera.distance)}%`}
       </div>
     </div>
   );
