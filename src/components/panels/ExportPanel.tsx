@@ -61,7 +61,6 @@ export const ExportPanel: React.FC = () => {
   const tracedInputs = useRenderStore((s) => s.tracedInputs);
   const isVectorStale = useRenderStore((s) => s.isVectorStale);
   const isTracing = useRenderStore((s) => s.isTracing);
-  const backgroundRemoval = useRenderStore((s) => s.backgroundRemoval);
   const progress = useRenderStore((s) => s.exportProgress);
   const job = useUIStore((s) => s.job);
   const machine = useUIStore((s) => machineById(s.machineId));
@@ -123,7 +122,7 @@ export const ExportPanel: React.FC = () => {
   };
 
   const vectorSource = vectorResult
-    ? vectorExportSource(vectorResult, tracedInputs !== null, backgroundRemoval !== null)
+    ? vectorExportSource(vectorResult, tracedInputs !== null)
     : null;
 
   // The file must be what is on screen: no export of a trace older than the document (review of #84).
@@ -139,7 +138,7 @@ export const ExportPanel: React.FC = () => {
         vectorSource === 'as-shown'
           ? vectorFile(vectorResult, fmt)
           : await getPipeline().exportVectorFile(
-              vectorExportRequest(doc, vectorResult, vectorSource, backgroundRemoval, fmt)
+              vectorExportRequest(doc, vectorResult, fmt)
             );
       download([text], mimeType, `${baseName}-vectors.${fmt}`);
     } catch (err) {
@@ -267,11 +266,6 @@ export const ExportPanel: React.FC = () => {
             <div className={`${styles.controlNote} ${styles.stackGap}`}>
               The files are traced again from the full-resolution image, so they hold detail the preview cannot: small
               corners and short straight edges can come out crisper than they look on screen.
-            </div>
-          )}
-          {vectorSource === 'preview-background-removed' && (
-            <div className={`${styles.controlNote} ${styles.stackGap}`}>
-              Background removal works on the preview, so these files are traced at preview resolution.
             </div>
           )}
           {vectorError && (

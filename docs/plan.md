@@ -66,7 +66,7 @@ These come from the problems that motivated the project. Each becomes an automat
 
 ### Drop for now
 
-- The current flood-fill background removal, and the silent luminance heuristic that stands in for AI depth when the model fails.
+- The current flood-fill background removal (removed in phase 5), and the silent luminance heuristic that stands in for AI depth when the model fails.
 - Scene graph, drawing tools (pen, node, shape, text), grouping, booleans, project file.
 - CAM, toolpaths, G-code. The `.lbrn2` exporter writes an invented JSON format, not LightBurn's.
 - Multi-layer compositing, text layers, multi-image import and placing an image on a larger blank canvas (done in LightBurn instead). Removed in phase 1 (#15), before the new document model.
@@ -221,7 +221,9 @@ Profiles live in the browser, so they exist only on the computer that made them.
 
 ## Background removal
 
-A real segmentation model run in the browser, replacing the flood fill. The model file is self-hosted and version-pinned, download progress is shown, and failure is reported, never silently replaced by a heuristic. Model choice depends on a licence check.
+A real segmentation model run in the browser, replacing the flood fill. The model file is self-hosted and version-pinned, download progress is shown, and failure is reported, never silently replaced by a heuristic.
+
+Model (#49): ISNet "general use" (DIS, Apache-2.0), converted to float16: 90.7 MB, SHA-256 `1e00f2f0…18f0`, served from `public/models/` and derived from the rembg release file by `scripts/derive-bg-model.py`. Smaller candidates (U2-Netp, 8-bit ISNet) were not good enough on ordinary photos. Removal is an edit step holding only its settings; the mask is derived data, computed per crop and applied inside the pipeline, so every output has it (#50). Details and the comparison: `docs/background-removal.md`.
 
 ## Phases
 

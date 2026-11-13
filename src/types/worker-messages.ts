@@ -13,8 +13,6 @@ export interface DocumentRenderRequest {
    * result carries the `source`-stage pixels only when its key differs.
    */
   haveSourceKey: string | null;
-  /** Background removal's replacement for the `source`-stage render (stopgap until phase 5). */
-  sourceStagePixels?: ArrayBuffer;
   /**
    * How far the preview runs: `final` (with the dither) by default, or
    * `prepared` in the vector job, which shows the image the trace reads.
@@ -51,7 +49,6 @@ export interface ReliefRenderResult {
 export interface TraceRequest {
   doc: ImageDocument;
   target: RenderTarget;
-  sourceStagePixels?: ArrayBuffer;
 }
 
 /** What loading a source reports. */
@@ -80,22 +77,14 @@ export interface ProcessDepthPayload {
   config: DepthConfig;
 }
 
-export interface ProcessBgRemovalPayload {
-  buffer: ArrayBuffer;
-  width: number;
-  height: number;
-  tolerance: number;
-  featherRadius: number;
-  mode: 'auto-border' | 'white-bg' | 'black-bg' | 'custom-color';
-  customColor?: { r: number; g: number; b: number };
-}
-
-export interface ProcessBgRemovalResult {
-  buffer: ArrayBuffer;
-  width: number;
-  height: number;
-  removedPixelCount: number;
-  durationMs: number;
+/** What background removal would do, for the panel's comparison (#50). */
+export interface BackgroundPreview {
+  /** The `source` stage without removal, RGBA8. */
+  original: ArrayBuffer;
+  /** Coverage per pixel: 255 kept, 0 removed. */
+  alpha: ArrayBuffer;
+  widthPx: number;
+  heightPx: number;
 }
 
 /** Raster export formats (design section 6). JPEG and WebP carry no DPI here and are not offered. */

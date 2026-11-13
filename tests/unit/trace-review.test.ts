@@ -361,7 +361,7 @@ describe('second review of #84', () => {
     await pipeline.settled();
     const { vectorExportRequest } = await import('../../src/lib/vector-file-export');
     const file = await pipeline.api.exportVectorFile(
-      vectorExportRequest(store().doc!, render().vectorResult!, 'full-resolution', null, 'dxf')
+      vectorExportRequest(store().doc!, render().vectorResult!, 'dxf')
     );
     expect(file.mimeType).toBe('application/dxf');
     expect(file.text).toContain('$INSUNITS');
@@ -369,31 +369,6 @@ describe('second review of #84', () => {
 });
 
 describe('third review of #84', () => {
-  it('2: a trace is no longer current once background removal changes, so it cannot be exported', async () => {
-    store().open(await loadPixels(pipeline.api, colourBlocks(80, 40, [[255, 255, 255], [0, 0, 0]]), 80, 40), 0.1);
-    await pipeline.settled();
-    render().setAutoTrace(false);
-    expect(traceIsCurrent()).toBe(true);
-
-    const source = render().source!;
-    const removed = new Uint8Array(source.buffer.slice(0));
-    for (let i = 3; i < removed.length / 2; i += 4) removed[i] = 0;
-    expect(render().replaceSourcePixels(removed.buffer, source)).toBe(true);
-    expect(traceIsCurrent()).toBe(false);
-    expect(render().isVectorStale).toBe(true);
-
-    // Tracing again makes the removal the one the trace read.
-    render().requestTrace();
-    await pipeline.settled();
-    expect(traceIsCurrent()).toBe(true);
-    expect(render().isVectorStale).toBe(false);
-
-    // Restoring the image outdates that trace in turn.
-    render().setAutoTrace(false);
-    render().restoreSource();
-    expect(traceIsCurrent()).toBe(false);
-    expect(render().isVectorStale).toBe(true);
-  });
 
   it('5: a fixed-aspect box sized from its top-left corner keeps its right and bottom edges on whole pixels', () => {
     const dims = { width: 400, height: 300 };

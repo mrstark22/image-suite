@@ -58,7 +58,6 @@ function gated(inner: Pipeline): Pipeline {
     putSource: inner.putSource.bind(inner),
     releaseSource: inner.releaseSource.bind(inner),
     processDepth: inner.processDepth.bind(inner),
-    processBgRemoval: inner.processBgRemoval.bind(inner),
     renderPreview: hold('preview', inner.renderPreview.bind(inner)),
     renderRelief: hold('relief', inner.renderRelief.bind(inner)),
     traceDocument: hold('trace', inner.traceDocument.bind(inner)),

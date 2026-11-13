@@ -46,6 +46,20 @@ export interface DetailSettings {
 /** How far the image is turned clockwise, in degrees (#65). */
 export type Rotation = 0 | 90 | 180 | 270;
 
+/**
+ * Background removal (phase 5, #50): parameters only. The mask is derived
+ * data, computed by the segmentation model from the image as turned and
+ * cropped, and never stored in the document.
+ */
+export interface BackgroundSettings {
+  /** Remove the background. */
+  enabled: boolean;
+  /** How sure the model must be that a pixel is subject, 1 to 99 %. */
+  cutoff: number;
+  /** Width of the edge transition, 0 (hard) to 100 % of the model's range. */
+  softness: number;
+}
+
 /** The edit steps, which the pipeline runs in a fixed order. */
 export interface EditSteps {
   /**
@@ -55,6 +69,8 @@ export interface EditSteps {
   rotation: Rotation;
   /** In integer pixels of the image as turned; `null` is the whole image. */
   crop: CropRect | null;
+  /** Applied after the turn and the crop, before the adjustments. */
+  background: BackgroundSettings;
   tonal: TonalAdjustments;
   color: ColorAdjustments;
   detail: DetailSettings;

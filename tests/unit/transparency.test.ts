@@ -10,7 +10,8 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import { RustWasmEngine, type WasmExports } from '../../src/wasm/wasm-bridge';
 import { PipelineWorkerApi } from '../../src/workers/pipeline-api';
 import { nativeTarget, previewTarget } from '../../src/lib/render-target';
-import { createDocument, setDepth, setDither } from '../../src/lib/document';
+import { createDocument, setBackground, setDepth, setDither } from '../../src/lib/document';
+import type { MaskModel } from '../../src/lib/background';
 import type { ImageDocument } from '../../src/types/document';
 import type { RenderTarget } from '../../src/types/render';
 import type { DitherAlgorithm } from '../../src/types/dither';
@@ -235,32 +236,43 @@ function alphaUnderTargetPixel(x: number, y: number, tw: number, th: number): nu
 }
 
 describe('background removal', () => {
-  // Removal sets the background's alpha to 0 and keeps its colour. Its pixels
-  // stand in for the source stage, after step 2, so they must be flattened too.
-  function removed(): ArrayBuffer {
+  // The logo's background, opaque brown instead of transparent, with a model
+  // that marks exactly the logo as subject (#50). Removal must give what
+  // transparency gives: the background flattened onto white.
+  function onBrown(): ArrayBuffer {
     const out = new Uint8Array(LOGO);
     for (let i = 0; i < out.length; i += 4) {
-      if (out[i + 3] === 0) [out[i], out[i + 1], out[i + 2]] = [130, 90, 60];
+      if (out[i + 3] === 0) [out[i], out[i + 1], out[i + 2], out[i + 3]] = [130, 90, 60, 255];
     }
     return out.buffer;
   }
+  const logoModel: MaskModel = {
+    inputSize: { widthPx: W, heightPx: H },
+    predict: async () => {
+      const mask = new Uint8Array(W * H);
+      for (let i = 0; i < mask.length; i++) mask[i] = LOGO[i * 4 + 3] > 0 ? 255 : 0;
+      return mask;
+    },
+  };
 
   it('flattens the removed background onto white for the dither, trace and relief', async () => {
     const reference = await outputsFor('white', ON_WHITE, nativeTarget);
-    const { hasAlpha } = await api.putSource('photo', removed(), W, H);
-    const doc = docFor('photo', hasAlpha);
+    api.setMaskModel(logoModel);
+    const { hasAlpha } = await api.putSource('photo', onBrown(), W, H);
+    const doc = setBackground({ enabled: true, softness: 0 })(docFor('photo', hasAlpha));
     const target = nativeTarget(doc);
-    const req = (d: ImageDocument) => ({ doc: d, target, haveSourceKey: 'x', sourceStagePixels: removed() });
+    const req = (d: ImageDocument) => ({ doc: d, target, haveSourceKey: 'x' });
 
     for (const algorithm of DITHERS) {
       const result = await api.renderPreview(req(setDither({ algorithm })(doc)));
       expect(firstDifference(new Uint8Array(result.final.pixels), reference.dither.get(algorithm)!)).toBe(-1);
     }
-    const trace = await api.traceDocument({ doc, target, sourceStagePixels: removed() });
+    const trace = await api.traceDocument({ doc, target });
     expect(traceGeometry(trace)).toEqual(traceGeometry(reference.trace));
     for (const source of RELIEFS) {
       const result = await api.renderRelief(req(setDepth({ source })(doc)));
       expect(firstDifference(new Uint16Array(result.depth.heightMapBuffer), reference.relief.get(source)!)).toBe(-1);
     }
+    api.setMaskModel(null);
   });
 });

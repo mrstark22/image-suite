@@ -7,7 +7,7 @@ import { useRenderStore } from '../store/renderStore';
 import { useUIStore } from '../store/uiStore';
 import { showsRelief, traces } from './workflows';
 import { RenderScheduler } from './render-scheduler';
-import { previewTarget, sourceStageKey } from './render-target';
+import { previewTarget } from './render-target';
 import { renderReliefPreview } from './depth-shader';
 import { getPipeline, type Pipeline } from './pipeline-client';
 
@@ -26,18 +26,11 @@ const render = () => useRenderStore.getState();
 /** False while a raster export runs: renders wait for it (design section 5), and run when it ends. */
 const notExporting = () => render().exportProgress === null;
 
-/** Background removal's pixels, when they belong to the render `doc` would use now. */
-function removalFor(doc: ImageDocument): ArrayBuffer | undefined {
-  const removal = render().backgroundRemoval;
-  return removal && removal.key === sourceStageKey(doc, previewTarget(doc)) ? removal.pixels.slice(0) : undefined;
-}
-
 function renderRequest(doc: ImageDocument): DocumentRenderRequest {
   return {
     doc,
     target: previewTarget(doc),
     haveSourceKey: render().source?.key ?? null,
-    sourceStagePixels: removalFor(doc),
     // The vector job shows the image the trace reads: adjusted, not dithered (#23).
     stage: traces(useUIStore.getState().job) ? 'prepared' : 'final',
   };
@@ -69,7 +62,7 @@ export function createSchedulers(pipeline: () => Pipeline): Schedulers {
 
   // Each scheduler's `select` lists exactly what its request reads.
   const preview = new RenderScheduler({
-    select: (doc: ImageDocument) => [doc.source, doc.mmPerPx, doc.steps, render().backgroundRemoval] as const,
+    select: (doc: ImageDocument) => [doc.source, doc.mmPerPx, doc.steps] as const,
     // In the relief job the relief is shown instead.
     enabled: () => !showsRelief(ui().job) && notExporting(),
     buildRequest: renderRequest,
@@ -89,7 +82,7 @@ export function createSchedulers(pipeline: () => Pipeline): Schedulers {
   const trace = new RenderScheduler({
     // Traces the adjusted image (#23): everything before the dither.
     // What the trace reads from the document is listed once, in `traceInputsOf` (#89).
-    select: (doc: ImageDocument) => [...traceInputRefs(doc), render().traceRequest, render().backgroundRemoval],
+    select: (doc: ImageDocument) => [...traceInputRefs(doc), render().traceRequest],
     // Waits for a gesture to end, so a slider drag does not trace every step.
     // Tracing settings are in millimetres, so nothing traces until the size is set.
     enabled: () => {
@@ -105,8 +98,7 @@ export function createSchedulers(pipeline: () => Pipeline): Schedulers {
     buildRequest: (doc: ImageDocument): TraceRequest => ({
       doc,
       target: previewTarget(doc),
-      sourceStagePixels: removalFor(doc),
-    }),
+      }),
     run: async (req: TraceRequest) => {
       render().setIsTracing(true);
       try {
@@ -120,7 +112,7 @@ export function createSchedulers(pipeline: () => Pipeline): Schedulers {
   });
 
   const relief = new RenderScheduler({
-    select: (doc: ImageDocument) => [doc.source, doc.steps.rotation, doc.steps.crop, doc.depth, render().backgroundRemoval] as const,
+    select: (doc: ImageDocument) => [doc.source, doc.steps.rotation, doc.steps.crop, doc.steps.background, doc.depth] as const,
     enabled: () => showsRelief(ui().job) && notExporting(),
     buildRequest: renderRequest,
     run: withSpinner((req: DocumentRenderRequest) => pipeline().renderRelief(req)),
@@ -164,7 +156,6 @@ export function connectSchedulers(schedulers: Schedulers, pipeline: () => Pipeli
     }),
     useRenderStore.subscribe((state, prev) => {
       const changed =
-        state.backgroundRemoval !== prev.backgroundRemoval ||
         state.traceRequest !== prev.traceRequest ||
         state.autoTrace !== prev.autoTrace ||
         (state.exportProgress === null) !== (prev.exportProgress === null);
