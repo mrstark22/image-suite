@@ -226,10 +226,12 @@ describe('export progress, pausing the preview, and cancelling', () => {
   it('frees the WASM memory of the render', async () => {
     await openLabelled(800, 600);
     await exported('png');
-    const memory = (pipeline.api as unknown as { corePromise: Promise<{ wasm: { memory: WebAssembly.Memory } }> }).corePromise;
-    const pages = (await memory).wasm.memory.buffer.byteLength;
+    const instance = (pipeline.api as unknown as { instance(): Promise<{ core: { wasm: { memory: WebAssembly.Memory } } }> }).instance();
+    const pages = (await instance).core.wasm.memory.buffer.byteLength;
     // A leak of one 800 x 600 render per export would grow memory over repeated exports.
     for (let i = 0; i < 6; i++) await exported('png');
-    expect((await memory).wasm.memory.buffer.byteLength).toBe(pages);
+    expect((await instance).core.wasm.memory.buffer.byteLength).toBe(pages);
+    // The same instance throughout: nothing here is large enough to have it replaced.
+    expect(pipeline.api.instancesStarted).toBe(1);
   });
 });

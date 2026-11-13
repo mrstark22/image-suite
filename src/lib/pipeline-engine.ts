@@ -13,7 +13,14 @@ export const MAX_SOURCE_PIXELS = 150_000_000;
 
 /** Thrown when an image is larger than this device or the pipeline can hold. */
 export class TooLargeError extends Error {
-  constructor(message: string) {
+  /**
+   * `size` is the image's pixel size, when the image itself is what did not
+   * fit: the user is then offered a reduced open (#69).
+   */
+  constructor(
+    message: string,
+    public readonly size: { widthPx: number; heightPx: number } | null = null
+  ) {
     super(message);
     this.name = 'TooLargeError';
   }
@@ -61,21 +68,25 @@ export class PipelineEngine {
 
   /**
    * Reserves memory for a `width` x `height` source, to be filled with
-   * `writeSourceRows`. Releases any previous source first. Throws a
+   * `writeSourceRows`. Releases any previous source first, unless the image
+   * is over the ceiling. Throws a
    * `TooLargeError` when the image is over the ceiling or the memory cannot
    * be had.
    */
   beginSource(sourceId: string, width: number, height: number): void {
-    this.releaseSource();
+    // The ceiling is checked first: an image refused for its size alone leaves the source held untouched.
     if (width * height > MAX_SOURCE_PIXELS) {
       throw new TooLargeError(
-        `This image is ${width} × ${height} px (${megapixels(width, height)} MP). Images over ${MAX_SOURCE_PIXELS / 1e6} MP are not opened.`
+        `This image is ${width} × ${height} px (${megapixels(width, height)} MP). Images over ${MAX_SOURCE_PIXELS / 1e6} MP are not opened at full size.`,
+        { widthPx: width, heightPx: height }
       );
     }
+    this.releaseSource();
     const ptr = this.core.wasm.try_allocate(width * height * 4);
     if (!ptr) {
       throw new TooLargeError(
-        `Not enough memory on this device to open a ${width} × ${height} px image (${megapixels(width, height)} MP).`
+        `Not enough memory on this device to open a ${width} × ${height} px image (${megapixels(width, height)} MP).`,
+        { widthPx: width, heightPx: height }
       );
     }
     this.source = { sourceId, ptr, width, height };
@@ -104,6 +115,23 @@ export class PipelineEngine {
     }
     this.beginSource(sourceId, width, height);
     return { hasAlpha: this.writeSourceRows(0, new Uint8Array(rgba), height) };
+  }
+
+  /** Bytes of WASM memory the source holds; 0 without one. */
+  sourceBytes(): number {
+    return this.source ? this.source.width * this.source.height * 4 : 0;
+  }
+
+  /**
+   * A copy of the source's pixels, outside WASM memory, with its size; null
+   * without a source. For a source that has no file to decode again, when
+   * the instance is replaced (#69).
+   */
+  copySource(): { pixels: ArrayBuffer; width: number; height: number } | null {
+    const src = this.source;
+    if (!src) return null;
+    const pixels = new Uint8Array(this.core.wasm.memory.buffer, src.ptr, src.width * src.height * 4).slice().buffer;
+    return { pixels, width: src.width, height: src.height };
   }
 
   /** Frees the source and the cached render. */

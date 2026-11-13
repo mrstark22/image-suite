@@ -20,6 +20,12 @@ export interface SourceInfo {
   hasAlpha: boolean;
   /** The resolution the file claims, if it claims one. Only ever a suggestion. */
   fileDpi: number | null;
+  /**
+   * The file's own pixel size, when the image was opened smaller than that
+   * because it was too large (#69). `widthPx` and `heightPx` are the size
+   * opened; absent when the image was opened at the file's size.
+   */
+  reducedFrom?: { widthPx: number; heightPx: number };
 }
 
 /**

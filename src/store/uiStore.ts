@@ -25,6 +25,11 @@ interface UIState {
   isSizeDialogOpen: boolean;
   isTestGridDialogOpen: boolean;
   isShortcutsDialogOpen: boolean;
+  /**
+   * A file that was too large to open at its own size, with why and its
+   * size: the reduced-open dialog is shown while this is set (#69).
+   */
+  reducedOpenOffer: { file: File; message: string; widthPx: number; heightPx: number } | null;
 
   // Actions
   setJob: (job: Job) => void;
@@ -46,6 +51,7 @@ interface UIState {
   setSizeDialogOpen: (open: boolean) => void;
   setTestGridDialogOpen: (open: boolean) => void;
   setShortcutsDialogOpen: (open: boolean) => void;
+  setReducedOpenOffer: (offer: UIState['reducedOpenOffer']) => void;
 }
 
 /** Sets the theme on the page; there is no page when the store runs in tests. */
@@ -79,6 +85,7 @@ export const useUIStore = create<UIState>((set, get) => ({
   isSizeDialogOpen: false,
   isTestGridDialogOpen: false,
   isShortcutsDialogOpen: false,
+  reducedOpenOffer: null,
 
   setJob: (job) => set({ job }),
   goToStep: (step) => {
@@ -111,4 +118,5 @@ export const useUIStore = create<UIState>((set, get) => ({
   setSizeDialogOpen: (isSizeDialogOpen) => set({ isSizeDialogOpen }),
   setTestGridDialogOpen: (isTestGridDialogOpen) => set({ isTestGridDialogOpen }),
   setShortcutsDialogOpen: (isShortcutsDialogOpen) => set({ isShortcutsDialogOpen }),
+  setReducedOpenOffer: (reducedOpenOffer) => set({ reducedOpenOffer }),
 }));

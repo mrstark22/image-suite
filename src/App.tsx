@@ -5,6 +5,7 @@ import { StepInspector, StepSheet } from './components/shell/StepInspector';
 import { PreviewCanvas } from './components/canvas/PreviewCanvas';
 import { ZoomControls } from './components/canvas/ZoomControls';
 import { SizeDialog } from './components/dialogs/SizeDialog';
+import { ReducedOpenDialog } from './components/dialogs/ReducedOpenDialog';
 import { MaterialTestGridDialog } from './components/dialogs/MaterialTestGridDialog';
 import { ShortcutsDialog } from './components/dialogs/ShortcutsDialog';
 import { ErrorBanner } from './components/shared/ErrorBanner';
@@ -53,6 +54,7 @@ export const App: React.FC = () => {
         {layout === 'phone' ? <StepSheet /> : <StepInspector collapsible={layout === 'tablet'} />}
       </div>
       <SizeDialog />
+      <ReducedOpenDialog />
       <MaterialTestGridDialog isOpen={isTestGridDialogOpen} onClose={() => setTestGridDialogOpen(false)} />
       <ShortcutsDialog isOpen={isShortcutsDialogOpen} onClose={() => setShortcutsDialogOpen(false)} />
     </div>

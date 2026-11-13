@@ -245,6 +245,7 @@ export const useDocumentStore = create<DocumentState>((set, get) => {
           format: 'rgba8',
           hasAlpha: image.hasAlpha,
           fileDpi: image.fileDpi,
+          ...(image.reducedFrom ? { reducedFrom: image.reducedFrom } : {}),
         },
         mmPerPx
       );

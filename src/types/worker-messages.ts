@@ -59,6 +59,18 @@ export interface LoadedSourceInfo {
   widthPx: number;
   heightPx: number;
   hasAlpha: boolean;
+  /** The file's own pixel size, when it was opened smaller than that (#69); absent otherwise. */
+  reducedFrom?: { widthPx: number; heightPx: number };
+}
+
+/**
+ * Returned instead of a loaded source when the image itself is too large:
+ * over the ceiling, or more than this device's memory holds. It carries the
+ * image's size so the user can be offered a reduced open (#69). Other
+ * failures are thrown.
+ */
+export interface SourceRefusal {
+  refused: { message: string; widthPx: number; heightPx: number };
 }
 
 export interface ProcessDepthPayload {

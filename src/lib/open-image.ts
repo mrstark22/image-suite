@@ -2,7 +2,8 @@ import { useDocumentStore, hasUnsavedEdits } from '../store/documentStore';
 import { useRenderStore } from '../store/renderStore';
 import { useUIStore } from '../store/uiStore';
 import { usePreferencesStore } from '../store/preferencesStore';
-import type { LoadedSource } from './image-loader';
+import { decodeImageFile, SourceRefusedError, type LoadedSource } from './image-loader';
+import type { PixelSize } from './reduced-open';
 
 /** Message shown when more than one file is dropped or chosen at once. */
 export function ignoredFilesMessage(openedName: string, ignoredCount: number): string {
@@ -26,13 +27,38 @@ export async function openImageFiles(
   if (hasUnsavedEdits() && !confirmReplace()) return;
 
   const [first] = files;
-  await useDocumentStore.getState().load(first, decode);
+  try {
+    await useDocumentStore.getState().load(first, decode);
+  } catch (err) {
+    // Too large to open at its own size: say why and offer a smaller one (#69).
+    // The image that was open stays open.
+    if (!(err instanceof SourceRefusedError)) throw err;
+    useUIStore.getState().setReducedOpenOffer({ file: err.file, message: err.message, ...err.size });
+    return;
+  }
   if (useDocumentStore.getState().doc?.mmPerPx === null) {
     useUIStore.getState().setSizeDialogOpen(true);
   }
 
   if (files.length > 1) {
     useRenderStore.getState().setErrorMessage(ignoredFilesMessage(first.name, files.length - 1));
+  }
+}
+
+/**
+ * Opens `file` at `size`, smaller than the file's own: the choice made in
+ * the reduced-open dialog (#69). The document records both sizes. Size is
+ * the first step, as for any image.
+ */
+export async function openImageReduced(
+  file: File,
+  size: PixelSize,
+  decode: (file: File, sourceId: string, reduceTo: PixelSize) => Promise<LoadedSource> = (f, sourceId, reduceTo) =>
+    decodeImageFile(f, sourceId, undefined, reduceTo)
+): Promise<void> {
+  await useDocumentStore.getState().load(file, (f, sourceId) => decode(f, sourceId, size));
+  if (useDocumentStore.getState().doc?.mmPerPx === null) {
+    useUIStore.getState().setSizeDialogOpen(true);
   }
 }
 

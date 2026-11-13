@@ -10,13 +10,15 @@ import type {
   RasterExport,
   RasterFormat,
   ReliefRenderResult,
+  SourceRefusal,
   SourceStage,
   TraceRequest,
 } from '../types/worker-messages';
 import type { VectorResult } from '../types/vector';
 import type { DepthResult } from '../types/depth';
 import { removeBackground } from '../lib/bg-removal';
-import { PipelineEngine } from '../lib/pipeline-engine';
+import { PipelineEngine, TooLargeError } from '../lib/pipeline-engine';
+import type { PixelSize } from '../lib/reduced-open';
 import { exportPlan, previewTarget, sameTarget, sourceStageKey } from '../lib/render-target';
 import { cropRectOf } from '../lib/document-size';
 import { encodeRaster } from '../lib/raster-encode';
@@ -65,12 +67,54 @@ export class ExportCancelledError extends Error {
   }
 }
 
-/** Decodes an image file into a pipeline engine. Provided by the browser worker; absent in Node. */
-export type FileDecoder = (engine: PipelineEngine, sourceId: string, file: File) => Promise<LoadedSourceInfo>;
+/**
+ * Decodes an image file into a pipeline engine, at the file's own size or
+ * reduced to `reduceTo`. Provided by the browser worker; absent in Node.
+ */
+export type FileDecoder = (
+  engine: PipelineEngine,
+  sourceId: string,
+  file: File,
+  reduceTo: PixelSize | null
+) => Promise<LoadedSourceInfo>;
+
+/** Message of the error a request gets when the engine stopped under it and was replaced. */
+export const ENGINE_RESTARTED_ERROR =
+  'The image engine stopped while processing and has been restarted. Try again; if it keeps happening, the image may be too large for this device.';
+
+/**
+ * WASM memory a run may leave above the steady state before the instance is
+ * replaced to give it back (design section 5).
+ */
+export const RESET_ABOVE_BYTES = 256 * 1024 * 1024;
+
+/**
+ * What the worker keeps in WASM memory between runs besides the source: the
+ * cached preview-sized `source` stage and a working copy of it.
+ */
+const PREVIEW_BYTES = 2 * 2048 * 2048 * 4;
+
+/** Where the source held came from, so it can be loaded again into a new instance. */
+interface SourceOrigin {
+  sourceId: string;
+  /** The file it was decoded from; null for generated pixels, which are copied across instead. */
+  file: File | null;
+  reduceTo: PixelSize | null;
+}
+
+interface Instance {
+  core: RustWasmEngine;
+  engine: PipelineEngine;
+  /** WASM memory of the instance when new, before it held anything. */
+  baselineBytes: number;
+}
 
 export class PipelineWorkerApi {
-  private corePromise: Promise<RustWasmEngine> | null = null;
-  private enginePromise: Promise<PipelineEngine> | null = null;
+  private instancePromise: Promise<Instance> | null = null;
+  /** The instance requests run on now; a stopped or replaced one is no longer it. */
+  private current: Instance | null = null;
+  private origin: SourceOrigin | null = null;
+  private started = 0;
   /** Loads and releases run one at a time, in the order they were asked for. */
   private sourceQueue: Promise<unknown> = Promise.resolve();
   /** Settles when no export is running. Renders wait for it (design section 5). */
@@ -80,25 +124,99 @@ export class PipelineWorkerApi {
 
   constructor(
     private readonly loadCore: () => Promise<RustWasmEngine>,
-    private readonly decodeFileInto: FileDecoder | null = null
+    private readonly decodeFileInto: FileDecoder | null = null,
+    /** Memory a run may leave above the steady state before the instance is replaced. */
+    private readonly resetAboveBytes: number = RESET_ABOVE_BYTES
   ) {
     // Start loading straight away so the first request does not wait for it.
-    void this.core().catch(() => {
+    void this.instance().catch(() => {
       // Reported to the caller on the first request.
     });
   }
 
-  /** The WebAssembly core, or the error that it failed to load. */
-  private core(): Promise<RustWasmEngine> {
-    this.corePromise ??= this.loadCore().catch(() => {
-      throw new Error(ENGINE_LOAD_ERROR);
-    });
-    return this.corePromise;
+  /** How many WebAssembly instances have been started: 1 until one is replaced. */
+  public get instancesStarted(): number {
+    return this.started;
   }
 
-  private engine(): Promise<PipelineEngine> {
-    this.enginePromise ??= this.core().then((core) => new PipelineEngine(core));
-    return this.enginePromise;
+  /** The instance in use, or the error that the module failed to load. */
+  private instance(): Promise<Instance> {
+    this.instancePromise ??= this.startInstance(null);
+    return this.instancePromise;
+  }
+
+  /** Instantiates the module and, with `restore`, loads the source into it before anything else runs. */
+  private async startInstance(restore: ((engine: PipelineEngine) => Promise<void>) | null): Promise<Instance> {
+    const core = await this.loadCore().catch(() => {
+      throw new Error(ENGINE_LOAD_ERROR);
+    });
+    this.started++;
+    const instance: Instance = {
+      core,
+      engine: new PipelineEngine(core),
+      baselineBytes: core.wasm.memory.buffer.byteLength,
+    };
+    if (restore) await restore(instance.engine);
+    this.current = instance;
+    return instance;
+  }
+
+  /**
+   * Replaces the instance with a new one holding the same source (design
+   * section 5, #69). WASM memory never shrinks and a trap leaves an instance
+   * unusable, so this is how memory is given back and how the worker
+   * recovers. The source is decoded again from its file; generated pixels,
+   * which have no file, are copied across. Requests made meanwhile wait for
+   * the new instance. The preview cache refills on the next render.
+   */
+  private restart(): void {
+    const origin = this.origin;
+    const previous = this.current;
+    this.current = null;
+    // A stopped instance's memory can still be read, and the source is only ever read by a run.
+    const kept = origin && !origin.file && previous?.engine.hasSource(origin.sourceId) ? previous.engine.copySource() : null;
+    this.instancePromise = this.startInstance(async (engine) => {
+      if (!origin) return;
+      try {
+        if (origin.file && this.decodeFileInto) {
+          await this.decodeFileInto(engine, origin.sourceId, origin.file, origin.reduceTo);
+        } else if (kept) {
+          engine.putSource(origin.sourceId, kept.pixels, kept.width, kept.height);
+        } else {
+          this.origin = null;
+        }
+      } catch {
+        // The instance is usable; renders report that the image must be opened again.
+        this.origin = null;
+      }
+    });
+    void this.instancePromise.catch(() => undefined);
+  }
+
+  /**
+   * Runs `op` on the instance in use. A trap inside it (an out-of-memory
+   * abort, a panic) replaces the instance and fails this request with
+   * `ENGINE_RESTARTED_ERROR`; the next request runs on the new one. A run
+   * that left WASM memory far above the steady state replaces the instance
+   * too, after its result is out.
+   */
+  private async guarded<T>(op: (instance: Instance) => T | Promise<T>): Promise<T> {
+    const instance = await this.instance();
+    let result: T;
+    try {
+      result = await op(instance);
+    } catch (err) {
+      if (err instanceof WebAssembly.RuntimeError) {
+        if (this.current === instance) this.restart();
+        throw new Error(ENGINE_RESTARTED_ERROR, { cause: err });
+      }
+      throw err;
+    }
+    const steady = instance.baselineBytes + instance.engine.sourceBytes() + PREVIEW_BYTES;
+    if (this.current === instance && instance.core.wasm.memory.buffer.byteLength > steady + this.resetAboveBytes) {
+      this.restart();
+    }
+    return result;
   }
 
   /** Runs `op` after every load or release asked for before it. */
@@ -108,49 +226,100 @@ export class PipelineWorkerApi {
     return result;
   }
 
-  /** Decodes `file` in strips straight into WASM memory as the source `sourceId`. */
-  public decodeFile(sourceId: string, file: File): Promise<LoadedSourceInfo> {
-    return this.queued(async () => {
-      if (!this.decodeFileInto) throw new Error('This environment cannot decode image files.');
-      return this.decodeFileInto(await this.engine(), sourceId, file);
-    });
+  /**
+   * Decodes `file` in strips straight into WASM memory as the source
+   * `sourceId`, at its own size or reduced to `reduceTo`.
+   *
+   * An image that is itself too large (over the ceiling, or more than this
+   * device's memory holds) is not an error to report and forget: a
+   * `SourceRefusal` with its size is returned, so the user can be offered a
+   * reduced open, and the source held before is kept (#69).
+   */
+  public decodeFile(
+    sourceId: string,
+    file: File,
+    reduceTo: PixelSize | null = null
+  ): Promise<LoadedSourceInfo | SourceRefusal> {
+    return this.queued(() =>
+      this.guarded(async ({ engine }) => {
+        const decode = this.decodeFileInto;
+        if (!decode) throw new Error('This environment cannot decode image files.');
+        const before = this.origin;
+        // Generated pixels have no file to decode again if this load is refused.
+        const kept = before && !before.file && engine.hasSource(before.sourceId) ? engine.copySource() : null;
+        try {
+          const info = await decode(engine, sourceId, file, reduceTo);
+          this.origin = { sourceId, file, reduceTo };
+          return info;
+        } catch (err) {
+          // The failed load released the source held before: put it back, so
+          // the document still open keeps rendering.
+          this.origin = null;
+          if (before && !engine.hasSource(before.sourceId)) {
+            try {
+              if (before.file) await decode(engine, before.sourceId, before.file, before.reduceTo);
+              else if (kept) engine.putSource(before.sourceId, kept.pixels, kept.width, kept.height);
+              if (engine.hasSource(before.sourceId)) this.origin = before;
+            } catch {
+              // Reported by the next render: the image must be opened again.
+            }
+          } else if (before) {
+            this.origin = before;
+          }
+          if (err instanceof TooLargeError && err.size) return { refused: { message: err.message, ...err.size } };
+          throw err;
+        }
+      })
+    );
   }
 
   /** Holds already decoded RGBA8 pixels as the source `sourceId` (a generated test grid). */
   public putSource(sourceId: string, rgba: ArrayBuffer, width: number, height: number): Promise<LoadedSourceInfo> {
-    return this.queued(async () => {
-      const { hasAlpha } = (await this.engine()).putSource(sourceId, rgba, width, height);
-      return { widthPx: width, heightPx: height, hasAlpha };
-    });
+    return this.queued(() =>
+      this.guarded(({ engine }) => {
+        this.origin = null;
+        const { hasAlpha } = engine.putSource(sourceId, rgba, width, height);
+        this.origin = { sourceId, file: null, reduceTo: null };
+        return { widthPx: width, heightPx: height, hasAlpha };
+      })
+    );
   }
 
   /** Frees the source. */
   public releaseSource(): Promise<void> {
-    return this.queued(async () => (await this.engine()).releaseSource());
+    return this.queued(() =>
+      this.guarded(({ engine }) => {
+        this.origin = null;
+        engine.releaseSource();
+      })
+    );
   }
 
   /** Renders the preview: the `final` stage at the request's target. */
   public async renderPreview(req: DocumentRenderRequest): Promise<PreviewRenderResult> {
     await this.exportIdle;
-    const engine = await this.engine();
-    const start = performance.now();
-    const options = { cache: true, sourceStagePixels: req.sourceStagePixels };
-    const final = engine.render(req.doc, req.target, req.stage ?? 'final', options);
-    const result: PreviewRenderResult = {
-      key: sourceStageKey(req.doc, req.target),
-      final,
-      sourceStage: this.sourceStageFor(engine, req),
-      durationMs: performance.now() - start,
-    };
-    return Comlink.transfer(result, transferables(final.pixels, result.sourceStage));
+    return this.guarded(({ engine }) => {
+      const start = performance.now();
+      const options = { cache: true, sourceStagePixels: req.sourceStagePixels };
+      const final = engine.render(req.doc, req.target, req.stage ?? 'final', options);
+      const result: PreviewRenderResult = {
+        key: sourceStageKey(req.doc, req.target),
+        final,
+        sourceStage: this.sourceStageFor(engine, req),
+        durationMs: performance.now() - start,
+      };
+      return Comlink.transfer(result, transferables(final.pixels, result.sourceStage));
+    });
   }
 
   /** Renders the relief heightmap from the `source` stage at the request's target. */
   public async renderRelief(req: DocumentRenderRequest): Promise<ReliefRenderResult> {
     await this.exportIdle;
-    const engine = await this.engine();
     const start = performance.now();
-    const source = engine.render(req.doc, req.target, 'source', { cache: true, sourceStagePixels: req.sourceStagePixels });
+    const { source, sourceStage } = await this.guarded(({ engine }) => ({
+      source: engine.render(req.doc, req.target, 'source', { cache: true, sourceStagePixels: req.sourceStagePixels }),
+      sourceStage: this.sourceStageFor(engine, req),
+    }));
     const depth = await this.processDepth({
       buffer: source.pixels,
       width: req.target.widthPx,
@@ -160,7 +329,7 @@ export class PipelineWorkerApi {
     const result: ReliefRenderResult = {
       key: sourceStageKey(req.doc, req.target),
       depth,
-      sourceStage: this.sourceStageFor(engine, req),
+      sourceStage,
       durationMs: performance.now() - start,
     };
     return Comlink.transfer(result, transferables(depth.heightMapBuffer, result.sourceStage));
@@ -175,18 +344,18 @@ export class PipelineWorkerApi {
    */
   public async traceDocument(req: TraceRequest): Promise<VectorResult> {
     await this.exportIdle;
-    const engine = await this.engine();
-    const core = await this.core();
     // The preview's target shares the cached source stage; a full-resolution
     // export trace renders its own and frees it, leaving the cache alone.
     const options = {
       cache: sameTarget(req.target, previewTarget(req.doc)),
       sourceStagePixels: req.sourceStagePixels,
     };
-    return engine.renderWith(req.doc, req.target, 'prepared', options, (ptr, pxPerMm) => {
-      if (pxPerMm === null) throw new Error('Set the size of the image before tracing.');
-      return core.traceAt(ptr, req.target.widthPx, req.target.heightPx, pxPerMm, req.doc.vector);
-    });
+    return this.guarded(({ engine, core }) =>
+      engine.renderWith(req.doc, req.target, 'prepared', options, (ptr, pxPerMm) => {
+        if (pxPerMm === null) throw new Error('Set the size of the image before tracing.');
+        return core.traceAt(ptr, req.target.widthPx, req.target.heightPx, pxPerMm, req.doc.vector);
+      })
+    );
   }
 
   /**
@@ -216,24 +385,25 @@ export class PipelineWorkerApi {
   ): Promise<RasterExport> {
     const plan = exportPlan(doc);
     this.cancelRequested = false;
-    const run = this.queued(async () => {
-      const engine = await this.engine();
-      const boundary = async (progress: ExportProgress) => {
-        await onProgress?.(progress);
-        if (this.cancelRequested) throw new ExportCancelledError();
-      };
-      const file = await engine.renderInPlace(
-        doc,
-        plan.target,
-        'final',
-        (pixels) =>
-          encodeRaster(format, pixels, plan.target.widthPx, plan.target.heightPx, plan.pxPerMm, (fraction) =>
-            boundary({ stage: 'encoding', fraction })
-          ),
-        (stage) => boundary({ stage, fraction: 0 })
-      );
-      return Comlink.transfer(file, [file.bytes]);
-    });
+    const run = this.queued(() =>
+      this.guarded(async ({ engine }) => {
+        const boundary = async (progress: ExportProgress) => {
+          await onProgress?.(progress);
+          if (this.cancelRequested) throw new ExportCancelledError();
+        };
+        const file = await engine.renderInPlace(
+          doc,
+          plan.target,
+          'final',
+          (pixels) =>
+            encodeRaster(format, pixels, plan.target.widthPx, plan.target.heightPx, plan.pxPerMm, (fraction) =>
+              boundary({ stage: 'encoding', fraction })
+            ),
+          (stage) => boundary({ stage, fraction: 0 })
+        );
+        return Comlink.transfer(file, [file.bytes]);
+      })
+    );
     this.exportIdle = run.catch(() => undefined);
     return run;
   }
@@ -328,8 +498,7 @@ export class PipelineWorkerApi {
     }
 
     // 2. Rust WASM depth engine (distance-transform bevels, tonal relief, smoothing)
-    const core = await this.core();
-    const wasmResult = core.processDepth(buffer, width, height, config);
+    const wasmResult = await this.guarded(({ core }) => core.processDepth(buffer, width, height, config));
     return Comlink.transfer(wasmResult, [wasmResult.heightMapBuffer]);
   }
 
