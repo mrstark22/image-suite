@@ -75,6 +75,36 @@ describe('Machines & Materials', () => {
     expect(accessibleName(chip(root))).toMatch(/^No material chosen/);
   });
 
+  it('a category can be made right where it is chosen: "New category…" in a new material\'s Category list', async () => {
+    const root = mounted!.container;
+    click(button(root, /^Add a material$/));
+    // With no categories yet, the list still offers a way to make one.
+    const category = () => control<HTMLSelectElement>(dialog(), 'Category');
+    expect([...category().options].map((o) => o.text)).toEqual(['No category', 'New category…']);
+    type(control(dialog(), 'Name'), 'White oak');
+    choose(category(), [...category().options].find((o) => o.text === 'New category…')!.value);
+    // Saving without a name for it says so and saves nothing.
+    await settle(() => click(button(dialog(), /^Add material$/)));
+    expect(dialog().textContent).toContain('Give the new category a name');
+    expect(live(useProfilesStore.getState().data.materials)).toHaveLength(0);
+    type(control(dialog(), 'New category name'), 'Hardwoods');
+    await settle(() => click(button(dialog(), /^Add material$/)));
+    const data = useProfilesStore.getState().data;
+    const hardwoods = live(data.categories);
+    expect(hardwoods.map((c) => c.name)).toEqual(['Hardwoods']);
+    expect(live(data.materials)[0]).toMatchObject({ name: 'White oak', categoryId: hardwoods[0].id });
+
+    // A second material typed into the same new-category name joins it; no duplicate is made.
+    click(button(dialog(), /^New material$/));
+    type(control(dialog(), 'Name'), 'Red oak');
+    choose(category(), [...category().options].find((o) => o.text === 'New category…')!.value);
+    type(control(dialog(), 'New category name'), 'hardwoods');
+    await settle(() => click(button(dialog(), /^Add material$/)));
+    const after = useProfilesStore.getState().data;
+    expect(live(after.categories)).toHaveLength(1);
+    expect(live(after.materials).map((m) => m.categoryId)).toEqual([hardwoods[0].id, hardwoods[0].id]);
+  });
+
   it('add a machine, a category and a material with a thickness; select them; enter a calibration; see it load', async () => {
     const root = mounted!.container;
     // Machine, from the selector's Manage entry.
