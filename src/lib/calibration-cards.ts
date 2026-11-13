@@ -442,12 +442,17 @@ export function renderText(text: string, heightMm: number, ppm: number): Raster 
  * lettering in black, and a cut card's squares as thin outlines (on screen
  * only; a cut card is cut from its SVG or LightBurn project).
  */
-export function renderCard(spec: CardSpec, ppm: number = pxPerMmOf(spec)): Raster {
+export function renderCard(spec: CardSpec, ppm: number = pxPerMmOf(spec), options: { screen?: boolean } = {}): Raster {
   const layout = cardLayout(spec);
   const r = blank(Math.round(layout.widthMm * ppm), Math.round(layout.heightMm * ppm));
   for (const box of layout.cells) {
-    if (box.cell.role === 'ramp') spec.levels.forEach((l, i) => fillRect(r, ppm, box.x + i * spec.stepMm, box.y, spec.stepMm, box.h, greyOf(l)));
-    else if (box.cell.role === 'min-power') fillRect(r, ppm, box.x, box.y, box.w, box.h, 0);
+    if (box.cell.role === 'ramp') {
+      // On screen only, a light frame shows where the bare (white) steps are.
+      if (options.screen) fillRect(r, ppm, box.x - 1 / ppm, box.y - 1 / ppm, box.w + 2 / ppm, box.h + 2 / ppm, 200);
+      spec.levels.forEach((l, i) => fillRect(r, ppm, box.x + i * spec.stepMm, box.y, spec.stepMm, box.h, greyOf(l)));
+      continue;
+    }
+    if (box.cell.role === 'min-power') fillRect(r, ppm, box.x, box.y, box.w, box.h, 0);
     else {
       const line = Math.max(0.2, 1 / ppm);
       fillRect(r, ppm, box.x, box.y, box.w, line, 0);

@@ -657,7 +657,7 @@ const RUN_TIME_STYLES: Record<string, RegExp[]> = {
   // The crop box, and the four dimmed areas around it, follow the crop being drawn.
   'src/components/canvas/CanvasCropOverlay.tsx': [CROP_GEOMETRY],
   // A calibration card is drawn in its own proportions, or at its size in mm (#40).
-  'src/components/dialogs/CardPicture.tsx': [/^style=\{\{ aspectRatio: `\$\{layout\.widthMm\} \/ \$\{layout\.heightMm\}`, \.\.\.\(realSize \? \{ width: `\$\{layout\.widthMm\}mm` \} : \{\}\) \}\}$/],
+  'src/components/dialogs/CardPicture.tsx': [/^style=\{\{ aspectRatio: `\$\{layout\.widthMm\} \/ \$\{layout\.heightMm\}`, width: realSize \? `\$\{layout\.widthMm\}mm` : `min\(100%, \$\{fitHeightVh\(layout\)\}vh\)` \}\}$/],
   // The controls over a card's cells sit where the cells are; a layer's swatch is its LightBurn colour.
   'src/components/dialogs/CalibrateDialog.tsx': [/^style=\{placeAt\(layout, /, /^style=\{\{ background: r\.colour \}\}$/],
 };

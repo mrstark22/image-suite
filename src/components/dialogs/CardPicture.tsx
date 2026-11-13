@@ -15,6 +15,9 @@ interface Props {
   label: string;
 }
 
+/** At fit size, a card is at most half the window's height tall, so what follows it stays in view. */
+const fitHeightVh = (layout: CardLayout) => ((50 * layout.widthMm) / layout.heightMm).toFixed(1);
+
 /** Positions a control over the picture at a box given in mm. */
 export function placeAt(layout: CardLayout, x: number, y: number, w: number, h: number): React.CSSProperties {
   return {
@@ -36,7 +39,7 @@ export const CardPicture: React.FC<Props> = ({ spec, realSize = false, children,
   useEffect(() => {
     const el = canvas.current;
     if (!el) return;
-    const r = renderCard(spec, SCREEN_PPM);
+    const r = renderCard(spec, SCREEN_PPM, { screen: true });
     el.width = r.width;
     el.height = r.height;
     const ctx = el.getContext('2d');
@@ -46,7 +49,7 @@ export const CardPicture: React.FC<Props> = ({ spec, realSize = false, children,
 
   return (
     <div className={`${styles.pictureScroll} ${realSize ? styles.pictureReal : ''}`}>
-      <div className={styles.picture} style={{ aspectRatio: `${layout.widthMm} / ${layout.heightMm}`, ...(realSize ? { width: `${layout.widthMm}mm` } : {}) }}>
+      <div className={styles.picture} style={{ aspectRatio: `${layout.widthMm} / ${layout.heightMm}`, width: realSize ? `${layout.widthMm}mm` : `min(100%, ${fitHeightVh(layout)}vh)` }}>
         <canvas ref={canvas} className={styles.pictureCanvas} role="img" aria-label={label} />
         {children?.(layout)}
       </div>

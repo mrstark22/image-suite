@@ -200,12 +200,13 @@ export const CalibrateDialog: React.FC = () => {
 
   const pending = machine && material ? cardsFor(data, machine.id, material.id).filter((c) => c.readAt === null) : [];
 
-  // Steps
+  // Steps. Footer buttons carry keys: a button is never reused for the next
+  // step's button, so the click that moves on cannot also submit the results.
 
   let body: React.ReactNode;
   let footer: React.ReactNode;
   const back = (to: Step) => (
-    <Button compact onClick={() => { setError(null); setStep(to); }} icon={<ArrowLeft size={14} />}>
+    <Button key={`back-${to}`} compact onClick={() => { setError(null); setStep(to); }} icon={<ArrowLeft size={14} />}>
       Back
     </Button>
   );
@@ -240,6 +241,7 @@ export const CalibrateDialog: React.FC = () => {
             </select>
           </label>
         </div>
+        {groups.length > 0 && !material && <StatusMessage tone="info">Choose the material the card will be burned on. A calibration belongs to one machine and one material.</StatusMessage>}
         {groups.length === 0 && (
           <StatusMessage tone="info">
             A calibration belongs to one material. <Button variant="link" onClick={() => { close(); openManager({ tab: 'materials', id: null }); }}>Add a material</Button>
@@ -308,8 +310,8 @@ export const CalibrateDialog: React.FC = () => {
     );
     footer = (
       <>
-        <Button compact onClick={close}>Cancel</Button>
-        <Button compact variant="primary" disabled={!canGo} onClick={() => { setRangeText({}); setStep('settings'); }}>
+        <Button key="cancel" compact onClick={close}>Cancel</Button>
+        <Button key="to-settings" compact variant="primary" disabled={!canGo} onClick={() => { setRangeText({}); setStep('settings'); }}>
           Next: settings
         </Button>
       </>
@@ -365,7 +367,7 @@ export const CalibrateDialog: React.FC = () => {
     footer = (
       <>
         {back('choose')}
-        <Button compact variant="primary" disabled={!ready} onClick={() => { if (typeof draft !== 'string') { setSpec(draft); setStep('card'); } }}>
+        <Button key="to-card" compact variant="primary" disabled={!ready} onClick={() => { if (typeof draft !== 'string') { setSpec(draft); setStep('card'); } }}>
           Next: preview card
         </Button>
       </>
@@ -375,7 +377,7 @@ export const CalibrateDialog: React.FC = () => {
     footer = (
       <>
         {back('settings')}
-        <Button compact variant="primary" icon={<Target size={14} />} onClick={() => { void storeCard(spec); setStep('results'); }}>
+        <Button key="to-results" compact variant="primary" icon={<Target size={14} />} onClick={() => { void storeCard(spec); setStep('results'); }}>
           I burned it: enter results
         </Button>
       </>
@@ -399,8 +401,8 @@ export const CalibrateDialog: React.FC = () => {
     );
     footer = (
       <>
-        <Button compact onClick={close}>Later</Button>
-        <Button compact variant="primary" type="submit" form="card-results" icon={<Check size={14} />}>
+        <Button key="later" compact onClick={close}>Later</Button>
+        <Button key="save" compact variant="primary" type="submit" form="card-results" icon={<Check size={14} />}>
           Save calibration
         </Button>
       </>
@@ -420,7 +422,7 @@ export const CalibrateDialog: React.FC = () => {
       </div>
     );
     footer = (
-      <Button compact variant="primary" onClick={close}>
+      <Button key="done" compact variant="primary" onClick={close}>
         Done
       </Button>
     );
@@ -640,7 +642,7 @@ type SaveFn = (apply: (d: ProfileData) => ProfileData, text: string) => Promise<
 const ResultsStep: React.FC<{ spec: CardSpec; data: ProfileData; error: string | null; onError: (e: string | null) => void; onSave: SaveFn }> = ({ spec, data, error, onError, onSave }) => {
   const machine = machineOf(data, spec.machineId);
   const material = materialOf(data, spec.materialId);
-  const what = `${KIND_LABEL[CARD_CALIBRATION[spec.kind]].toLowerCase()} calibration for ${spec.materialName}${spec.thicknessMm !== null ? ` ${formatMm(spec.thicknessMm)}` : ''} on ${spec.machineName}`;
+  const what = `${KIND_LABEL[CARD_CALIBRATION[spec.kind]].replace(/^E|^C/, (c) => c.toLowerCase())} calibration for ${spec.materialName}${spec.thicknessMm !== null ? ` ${formatMm(spec.thicknessMm)}` : ''} on ${spec.machineName}`;
   const existing = findCalibration(data, cardKey(spec));
   const submit = (fn: () => { apply: (d: ProfileData) => ProfileData; text: string }) => (e: React.FormEvent) => {
     e.preventDefault();
@@ -888,7 +890,7 @@ const ReliefResults: React.FC<ResultProps> = ({ spec, header, error, submit }) =
       </div>
       {finder.length > 0 && (
         <p className={styles.muted}>
-          {firstMark === null ? 'Optional: tap the first of the small squares (lowest power first) that left a mark. It is saved as the machine’s minimum power.' : `The tube marks from ${spec.cells[firstMark].powerPct}%: saved to ${spec.machineName}.`}
+          {firstMark === null ? 'Optional: tap the first of the small squares (lowest power first) that left a mark. It is saved as the machine’s minimum power.' : `The tube marks from ${spec.cells[firstMark].powerPct}%: saved to ${spec.machineName} as its lowest reliable power when you save.`}
         </p>
       )}
       {preview && <DepthPlot curve={preview.depthCurve} adjusted={preview.adjusted} />}
