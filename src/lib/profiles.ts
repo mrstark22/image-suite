@@ -476,7 +476,7 @@ export const JOB_CALIBRATION: Record<Job, CalibrationKind> = { photo: 'engrave',
  */
 export function noCalibrationText(kind: CalibrationKind, machine: { name: string } | null, material: { name: string } | null, thickness: { mm: number } | null): string {
   if (!machine) return 'Choose a machine to use a calibration.';
-  if (!material) return `No material chosen, so no calibration is used on ${machine.name}.`;
+  if (!material) return 'No material chosen: no calibration in use.';
   if (kind === 'cut' && !thickness) return `Choose a thickness of ${material.name} to use its cutting calibration.`;
   const what = kind === 'cut' && thickness ? `${material.name} ${formatMm(thickness.mm)}` : material.name;
   return `No ${KIND_LABEL[kind].toLowerCase()} calibration yet for ${what} on ${machine.name}.`;

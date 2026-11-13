@@ -930,9 +930,16 @@ export const ProfilesDialog: React.FC = () => {
             <p className={styles.detailSub}>{material ? (data.categories.find((c) => c.id === material.categoryId && !c.deleted)?.name ?? 'No category') : 'One specific material: white oak and red oak are two.'}</p>
           </div>
         </div>
-        <MaterialForm key={materialId} data={data} id={materialId} onSaved={setMaterialSel} onDelete={() => askDeleteMaterial(materialId)} />
-        {material && <Thicknesses data={data} materialId={material.id} askDelete={askDeleteThickness} />}
         {material && <CalibrationList data={data} materialId={material.id} onEdit={setCalKey} />}
+        {material && <Thicknesses data={data} materialId={material.id} askDelete={askDeleteThickness} />}
+        {material ? (
+          <section className={styles.block} aria-label="Details">
+            <h4 className={styles.blockTitle}>Details</h4>
+            <MaterialForm key={materialId} data={data} id={materialId} onSaved={setMaterialSel} onDelete={() => askDeleteMaterial(materialId)} />
+          </section>
+        ) : (
+          <MaterialForm key={materialId} data={data} id={materialId} onSaved={setMaterialSel} onDelete={() => askDeleteMaterial(materialId)} />
+        )}
       </div>
     );
   } else {

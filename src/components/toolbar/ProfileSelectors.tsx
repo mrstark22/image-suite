@@ -26,7 +26,7 @@ export const ProfileSelectors: React.FC = () => {
   const thicknesses = activeThicknesses(profiles);
 
   const status = calibration
-    ? `${KIND_LABEL[kind]} calibration${calibration.status === 'unverified' ? ': copied, not yet verified' : ''}`
+    ? `${KIND_LABEL[kind]} calibration in use${calibration.status === 'unverified' ? ' (copied, not yet verified)' : ''}`
     : noCalibrationText(kind, machine, material, thickness);
   const statusTone = calibration ? (calibration.status === 'verified' ? styles.calOk : styles.calWarn) : styles.calNone;
 
@@ -103,7 +103,7 @@ export const ProfileSelectors: React.FC = () => {
 
       <button
         type="button"
-        className={`${styles.calChip} ${statusTone}`}
+        className={`${styles.calChip} ${statusTone} ${material ? '' : styles.calIdle}`}
         title={`${status} Open Machines & Materials.`}
         aria-label={`${status} Open Machines & Materials.`}
         onClick={() => openManager(material ? { tab: 'materials', id: material.id } : { tab: machine ? 'materials' : 'machines', id: null })}

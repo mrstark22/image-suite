@@ -368,6 +368,11 @@
     row-gap: var(--space-1);
   }
 
+  /* With no material there is nothing to report that the selectors do not show. */
+  .calIdle {
+    display: none;
+  }
+
   .calChip {
     order: 10;
     width: 100%;

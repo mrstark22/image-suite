@@ -467,6 +467,12 @@
   flex-wrap: wrap;
 }
 
+/* The shared Select pads its own bottom; in these rows the gap does the spacing. */
+.grid > div,
+.inline > div {
+  padding-bottom: 0;
+}
+
 .inline > div {
   flex: 1;
   min-width: 120px;
