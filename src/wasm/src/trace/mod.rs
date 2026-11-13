@@ -103,6 +103,9 @@ pub struct TraceResult {
     pub layers: Vec<TracedLayer>,
     /// The colours found or given, for a colour trace.
     pub palette: Vec<[u8; 3]>,
+    /// Black and white: the grey level that separated artwork from
+    /// background, and whether the lighter side was traced. `None` in colour.
+    pub threshold: Option<(f32, bool)>,
 }
 
 struct LayerParams {
@@ -153,11 +156,21 @@ pub fn trace(rgba: &[u8], w: usize, h: usize, cfg: &TraceConfig) -> TraceResult 
 
     let mut layers = Vec::new();
     let mut palette = Vec::new();
+    let mut threshold = None;
     // For a cutline: the largest field value of any traced layer, positive
     // inside any traced shape. Not held when there is no cutline.
     let mut union: Option<Vec<f32>> = (cfg.cutline_mm > 0.0).then(|| vec![f32::MIN; w * h]);
     if !cfg.colour {
-        let mut field = prep::mono_field(img, w, h, cfg.threshold, cfg.invert);
+        // A negative threshold asks for the automatic one (`prep::auto_threshold`),
+        // which also finds which side is the artwork; `invert` then swaps it.
+        let (level, light_ink) = if cfg.threshold < 0.0 {
+            let (level, light_artwork) = prep::auto_threshold(img, w, h);
+            (level, light_artwork != cfg.invert)
+        } else {
+            (cfg.threshold, cfg.invert)
+        };
+        threshold = Some((level, light_ink));
+        let mut field = prep::mono_field(img, w, h, level, light_ink);
         let paths = trace_layer(&mut field, w, h, &params, union.as_deref_mut());
         drop(field);
         layers.push(TracedLayer {
@@ -272,6 +285,7 @@ pub fn trace(rgba: &[u8], w: usize, h: usize, cfg: &TraceConfig) -> TraceResult 
         height: h,
         layers,
         palette,
+        threshold,
     }
 }
 
@@ -703,11 +717,11 @@ fn hex(rgb: [u8; 3]) -> String {
 /// The result as JSON, read by `src/wasm/wasm-bridge.ts`.
 pub fn to_json(r: &TraceResult) -> String {
     let mut j = String::with_capacity(4096);
-    let _ = write!(
-        j,
-        "{{\"width\":{},\"height\":{},\"palette\":[",
-        r.width, r.height
-    );
+    let _ = write!(j, "{{\"width\":{},\"height\":{},", r.width, r.height);
+    if let Some((level, light)) = r.threshold {
+        let _ = write!(j, "\"threshold\":{:.1},\"lightInk\":{},", level, light);
+    }
+    j.push_str("\"palette\":[");
     for (i, c) in r.palette.iter().enumerate() {
         if i > 0 {
             j.push(',');

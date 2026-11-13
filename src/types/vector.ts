@@ -27,9 +27,19 @@ export interface PaletteEntry {
 export interface VectorConfig {
   colorMode: TraceColorMode;
   shapes: TraceShapes;
-  /** Black and white: grey level (0 to 255) below which a pixel is ink. */
+  /**
+   * Black and white: find the artwork automatically. The tracer picks the
+   * grey level that separates the artwork from its background and which side
+   * the artwork is, so light artwork (gold on white) traces as readily as
+   * dark. When false, `threshold` is used as given.
+   */
+  autoThreshold: boolean;
+  /** Black and white, with `autoThreshold` off: grey level (0 to 255) below which a pixel is ink. */
   threshold: number;
-  /** Black and white: trace the light areas instead of the dark ones. */
+  /**
+   * Black and white: swap what is traced. With `autoThreshold` it traces the
+   * background instead of the artwork; without, the light areas instead of the dark.
+   */
   invert: boolean;
   /** Colour: number of colours to find, when no palette is set. */
   colorCount: number;
@@ -86,6 +96,12 @@ export interface VectorResult {
   layers: VectorLayer[];
   /** Colours found or given (colour mode), as #rrggbb; empty in black and white. */
   palette: string[];
+  /**
+   * Black and white: the grey level that separated artwork from background
+   * in this trace, and whether the lighter side was traced. Absent in colour
+   * and for results that are not traces.
+   */
+  threshold?: { level: number; lightInk: boolean };
   totalPaths: number;
   totalNodes: number;
   /** Size of the traced image, in pixels: the coordinate space of every path. */

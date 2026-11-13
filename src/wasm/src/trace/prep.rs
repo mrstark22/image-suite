@@ -147,15 +147,90 @@ fn box_filter(src: &[f32], dst: &mut [f32], tmp: &mut [f32], w: usize, h: usize,
     }
 }
 
+fn luma(rgba: &[u8], k: usize) -> f32 {
+    0.299 * rgba[k * 4] as f32 + 0.587 * rgba[k * 4 + 1] as f32 + 0.114 * rgba[k * 4 + 2] as f32
+}
+
+/// The threshold that separates an image's artwork from its background, and
+/// whether the artwork is the lighter of the two.
+///
+/// A fixed mid-grey threshold traces nothing when the artwork is lighter
+/// than mid-grey (gold lettering on white paper). This splits the image's
+/// grey levels into two groups by Otsu's method (the split with the greatest
+/// variance between the groups), then puts the threshold halfway between the
+/// two groups' mean levels: on an anti-aliased edge that is the half-covered
+/// point, which is where the edge is. The background is the group most of the
+/// image's border belongs to; the artwork is the other.
+pub fn auto_threshold(rgba: &[u8], w: usize, h: usize) -> (f32, bool) {
+    let n = w * h;
+    let mut hist = [0u64; 256];
+    for k in 0..n {
+        hist[luma(rgba, k).round().clamp(0.0, 255.0) as usize] += 1;
+    }
+    let total: f64 = n as f64;
+    let sum_all: f64 = hist
+        .iter()
+        .enumerate()
+        .map(|(i, &c)| i as f64 * c as f64)
+        .sum();
+    let (mut w0, mut sum0) = (0.0f64, 0.0f64);
+    let (mut best, mut split) = (-1.0f64, 127usize);
+    for (t, &count) in hist.iter().enumerate().take(255) {
+        w0 += count as f64;
+        sum0 += t as f64 * count as f64;
+        let w1 = total - w0;
+        if w0 == 0.0 || w1 == 0.0 {
+            continue;
+        }
+        let (m0, m1) = (sum0 / w0, (sum_all - sum0) / w1);
+        let between = w0 * w1 * (m0 - m1) * (m0 - m1);
+        if between > best {
+            best = between;
+            split = t;
+        }
+    }
+    if best < 0.0 {
+        // One grey level only: there is no artwork to separate.
+        return (127.5, false);
+    }
+    let (mut lo_n, mut lo_sum, mut hi_n, mut hi_sum) = (0.0f64, 0.0f64, 0.0f64, 0.0f64);
+    for (i, &c) in hist.iter().enumerate() {
+        if i <= split {
+            lo_n += c as f64;
+            lo_sum += i as f64 * c as f64;
+        } else {
+            hi_n += c as f64;
+            hi_sum += i as f64 * c as f64;
+        }
+    }
+    let threshold = (0.5 * (lo_sum / lo_n + hi_sum / hi_n)) as f32;
+    // Which group the border mostly is: that one is the background.
+    let (mut dark, mut light) = (0usize, 0usize);
+    let mut count = |k: usize| {
+        if luma(rgba, k) < threshold {
+            dark += 1;
+        } else {
+            light += 1;
+        }
+    };
+    for x in 0..w {
+        count(x);
+        count((h - 1) * w + x);
+    }
+    for y in 0..h {
+        count(y * w);
+        count(y * w + w - 1);
+    }
+    (threshold, dark > light)
+}
+
 /// The black-and-white field: positive where a pixel is darker than
 /// `threshold` (lighter when `invert`), scaled to about -1 to 1. Its zero
 /// level is where an anti-aliased edge crosses the threshold.
 pub fn mono_field(rgba: &[u8], w: usize, h: usize, threshold: f32, invert: bool) -> Vec<f32> {
     (0..w * h)
         .map(|k| {
-            let l = 0.299 * rgba[k * 4] as f32
-                + 0.587 * rgba[k * 4 + 1] as f32
-                + 0.114 * rgba[k * 4 + 2] as f32;
+            let l = luma(rgba, k);
             let v = if invert { l - threshold } else { threshold - l } / 255.0;
             // Exactly on the threshold counts as outside.
             if v == 0.0 {

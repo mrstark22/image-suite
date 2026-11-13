@@ -70,6 +70,9 @@ interface RawTraceError {
 interface RawTrace {
   width: number;
   height: number;
+  /** Black and white only: the grey level used and whether the lighter side was traced. */
+  threshold?: number;
+  lightInk?: boolean;
   palette: string[];
   layers: Array<{
     name: string;
@@ -117,6 +120,7 @@ export function parseTrace(json: string, pxPerMm: number): VectorResult {
     totalNodes: layers.reduce((n, l) => n + l.totalNodes, 0),
     dimensions: { width: raw.width, height: raw.height },
     pxPerMm,
+    ...(raw.threshold === undefined ? {} : { threshold: { level: raw.threshold, lightInk: raw.lightInk === true } }),
   };
 }
 
@@ -149,7 +153,8 @@ export function traceImageAt(
       pxPerMm,
       config.colorMode === 'color' ? 1 : 0,
       SHAPES_CODE[config.shapes],
-      config.threshold,
+      // A negative threshold asks the tracer to find the artwork itself.
+      config.autoThreshold ? -1 : config.threshold,
       config.invert ? 1 : 0,
       config.colorCount,
       palPtr,

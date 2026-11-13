@@ -730,3 +730,96 @@ fn centreline_mode_does_not_skeletonise_the_paper() {
         .fold(0.0, f64::max);
     assert!(worst < 0.35, "the line's centre: {worst}");
 }
+
+/// `ink` drawn in `ink_rgb` on a `paper_rgb` ground, anti-aliased.
+fn two_tone(
+    w: usize,
+    h: usize,
+    ink_rgb: [f64; 3],
+    paper_rgb: [f64; 3],
+    ink: impl Fn(f64, f64) -> bool,
+) -> Vec<u8> {
+    let grey = render(w, h, ink);
+    let mut img = grey.clone();
+    for i in 0..w * h {
+        let a = 1.0 - grey[i * 4] as f64 / 255.0;
+        for c in 0..3 {
+            img[i * 4 + c] = (ink_rgb[c] * a + paper_rgb[c] * (1.0 - a)).round() as u8;
+        }
+    }
+    img
+}
+
+/// The automatic threshold finds the artwork whatever its tone: gold on
+/// white (lighter than mid-grey, which a fixed threshold of 128 misses
+/// entirely), pale grey on white, white on black, and plain black on white.
+/// The edge is traced where it is, to a fraction of a pixel.
+#[test]
+fn automatic_threshold_traces_artwork_of_any_tone() {
+    let disc = |x: f64, y: f64| (x - 50.0).hypot(y - 50.0) < 30.0;
+    let cases: [([f64; 3], [f64; 3], &str); 5] = [
+        ([224.0, 160.0, 48.0], [255.0, 255.0, 255.0], "gold on white"),
+        (
+            [210.0, 210.0, 210.0],
+            [255.0, 255.0, 255.0],
+            "pale grey on white",
+        ),
+        ([255.0, 255.0, 255.0], [0.0, 0.0, 0.0], "white on black"),
+        ([0.0, 0.0, 0.0], [255.0, 255.0, 255.0], "black on white"),
+        (
+            [40.0, 40.0, 60.0],
+            [120.0, 120.0, 110.0],
+            "dark on mid-grey",
+        ),
+    ];
+    for (ink, paper, name) in cases {
+        let img = two_tone(100, 100, ink, paper, disc);
+        let mut c = cfg(Shapes::Outline);
+        // The fixed mid-grey threshold, for comparison: it finds nothing in the light artwork.
+        if name == "gold on white" {
+            assert!(
+                all_paths(&trace(&img, 100, 100, &c)).is_empty(),
+                "128 misses gold"
+            );
+        }
+        c.threshold = -1.0;
+        let res = trace(&img, 100, 100, &c);
+        let paths = all_paths(&res);
+        assert_eq!(paths.len(), 1, "{name}: one outline");
+        let worst = sample(&paths[0].path)
+            .iter()
+            .map(|q| (q.dist(P::new(50.0, 50.0)) - 30.0).abs())
+            .fold(0.0, f64::max);
+        assert!(worst < 0.3, "{name}: radial error {worst}");
+        let (level, light_ink) = res.threshold.expect("a threshold is reported");
+        let l = |c: [f64; 3]| 0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2];
+        assert!(
+            (level as f64 - 0.5 * (l(ink) + l(paper))).abs() < 3.0,
+            "{name}: level {level}"
+        );
+        assert_eq!(
+            light_ink,
+            l(ink) > l(paper),
+            "{name}: which side is artwork"
+        );
+    }
+}
+
+/// With the automatic threshold, "invert" swaps artwork and background.
+#[test]
+fn automatic_threshold_can_be_swapped() {
+    let img = two_tone(
+        100,
+        100,
+        [224.0, 160.0, 48.0],
+        [255.0, 255.0, 255.0],
+        |x, y| (x - 50.0).hypot(y - 50.0) < 30.0,
+    );
+    let mut c = cfg(Shapes::Outline);
+    c.threshold = -1.0;
+    c.invert = true;
+    let res = trace(&img, 100, 100, &c);
+    // The paper: its outer edge and the hole the disc leaves.
+    assert_eq!(all_paths(&res).len(), 2);
+    assert_eq!(res.threshold.map(|t| t.1), Some(true));
+}

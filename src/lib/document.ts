@@ -120,6 +120,7 @@ function chosenDither(params: Partial<DitherConfig>): Partial<ChosenDither> {
 export const DEFAULT_VECTOR: VectorConfig = {
   colorMode: 'mono',
   shapes: 'auto',
+  autoThreshold: true,
   threshold: 128,
   invert: false,
   colorCount: 4,
@@ -368,7 +369,12 @@ export function applyRecipe(recipe: EditRecipe): DocumentUpdate {
       if (step.type === 'detail') Object.assign(detail, step.params);
       if (step.type === 'dither') Object.assign(dither, chosenDither(step.params));
       // Only settings the tracer still has: a recipe saved before phase 2 carries old ones (#32).
-      if (step.type === 'vectorize') Object.assign(vector, knownKeys(step.params, DEFAULT_VECTOR));
+      if (step.type === 'vectorize') {
+        const params = knownKeys(step.params, DEFAULT_VECTOR);
+        // A recipe saved before the automatic threshold existed set its level by hand: keep that level in use.
+        if ('threshold' in params && !('autoThreshold' in params)) params.autoThreshold = false;
+        Object.assign(vector, params);
+      }
       if (step.type === 'depth') Object.assign(depth, knownDepthSettings(step.params));
     }
     return { ...d, steps: { ...d.steps, tonal, color, detail, dither }, vector, depth };

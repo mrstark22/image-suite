@@ -563,7 +563,8 @@ describe('Trace step: progress and cancel', () => {
       click(button(container, /^Update Trace$/));
       click(button(container, /^Cancel$/));
       expect(useRenderStore.getState().isVectorStale).toBe(false);
-      expect(container.querySelector('[data-tone=warning]')).toBeNull();
+      // No stale warning. (An empty trace has its own notice, which is not this one.)
+      expect([...container.querySelectorAll('[data-tone=warning]')].some((w) => /settings changed/.test(w.textContent ?? ''))).toBe(false);
       await settle(() => finishers[1](twoLayers()));
 
       // A settings change starts a trace (auto-trace back on); cancelled, the old paths are stale.
@@ -573,7 +574,7 @@ describe('Trace step: progress and cancel', () => {
       expect(traceDocument).toHaveBeenCalledTimes(4);
       click(button(container, /^Cancel$/));
       expect(useRenderStore.getState().isVectorStale).toBe(true);
-      expect(one(container, '[data-tone=warning]').textContent).toContain('settings changed');
+      expect([...container.querySelectorAll('[data-tone=warning]')].some((w) => /settings changed/.test(w.textContent ?? ''))).toBe(true);
       expect(button(container, /^Trace Again$/)).toBeTruthy();
     } finally {
       disconnect();

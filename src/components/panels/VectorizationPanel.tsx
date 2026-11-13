@@ -60,7 +60,7 @@ const PaletteSwatch: React.FC<{ color: string; label: string; update: (color: st
 };
 
 const COLOR_MODES: Array<{ id: TraceColorMode; title: string; desc: string }> = [
-  { id: 'mono', title: 'Black & White', desc: 'One layer: everything darker than the threshold' },
+  { id: 'mono', title: 'Black & White', desc: 'Converts the image to grey and traces the artwork as one layer, whatever colour it is' },
   { id: 'color', title: 'Colour', desc: 'One layer per colour, separated in a perceptual space' },
 ];
 
@@ -128,6 +128,27 @@ export const VectorizationPanel: React.FC = () => {
         {isVectorStale && vectorResult && !isTracing && (
           <StatusMessage tone="warning">The settings changed since the last trace.</StatusMessage>
         )}
+        {vectorResult && vectorResult.totalPaths === 0 && !isTracing && !isVectorStale && (
+          <StatusMessage tone="warning">
+            {vector.colorMode === 'mono' && !vector.autoThreshold ? (
+              <>
+                Nothing was traced: no part of the image is {vector.invert ? 'lighter' : 'darker'} than the threshold.{' '}
+                <Button variant="link" onClick={() => edit(setVector({ autoThreshold: true }))}>
+                  Find the artwork automatically
+                </Button>
+              </>
+            ) : vector.colorMode === 'mono' ? (
+              <>
+                Nothing was traced: the image looks like one flat tone.{' '}
+                <Button variant="link" onClick={() => edit(setVector({ colorMode: 'color' }))}>
+                  Try Colour
+                </Button>
+              </>
+            ) : (
+              'Nothing was traced: every colour is set to be left out, or the image is one flat colour.'
+            )}
+          </StatusMessage>
+        )}
         {isTracing && <Progress label="Tracing" fraction={null} onCancel={cancelTrace} />}
         <Toggle label="Trace again on every change" checked={autoTrace} onChange={setAutoTrace} />
       </div>
@@ -149,16 +170,39 @@ export const VectorizationPanel: React.FC = () => {
         </div>
         {vector.colorMode === 'mono' ? (
           <>
-            <DocumentSlider
-              label="Threshold"
-              value={vector.threshold}
-              min={1}
-              max={254}
-              update={(v) => setVector({ threshold: Math.round(v) })}
-              reset={setVector({ threshold: DEFAULT_VECTOR.threshold })}
-            />
             <Toggle
-              label="Trace the light areas"
+              label="Find the artwork automatically"
+              checked={vector.autoThreshold}
+              onChange={(checked) =>
+                edit(
+                  setVector(
+                    checked
+                      ? { autoThreshold: true }
+                      : // Start the manual level from the one the automatic trace used.
+                        { autoThreshold: false, threshold: Math.round(vectorResult?.threshold?.level ?? vector.threshold) }
+                  )
+                )
+              }
+            />
+            {vector.autoThreshold ? (
+              vectorResult?.threshold && (
+                <p className={styles.featureDesc}>
+                  Tracing the {vectorResult.threshold.lightInk ? 'lighter' : 'darker'} areas, split at grey level{' '}
+                  {Math.round(vectorResult.threshold.level)} of 255.
+                </p>
+              )
+            ) : (
+              <DocumentSlider
+                label="Threshold"
+                value={vector.threshold}
+                min={1}
+                max={254}
+                update={(v) => setVector({ threshold: Math.round(v) })}
+                reset={setVector({ threshold: DEFAULT_VECTOR.threshold })}
+              />
+            )}
+            <Toggle
+              label={vector.autoThreshold ? 'Trace the background instead' : 'Trace the light areas'}
               checked={vector.invert}
               onChange={(checked) => edit(setVector({ invert: checked }))}
             />
