@@ -4,9 +4,15 @@
  *
  * - the AI depth text speaks of "this device", not a computer's CPU;
  * - the Dither step says whether the material's tone curve is applied, and
- *   whether that calibration is a copy not yet verified, or offers Calibrate.
+ *   whether that calibration is a copy not yet verified, or offers Calibrate;
+ * - the error banner on a phone spans the canvas below the Undo pill, and its
+ *   dismiss button is a touch target.
  */
 import { describe, it, expect, afterEach, beforeEach } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { ErrorBanner } from '../../src/components/shared/ErrorBanner';
+import { useRenderStore } from '../../src/store/renderStore';
 import { DitheringPanel } from '../../src/components/panels/DitheringPanel';
 import { DEPTH_BACKEND_LABEL } from '../../src/lib/ai-depth';
 import { useDocumentStore } from '../../src/store/documentStore';
@@ -78,5 +84,35 @@ describe('Dither step: the calibration in use', () => {
     click(button(mounted.container, /Calibrate tones with a test card/));
     expect(useProfilesStore.getState().calibrateOpen).toBe(true);
     expect(useProfilesStore.getState().calibrateFocus).toMatchObject({ kind: 'engrave' });
+  });
+});
+
+describe('error banner', () => {
+  const css = readFileSync(resolve(__dirname, '../../src/components/shared/ErrorBanner.module.css'), 'utf8');
+  const block = (query: string) => {
+    const start = css.indexOf(`@media ${query}`);
+    expect(start).toBeGreaterThanOrEqual(0);
+    return css.slice(start, css.indexOf('\n}\n', start));
+  };
+
+  it('is dismissed by its button', () => {
+    useRenderStore.getState().setErrorMessage('Image processing failed: out of memory');
+    mounted = mount(<ErrorBanner />);
+    expect(mounted.container.querySelector('[role=alert]')!.textContent).toContain('out of memory');
+    click(button(mounted.container, /Dismiss error/));
+    expect(useRenderStore.getState().errorMessage).toBeNull();
+  });
+
+  it('on a phone spans the canvas inside the rulers, below the Undo and Redo pill', () => {
+    const phone = block('(max-width: 599px)');
+    expect(phone).toMatch(/left: calc\(24px \+ var\(--space-2\)\)/);
+    expect(phone).toMatch(/right: var\(--space-2\)/);
+    expect(phone).toMatch(/transform: none/);
+    // Below the pill: its top (ruler + space-2) plus its 44 px height.
+    expect(phone).toMatch(/top: calc\(24px \+ var\(--space-2\) \+ var\(--touch-target\)/);
+  });
+
+  it('its dismiss button is a 44 px target under touch', () => {
+    expect(block('(pointer: coarse)')).toMatch(/width: var\(--touch-target\);\s*height: var\(--touch-target\)/);
   });
 });
