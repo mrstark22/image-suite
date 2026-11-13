@@ -8,7 +8,7 @@ import { vectorExportRequest, vectorExportSource, vectorFile, type VectorFormat 
 import { traceSizeMm } from '../../lib/vector-export';
 import { getPipeline } from '../../lib/pipeline-client';
 import { recipeFromDocument } from '../../lib/document';
-import { exportResolution, fromMm, physicalSize } from '../../lib/document-size';
+import { describePhysicalSize, exportResolution, fromMm, physicalSize } from '../../lib/document-size';
 import { exportPlan } from '../../lib/render-target';
 import { cancelRasterExport, exportRaster, rasterExportBlocker } from '../../lib/raster-export';
 import { lightBurnSettings } from '../../lib/lightburn-settings';
@@ -158,6 +158,18 @@ export const ExportPanel: React.FC = () => {
     <div className={styles.panel}>
       {/* Physical size, from the document */}
       <Section title="Physical Size & Resolution">
+        {doc.sizeOrigin === 'assumed' && size && (
+          <StatusMessage tone="warning" className={styles.sizeAssumedNotice}>
+            <span>
+              The physical size was assumed: the file does not say how big it is, so it is taken as{' '}
+              {describePhysicalSize(doc)?.replace(/^Assumed /, '')}. Set the real size so the burn comes out the size you
+              want.
+            </span>
+            <Button compact onClick={() => setSizeDialogOpen(true)}>
+              Set size…
+            </Button>
+          </StatusMessage>
+        )}
         {size && file ? (
           <div className={styles.readoutBox}>
             <div className={styles.readoutRow}>

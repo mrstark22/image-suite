@@ -66,12 +66,21 @@ export interface EditSteps {
  * scale, the edit steps and the workflow settings. An immutable plain value;
  * every change produces a new document that shares its unchanged parts.
  */
+/** Where a document's physical size came from. */
+export type SizeOrigin = 'file' | 'assumed' | 'user';
+
 export interface ImageDocument {
   /** New for every loaded file. */
   id: string;
   source: SourceInfo;
   /** Millimetres per source pixel. `null` means the size has not been set. */
   mmPerPx: number | null;
+  /**
+   * Where `mmPerPx` came from: the resolution the file states, an assumed
+   * resolution (the last one the user applied, or 300 DPI), or the user
+   * setting it. Meaningless while `mmPerPx` is null.
+   */
+  sizeOrigin: SizeOrigin;
   steps: EditSteps;
   vector: VectorConfig;
   depth: DepthConfig;

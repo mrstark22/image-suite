@@ -7,7 +7,7 @@ import { MENUS, itemShortcut } from '../../lib/menus';
 import { JOBS, JOB_HINT, JOB_LABEL } from '../../lib/workflows';
 import { MACHINES, MATERIALS } from '../../lib/machines';
 import { chooseMaterial } from '../../lib/job-setup';
-import { cropRectOf, dpiOf } from '../../lib/document-size';
+import { cropRectOf, describePhysicalSize, dpiOf } from '../../lib/document-size';
 import styles from './MenuBar.module.css';
 
 /**
@@ -160,14 +160,16 @@ export const MenuBar: React.FC = () => {
           <button
             className={styles.telemetry}
             onClick={() => setSizeDialogOpen(true)}
-            title="Set the physical size"
+            title={doc.sizeOrigin === 'assumed' ? 'The size was assumed: tap to set the real size' : 'Set the physical size'}
           >
             <span className={`${styles.pulseDot} ${isProcessing ? styles.processingDot : ''}`} />
             <span className={styles.telemetrySize}>
               {shownSize.width}×{shownSize.height}px
             </span>
             <span className={styles.telemetrySep}>•</span>
-            <span>{dpi === null ? 'Size not set' : `${Number(dpi.toFixed(1))} DPI`}</span>
+            <span className={doc.sizeOrigin === 'assumed' && dpi !== null ? styles.telemetryAssumed : undefined}>
+              {describePhysicalSize(doc) ?? 'Size not set'}
+            </span>
             <span className={styles.telemetrySep}>•</span>
             <span className={styles.telemetryTime}>
               {isExporting ? 'Paused while exporting' : isProcessing ? '...' : `${durationMs.toFixed(1)}ms`}

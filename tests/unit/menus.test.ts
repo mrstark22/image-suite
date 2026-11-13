@@ -153,8 +153,11 @@ describe('menus', () => {
   });
 
   it('the rounded rectangle guide is disabled until the size is set: its corners are in mm', () => {
-    docs().open(decodedImage(900, 600));
+    docs().open(decodedImage(900, 600), null);
     expect(items.find((i) => i.id === 'guide-rounded')!.enabled()).toBe(false);
+    // An assumed size is a size: the guide works with it.
+    docs().open(decodedImage(900, 600));
+    expect(items.find((i) => i.id === 'guide-rounded')!.enabled()).toBe(true);
   });
 
   it('toggles show their state', () => {

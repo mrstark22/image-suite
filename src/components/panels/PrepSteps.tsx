@@ -1,3 +1,4 @@
+import type { SizeOrigin } from '../../types/document';
 import React from 'react';
 import { FolderOpen, Crop, X, Maximize, RotateCcw, RotateCw } from 'lucide-react';
 import { useDocumentStore } from '../../store/documentStore';
@@ -5,7 +6,7 @@ import { useViewStore } from '../../store/viewStore';
 import { useUIStore } from '../../store/uiStore';
 import { openImagePicker } from '../../lib/open-image';
 import { rotate, setCrop } from '../../lib/document';
-import { cropRectOf, dpiOf, fromMm, physicalSize } from '../../lib/document-size';
+import { cropRectOf, describePhysicalSize, dpiOf, fromMm, physicalSize } from '../../lib/document-size';
 import { Button } from '../shared/Button';
 import styles from './Panels.module.css';
 
@@ -120,6 +121,13 @@ export const CropStepPanel: React.FC = () => {
   );
 };
 
+/** Where the size came from, in words. */
+const SIZE_ORIGIN_NOTE: Record<SizeOrigin, string> = {
+  file: 'From the resolution saved in the file.',
+  assumed: 'Assumed: the file does not say how big it is. Set the real size before you burn.',
+  user: 'Set by you.',
+};
+
 /** The physical size, set in the size dialog. */
 export const SizeStepPanel: React.FC = () => {
   const doc = useDocumentStore((s) => s.doc);
@@ -135,6 +143,11 @@ export const SizeStepPanel: React.FC = () => {
         <div className={styles.readoutBox}>
           {size && dpi !== null ? (
             <>
+              {doc.sizeOrigin === 'assumed' && (
+                <div className={`${styles.readoutRow} ${styles.sizeAssumed}`}>
+                  <strong>{describePhysicalSize(doc)}</strong>
+                </div>
+              )}
               <div className={styles.readoutRow}>
                 <span>Width</span>
                 <strong>
@@ -151,6 +164,7 @@ export const SizeStepPanel: React.FC = () => {
                 <span>Resolution</span>
                 <strong>{dpi.toFixed(1)} DPI</strong>
               </div>
+              <div className={styles.controlNote}>{SIZE_ORIGIN_NOTE[doc.sizeOrigin]}</div>
             </>
           ) : (
             <div className={styles.readoutRow}>
@@ -159,7 +173,7 @@ export const SizeStepPanel: React.FC = () => {
           )}
         </div>
         <Button className={styles.stackGap} icon={<Maximize size={14} />} onClick={() => setSizeDialogOpen(true)}>
-          {size ? 'Change Size…' : 'Set Size…'}
+          {size && doc.sizeOrigin !== 'assumed' ? 'Change Size…' : 'Set Size…'}
         </Button>
         <div className={`${styles.controlNote} ${styles.stackGap}`}>
           The machine and material are chosen in the top bar. They set the LightBurn settings shown at export.

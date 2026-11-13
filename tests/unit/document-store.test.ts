@@ -330,11 +330,12 @@ describe('interrupted gestures', () => {
 });
 
 describe('loading', () => {
-  it('starts the size as not set, with default steps and no history', async () => {
+  it("starts at the file's resolution, with default steps and no history", async () => {
     store().edit(setScale(0.1));
     await store().load(new File([], 'b.png'), async () => decodedImage(10, 10, 96, 'b.png'));
     const doc = currentDoc();
-    expect(doc.mmPerPx).toBeNull();
+    expect(doc.mmPerPx).toBeCloseTo(25.4 / 96, 12);
+    expect(doc.sizeOrigin).toBe('file');
     expect(doc.source.fileDpi).toBe(96);
     expect(doc.steps.crop).toBeNull();
     expect(store().past.length).toBe(0);

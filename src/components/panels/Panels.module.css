@@ -372,3 +372,20 @@
     min-height: var(--touch-target);
   }
 }
+
+/* Export: the notice that the physical size was assumed, with its button below the text. */
+.sizeAssumedNotice {
+  margin-bottom: var(--space-2);
+}
+
+.sizeAssumedNotice > span:last-child {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+
+/* Size step: the assumed size, in the warning colour, above the readout. */
+.sizeAssumed {
+  color: var(--warning);
+}

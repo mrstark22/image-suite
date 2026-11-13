@@ -1,7 +1,8 @@
 import { create } from 'zustand';
-import type { DocumentUpdate, GestureToken, ImageDocument } from '../types/document';
+import type { DocumentUpdate, GestureToken, ImageDocument, SizeOrigin } from '../types/document';
 import { carrySettings, createDocument, sameValue } from '../lib/document';
-import { usePreferencesStore } from './preferencesStore';
+import { assumedDpi, usePreferencesStore } from './preferencesStore';
+import { mmPerPxFromDpi } from '../lib/document-size';
 import { decodeImageFile, type LoadedSource } from '../lib/image-loader';
 
 /** Most undo entries kept. */
@@ -46,8 +47,11 @@ export interface DocumentState {
    */
   load(file: File, decode?: (file: File, sourceId: string) => Promise<LoadedSource>): Promise<void>;
   /**
-   * Opens a source the pipeline already holds as a new document. The size
-   * starts as not set unless `mmPerPx` is given (as for a generated test grid).
+   * Opens a source the pipeline already holds as a new document. Opening
+   * never waits on the user for a size: unless `mmPerPx` is given (as for a
+   * generated test grid), the size is the resolution the file states, or
+   * else an assumed one (the last the user applied, or 300 DPI), and
+   * `sizeOrigin` records which. An explicit `null` opens it with no size.
    * The settings start at the defaults, or at the previous image's when the
    * "keep settings" preference is on; the crop, the size and the history
    * never carry over. A generated image that must be burned exactly as made
@@ -56,6 +60,18 @@ export interface DocumentState {
   open(source: LoadedSource, mmPerPx?: number | null, settings?: 'preference' | 'defaults'): void;
   /** Closes the document. The schedulers' connection releases the worker's copy of its source. */
   close(): void;
+}
+
+/** The size a newly opened image starts with, and where it came from. */
+export function initialSize(
+  image: Pick<LoadedSource, 'fileDpi'>,
+  mmPerPx?: number | null
+): [number | null, SizeOrigin] {
+  if (mmPerPx !== undefined) return [mmPerPx, 'user'];
+  if (image.fileDpi !== null && Number.isFinite(image.fileDpi) && image.fileDpi > 0) {
+    return [mmPerPxFromDpi(image.fileDpi), 'file'];
+  }
+  return [mmPerPxFromDpi(assumedDpi(usePreferencesStore.getState())), 'assumed'];
 }
 
 let nextGestureToken = 0;
@@ -232,7 +248,7 @@ export const useDocumentStore = create<DocumentState>((set, get) => {
       get().open(image);
     },
 
-    open: (image, mmPerPx = null, settings = 'preference') => {
+    open: (image, mmPerPx, settings = 'preference') => {
       loadSequence++;
       const id = `doc-${++nextDocumentId}`;
       const created = createDocument(
@@ -247,7 +263,7 @@ export const useDocumentStore = create<DocumentState>((set, get) => {
           fileDpi: image.fileDpi,
           ...(image.reducedFrom ? { reducedFrom: image.reducedFrom } : {}),
         },
-        mmPerPx
+        ...initialSize(image, mmPerPx)
       );
       const fresh = openDefaults ? openDefaults(created) : created;
       // With "Keep settings when opening a new image" on, the new document is
