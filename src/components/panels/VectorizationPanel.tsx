@@ -60,7 +60,7 @@ const PaletteSwatch: React.FC<{ color: string; label: string; update: (color: st
 };
 
 const COLOR_MODES: Array<{ id: TraceColorMode; title: string; desc: string }> = [
-  { id: 'mono', title: 'One Colour', desc: 'One layer: the artwork, whatever its colour, apart from its background' },
+  { id: 'mono', title: 'Black & White', desc: 'Converts the image to grey and traces the artwork as one layer, whatever colour it is' },
   { id: 'color', title: 'Colour', desc: 'One layer per colour, separated in a perceptual space' },
 ];
 
