@@ -6,7 +6,7 @@
  */
 import fs from 'fs';
 import path from 'path';
-import { traceImage, type TraceExports } from '../../src/lib/trace-call';
+import { traceImageAt, type TraceExports } from '../../src/lib/trace-call';
 import { DEFAULT_VECTOR } from '../../src/lib/document';
 import type { VectorConfig, VectorResult } from '../../src/types/vector';
 
@@ -176,7 +176,8 @@ export function runPipeline(
 }
 
 /**
- * Traces `rgba` through the same call the app makes (`traceImage`), with the
+ * Traces `rgba` through the same call the app makes (`traceImageAt`, on the
+ * image copied into WASM memory, where the app's render already is), with the
  * default settings changed by `o`. `pxPerMm` defaults to 10, so 0.1 mm is a pixel.
  */
 export function runTrace(
@@ -187,7 +188,15 @@ export function runTrace(
   o: Partial<VectorConfig> = {},
   pxPerMm = 10
 ): VectorResult {
-  return traceImage(wasm.exports, rgba, width, height, pxPerMm, { ...DEFAULT_VECTOR, ...o });
+  const e = wasm.exports;
+  const bytes = width * height * 4;
+  const ptr = e.allocate(bytes);
+  try {
+    new Uint8Array(e.memory.buffer, ptr, bytes).set(rgba);
+    return traceImageAt(e, ptr, width, height, pxPerMm, { ...DEFAULT_VECTOR, ...o });
+  } finally {
+    e.deallocate(ptr, bytes);
+  }
 }
 
 /** One vertex of a traced path, in image pixel coordinates. */

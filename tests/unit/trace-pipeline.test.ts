@@ -8,7 +8,8 @@ import { useRenderStore } from '../../src/store/renderStore';
 import { useUIStore } from '../../src/store/uiStore';
 import { setScale, setTonal, setVector } from '../../src/lib/document';
 import { previewTarget } from '../../src/lib/render-target';
-import { traceForExport, vectorExportSource, vectorFile } from '../../src/lib/vector-file-export';
+import { vectorExportSource } from '../../src/lib/vector-file-export';
+import { exportedSvg } from '../helpers/exported';
 import { loadPixels, startTestPipeline, type TestPipeline } from '../helpers/pipeline';
 import { resetStores } from '../helpers/documents';
 import { loadWasm, runTrace } from '../helpers/wasm';
@@ -88,11 +89,10 @@ describe('export traces at full resolution (#23)', () => {
 
     const source = vectorExportSource(shown, render().tracedInputs !== null, false);
     expect(source).toBe('full-resolution');
-    const full = await traceForExport(pipeline.api, store().doc!, shown, source, null);
-    expect(full.dimensions.width).toBe(4000);
-    expect(pathCount(full)).toBe(1);
+    const file = await exportedSvg(pipeline.api, store().doc!, shown);
+    expect(file.paths).toBe(1);
     // 4000 px at 0.05 mm per px: the file is 200 mm wide.
-    expect(vectorFile(full, 'svg').text).toMatch(/width="200mm"/);
+    expect(file.widthMm).toBe(200);
   });
 
   it('layers hidden on screen stay hidden in the file', async () => {
@@ -101,8 +101,9 @@ describe('export traces at full resolution (#23)', () => {
     await pipeline.settled();
     render().toggleVectorLayer('cutline');
     const shown = render().vectorResult!;
-    const full = await traceForExport(pipeline.api, store().doc!, shown, 'full-resolution', null);
-    expect(vectorFile(full, 'svg').text).not.toContain('Cutline');
+    const file = await exportedSvg(pipeline.api, store().doc!, shown);
+    expect(file.layers.map((l) => l.id)).toEqual(['ink']);
+    expect(file.text).not.toContain('Cutline');
   });
 });
 

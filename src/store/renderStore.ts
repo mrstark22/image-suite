@@ -6,7 +6,9 @@ import { MM_PER_INCH } from '../lib/document-size';
 import { sameValue } from '../lib/document';
 import type { ExportProgress, SourceStage } from '../types/worker-messages';
 import { useDocumentStore } from './documentStore';
-import { layerKey } from '../lib/trace-view';
+import { carryHidden, layerKey } from '../lib/trace-view';
+import { traceInputsOf, type TraceInputs } from '../lib/trace-inputs';
+import { withDrawnColours } from '../lib/trace-palette';
 
 /**
  * Results derived from the document, and the status of producing them. None
@@ -118,18 +120,6 @@ interface RenderState {
   setExportProgress: (progress: ExportProgress | null) => void;
 }
 
-/** What a trace reads from the document. */
-export interface TraceInputs {
-  source: ImageDocument['source'];
-  mmPerPx: ImageDocument['mmPerPx'];
-  steps: Pick<ImageDocument['steps'], 'crop' | 'tonal' | 'color' | 'detail'>;
-  vector: ImageDocument['vector'];
-}
-
-export function traceInputsOf(doc: ImageDocument): TraceInputs {
-  const { crop, tonal, color, detail } = doc.steps;
-  return { source: doc.source, mmPerPx: doc.mmPerPx, steps: { crop, tonal, color, detail }, vector: doc.vector };
-}
 
 /**
  * True when the trace shown was made from the document as it is now (or is
@@ -262,11 +252,16 @@ export const useRenderStore = create<RenderState>((set, get) => ({
   // document's tracing settings are the ones it was traced with.
   setVectorResult: (vectorResult) => {
     const doc = useDocumentStore.getState().doc;
-    const hidden = new Set(get().hiddenLayers);
+    // A trace that was running while a layer was recoloured comes back in
+    // the old colour: the colours drawn are the document's, as it is now.
+    const coloured = vectorResult && withDrawnColours(vectorResult, doc?.vector.palette ?? null);
+    const hiddenLayers = coloured ? carryHidden(get().hiddenLayers, coloured.layers) : get().hiddenLayers;
+    const hidden = new Set(hiddenLayers);
     set({
-      vectorResult: vectorResult && {
-        ...vectorResult,
-        layers: vectorResult.layers.map((l) => ({ ...l, visible: !hidden.has(layerKey(l)) })),
+      hiddenLayers,
+      vectorResult: coloured && {
+        ...coloured,
+        layers: coloured.layers.map((l) => ({ ...l, visible: !hidden.has(layerKey(l)) })),
       },
       isVectorStale: false,
       tracedInputs: doc ? traceInputsOf(doc) : null,
@@ -362,6 +357,10 @@ useDocumentStore.subscribe((state, prev) => {
   // stale and they stay exportable (review of #84).
   const render = useRenderStore.getState();
   const showsTestGrid = render.vectorResult !== null && render.tracedInputs === null;
+  // The colour a layer is drawn in is not traced: it is applied to the result on screen (#91).
+  if (render.vectorResult && !showsTestGrid && !sameValue(doc.vector.palette, before.vector.palette)) {
+    useRenderStore.setState({ vectorResult: withDrawnColours(render.vectorResult, doc.vector.palette) });
+  }
   if (!render.autoTrace && !showsTestGrid && !sameValue(traceInputsOf(doc), traceInputsOf(before))) {
     useRenderStore.setState({ isVectorStale: true });
   }

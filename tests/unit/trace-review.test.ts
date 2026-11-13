@@ -10,7 +10,7 @@ import { useUIStore } from '../../src/store/uiStore';
 import { applyRecipe, recipeFromDocument, setTonal, setVector } from '../../src/lib/document';
 import { editPalette, paletteFromResult } from '../../src/lib/trace-palette';
 import { adjustCropBox, cropBoxForKey } from '../../src/lib/crop';
-import { traceForExport, vectorFile } from '../../src/lib/vector-file-export';
+import { exportedSvg } from '../helpers/exported';
 import { layerColourIndexes, parsePathData, tracePageMm, traceToDxf, traceToSvg } from '../../src/lib/vector-export';
 import { TooLargeError } from '../../src/lib/pipeline-engine';
 import { PipelineWorkerApi } from '../../src/workers/pipeline-api';
@@ -71,9 +71,10 @@ describe('export writes what is on screen', () => {
     store().edit(setVector({ colorMode: 'color', colorCount: 6, shapes: 'outline' }));
     await pipeline.settled();
     const shown = render().vectorResult!;
-    const full = await traceForExport(pipeline.api, store().doc!, shown, 'full-resolution', null);
-    expect(full.dimensions.width).toBe(3000);
-    expect(full.layers.map((l) => [l.id, l.color])).toEqual(shown.layers.map((l) => [l.id, l.color]));
+    const file = await exportedSvg(pipeline.api, store().doc!, shown);
+    // 3000 px at 0.05 mm per px: traced at full resolution, the file is 150 mm wide.
+    expect(file.widthMm).toBe(150);
+    expect(file.layers.map((l) => [l.id, l.color])).toEqual(shown.layers.map((l) => [l.id, l.color]));
   });
 
   it('2: a trace is no longer current once an adjustment changes, so it cannot be exported', async () => {
@@ -262,8 +263,8 @@ describe('crop keys with a fixed aspect (5)', () => {
 it('the exported file of finding 1 is the same physical size as the image', async () => {
   store().open(await loadPixels(pipeline.api, colourBlocks(200, 100, [[255, 255, 255], [0, 0, 0]]), 200, 100), 0.1);
   await pipeline.settled();
-  const full = await traceForExport(pipeline.api, store().doc!, render().vectorResult!, 'full-resolution', null);
-  expect(vectorFile(full, 'svg').text).toMatch(/width="20mm"/);
+  const file = await exportedSvg(pipeline.api, store().doc!, render().vectorResult!);
+  expect(file.widthMm).toBe(20);
 });
 
 describe('second review of #84', () => {

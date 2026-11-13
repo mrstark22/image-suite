@@ -1,11 +1,10 @@
 import type { ImageDocument } from '../types/document';
 import type { VectorResult } from '../types/vector';
-import type { Pipeline } from './pipeline-client';
 import { nativeTarget, previewTarget, sourceStageKey } from './render-target';
 import { traceToDxf, traceToSvg } from './vector-export';
 import { setVector } from './document';
 import { paletteFromResult } from './trace-palette';
-import { viewOf, withView, type TraceView } from './trace-view';
+import { viewOf, type TraceView } from './trace-view';
 import type { RenderTarget } from '../types/render';
 
 export type VectorFormat = 'svg' | 'dxf';
@@ -61,20 +60,6 @@ export function vectorExportRequest(
   }
   const palette = doc.vector.colorMode === 'color' && doc.vector.palette === null ? paletteFromResult(shown) : null;
   return { doc: palette ? setVector({ palette })(doc) : doc, target: nativeTarget(doc), view, format };
-}
-
-/** The trace an export of `shown` writes (`vectorExportRequest`, traced), as a result rather than a file. */
-export async function traceForExport(
-  pipeline: Pick<Pipeline, 'traceDocument'>,
-  doc: ImageDocument,
-  shown: VectorResult,
-  source: VectorExportSource,
-  removal: { key: string; pixels: ArrayBuffer } | null
-): Promise<VectorResult> {
-  if (source === 'as-shown') return shown;
-  const req = vectorExportRequest(doc, shown, source, removal, 'svg');
-  const result = await pipeline.traceDocument({ doc: req.doc, target: req.target, sourceStagePixels: req.sourceStagePixels });
-  return withView(result, req.view);
 }
 
 /** The file contents and type for `result` in `format`. */
