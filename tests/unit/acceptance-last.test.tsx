@@ -23,6 +23,9 @@ import { setDither } from '../../src/lib/document';
 import type { ProfileData } from '../../src/types/profiles';
 import { decodedImage, resetStores } from '../helpers/documents';
 import { AdjustmentsPanel } from '../../src/components/panels/AdjustmentsPanel';
+import { MenuBar } from '../../src/components/toolbar/MenuBar';
+import { ZoomControls } from '../../src/components/canvas/ZoomControls';
+import { layoutForWidth, SHORT_LANDSCAPE_QUERY } from '../../src/components/shared/breakpoints';
 import { button, click, fakeViewport, mount, type Mounted } from '../helpers/dom';
 
 let mounted: Mounted | null = null;
@@ -115,6 +118,52 @@ describe('error banner', () => {
 
   it('its dismiss button is a 44 px target under touch', () => {
     expect(block('(pointer: coarse)')).toMatch(/width: var\(--touch-target\);\s*height: var\(--touch-target\)/);
+  });
+});
+
+describe('a phone held sideways', () => {
+  /** A 915 x 412 landscape window with a touch screen. */
+  function landscapePhone(): void {
+    window.matchMedia = (query: string) =>
+      ({
+        matches: query.split(' and ').every((part) => {
+          const m = /\((min|max)-(width|height):\s*(\d+)px\)/.exec(part);
+          if (m) {
+            const v = m[2] === 'width' ? 915 : 412;
+            return m[1] === 'min' ? v >= Number(m[3]) : v <= Number(m[3]);
+          }
+          return /coarse|landscape/.test(part);
+        }),
+        media: query,
+        addEventListener: () => undefined,
+        removeEventListener: () => undefined,
+      }) as unknown as MediaQueryList;
+  }
+
+  it('uses the one-row top bar and the canvas pills, with the panel beside the canvas', () => {
+    landscapePhone();
+    useDocumentStore.getState().open(decodedImage(40, 40), 10);
+    mounted = mount(
+      <>
+        <MenuBar />
+        <ZoomControls />
+      </>
+    );
+    // The compact bar: one Menu button, no separate File menu.
+    expect(button(mounted.container, /^Menu$/)).toBeTruthy();
+    expect(() => button(mounted!.container, /^File$/)).toThrow();
+    // Undo and Redo as the pill.
+    expect(button(mounted.container, /^Undo/)).toBeTruthy();
+    // The panel stays beside the canvas: the layout is the tablet one, not the phone's sheet.
+    expect(layoutForWidth(915)).toBe('tablet');
+  });
+
+  it('the panel header, dialogs and 3D badge shrink for a short landscape window', () => {
+    const q = '@media (max-height: 500px) and (orientation: landscape)';
+    for (const f of ['shell/Shell.module.css', 'shared/Dialog.module.css', 'canvas/DepthViewer3D.module.css']) {
+      expect(readFileSync(resolve(__dirname, '../../src/components', f), 'utf8')).toContain(q);
+    }
+    expect(SHORT_LANDSCAPE_QUERY).toBe('(max-height: 500px) and (orientation: landscape)');
   });
 });
 

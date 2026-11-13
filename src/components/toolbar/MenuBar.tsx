@@ -8,7 +8,7 @@ import { Menu as MenuIcon } from 'lucide-react';
 import { MENUS, itemShortcut, type MenuItem } from '../../lib/menus';
 import { JOBS, JOB_HINT, JOB_LABEL } from '../../lib/workflows';
 import { ProfileSelectors, SetupChip } from './ProfileSelectors';
-import { useLayout } from '../shared/breakpoints';
+import { useCompactChrome } from '../shared/breakpoints';
 import { cropRectOf, describePhysicalSize, dpiOf } from '../../lib/document-size';
 import styles from './MenuBar.module.css';
 
@@ -19,7 +19,7 @@ import styles from './MenuBar.module.css';
  */
 export const MenuBar: React.FC = () => {
   const [openMenu, setOpenMenu] = useState<string | null>(null);
-  const layout = useLayout();
+  const compact = useCompactChrome();
 
   const doc = useDocumentStore((s) => s.doc);
   const isProcessing = useRenderStore((s) => s.isProcessing);
@@ -109,13 +109,13 @@ export const MenuBar: React.FC = () => {
 
   // Phone: one row. The four menus share one button, whose menu lists them
   // as sections; the machine and material fold into a chip that opens them.
-  if (layout === 'phone') {
+  if (compact) {
     const toggle = (id: string) => (e: React.MouseEvent) => {
       e.stopPropagation();
       setOpenMenu(openMenu === id ? null : id);
     };
     return (
-      <div className={styles.menuBar}>
+      <div className={`${styles.menuBar} ${styles.compact}`}>
         <div className={styles.menuItemWrapper}>
           <button
             className={`${styles.menuBtn} ${styles.iconBtn} ${openMenu === 'all' ? styles.menuBtnActive : ''}`}

@@ -146,3 +146,14 @@
   clip: rect(0 0 0 0);
   white-space: nowrap;
 }
+
+/* A phone held sideways: the Undo and Redo pill takes the top left corner, where the size badge sits. */
+@media (max-height: 500px) and (orientation: landscape) {
+  .hudBadge {
+    display: none;
+  }
+
+  .hudOverlay {
+    justify-content: flex-end;
+  }
+}

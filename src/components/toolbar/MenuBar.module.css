@@ -422,79 +422,78 @@
 }
 
 /*
- * Phone (#54): one row, so the canvas keeps the height. One menu button holds
- * the four menus as sections, the job switch takes the middle, and the
- * machine and material fold into a chip that opens them in a small sheet.
- * Menus open across the width of the screen instead of off its edge.
+ * Phone, and a phone held sideways (#54): one row, so the canvas keeps the
+ * height. The bar renders its compact form, marked `.compact`. One menu
+ * button holds the four menus as sections, the job switch takes the middle,
+ * and the machine and material fold into a chip that opens them in a small
+ * sheet. Menus open across the width of the screen instead of off its edge.
  */
-@media (max-width: 599px) {
-  .menuBar {
-    flex-wrap: nowrap;
-    gap: var(--space-2);
-    padding: var(--space-1) var(--space-2);
-  }
+.menuBar.compact {
+  flex-wrap: nowrap;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+}
 
-  .menuItemWrapper {
-    position: static;
-  }
+.compact .menuItemWrapper {
+  position: static;
+}
 
-  .menuItemWrapper:last-child {
-    flex: 1;
-    min-width: 0;
-    display: flex;
-  }
+.compact .menuItemWrapper:last-child {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+}
 
-  .dropdownMenu {
-    position: absolute;
-    top: 100%;
-    left: var(--space-2);
-    right: var(--space-2);
-    min-width: 0;
-    max-height: 75dvh;
-    overflow-y: auto;
-  }
+.compact .dropdownMenu {
+  position: absolute;
+  top: 100%;
+  left: var(--space-2);
+  right: var(--space-2);
+  min-width: 0;
+  max-height: 75dvh;
+  overflow-y: auto;
+}
 
-  .jobSwitch {
-    margin-left: 0;
-    flex-shrink: 0;
-  }
+.compact .jobSwitch {
+  margin-left: 0;
+  flex-shrink: 0;
+}
 
-  .jobBtn {
-    padding: 4px 10px;
-  }
+.compact .jobBtn {
+  padding: 4px 10px;
+}
 
-  .calIdle {
-    display: none;
-  }
+.compact .calIdle {
+  display: none;
+}
 
-  /* Keyboard shortcuts mean little on a phone. */
-  .itemShortcut {
-    display: none;
-  }
+/* Keyboard shortcuts mean little on a phone. */
+.compact .itemShortcut {
+  display: none;
+}
 
-  .setupSheet {
-    padding: var(--space-3);
-    gap: var(--space-2);
-  }
+.compact .setupSheet {
+  padding: var(--space-3);
+  gap: var(--space-2);
+}
 
-  .setupSheet .setupField {
-    display: grid;
-    grid-template-columns: 80px 1fr;
-  }
+.compact .setupSheet .setupField {
+  display: grid;
+  grid-template-columns: 80px 1fr;
+}
 
-  .setupSelect {
-    min-width: 0;
-    max-width: none;
-  }
+.compact .setupSelect {
+  min-width: 0;
+  max-width: none;
+}
 
-  .calChip {
-    max-width: none;
-    border-radius: var(--radius-sm);
-  }
+.compact .calChip {
+  max-width: none;
+  border-radius: var(--radius-sm);
+}
 
-  .calText {
-    white-space: normal;
-  }
+.compact .calText {
+  white-space: normal;
 }
 
 /* Touch (#54): every control in the bar at least --touch-target in both directions. */
