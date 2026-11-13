@@ -56,10 +56,12 @@ describe('keep settings when opening a new image (#67)', () => {
     expect(doc.steps).toEqual(defaultSteps());
     expect(doc.vector).toEqual(DEFAULT_VECTOR);
     expect(doc.depth).toEqual(DEFAULT_DEPTH);
-    expect(doc.mmPerPx).toBeNull();
+    // The size is the new image's own (assumed: its file states none), not the previous image's.
+    expect(doc.sizeOrigin).toBe('assumed');
+    expect(doc.mmPerPx).not.toBe(0.1);
   });
 
-  it('on: a new image has the previous settings, no crop, no size and no history', () => {
+  it("on: a new image has the previous settings, no crop, its own size and no history", () => {
     preferences().setKeepSettingsOnOpen(true);
     editedImage();
     const first = currentDoc();
@@ -76,7 +78,8 @@ describe('keep settings when opening a new image (#67)', () => {
     expect(doc.steps.tonal.contrast).toBe(25);
     // What belongs to the image starts fresh.
     expect(doc.steps.crop).toBeNull();
-    expect(doc.mmPerPx).toBeNull();
+    expect(doc.sizeOrigin).toBe('assumed');
+    expect(doc.mmPerPx).not.toBe(0.1);
     expect(store().past).toEqual([]);
     expect(store().future).toEqual([]);
     // The carried settings are how the image opened, not an edit to undo or to warn about.
@@ -95,12 +98,20 @@ describe('keep settings when opening a new image (#67)', () => {
 
   it('the preference survives a reload, and bad stored data falls back to the default', () => {
     preferences().setKeepSettingsOnOpen(true);
-    expect(JSON.parse(localStorage.getItem(PREFERENCES_KEY)!)).toEqual({ keepSettingsOnOpen: true });
+    expect(JSON.parse(localStorage.getItem(PREFERENCES_KEY)!)).toEqual({ keepSettingsOnOpen: true, lastAppliedDpi: null });
     // A reload: the store starts again from what the browser kept.
     usePreferencesStore.setState({ ...DEFAULT_PREFERENCES });
     preferences().reload();
     expect(preferences().keepSettingsOnOpen).toBe(true);
-    expect(readPreferences()).toEqual({ keepSettingsOnOpen: true });
+    expect(readPreferences()).toEqual({ keepSettingsOnOpen: true, lastAppliedDpi: null });
+
+    // The resolution last applied by hand is kept the same way, and a bad one is dropped.
+    preferences().setLastAppliedDpi(254);
+    usePreferencesStore.setState({ ...DEFAULT_PREFERENCES });
+    preferences().reload();
+    expect(preferences().lastAppliedDpi).toBe(254);
+    localStorage.setItem(PREFERENCES_KEY, '{"keepSettingsOnOpen":true,"lastAppliedDpi":-3}');
+    expect(readPreferences()).toEqual({ keepSettingsOnOpen: true, lastAppliedDpi: null });
 
     localStorage.setItem(PREFERENCES_KEY, '{"keepSettingsOnOpen":"yes"}');
     expect(readPreferences()).toEqual(DEFAULT_PREFERENCES);

@@ -53,14 +53,19 @@ export function zoomAbout(view: View, factor: number, anchor: Point = { x: 0, y:
   };
 }
 
-/** The view that shows all of an `image` in a `container`, centred, at most 100 %. */
-export function fitView(container: Size, image: Size): View {
+/**
+ * The view that shows all of an `image` in a `container`, centred, at most
+ * 100 %. `topInset` screen pixels at the top are kept clear (a bar over the
+ * canvas, such as the crop tool's): the image is fitted and centred below them.
+ */
+export function fitView(container: Size, image: Size, topInset = 0): View {
+  const inset = Math.max(0, Math.min(topInset, container.height / 2));
   const scale = Math.min(
     (container.width - FIT_PADDING) / image.width,
-    (container.height - FIT_PADDING) / image.height,
+    (container.height - FIT_PADDING - inset) / image.height,
     1
   );
-  return { zoom: clampZoom(scale), pan: { x: 0, y: 0 } };
+  return { zoom: clampZoom(scale), pan: { x: 0, y: inset / 2 } };
 }
 
 /** How far one arrow key pans the focused canvas, in screen pixels (#81); Shift pans `PAN_KEY_STEP_LARGE`. */

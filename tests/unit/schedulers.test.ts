@@ -57,8 +57,8 @@ function gated(inner: Pipeline): Pipeline {
     decodeFile: inner.decodeFile.bind(inner),
     putSource: inner.putSource.bind(inner),
     releaseSource: inner.releaseSource.bind(inner),
-    processDepth: inner.processDepth.bind(inner),
-    processBgRemoval: inner.processBgRemoval.bind(inner),
+    exportHeightmap: inner.exportHeightmap.bind(inner),
+    cancelModelDownload: inner.cancelModelDownload.bind(inner),
     renderPreview: hold('preview', inner.renderPreview.bind(inner)),
     renderRelief: hold('relief', inner.renderRelief.bind(inner)),
     traceDocument: hold('trace', inner.traceDocument.bind(inner)),
@@ -142,7 +142,8 @@ describe('preview', () => {
     expect(commits).toEqual([]);
     await pending('preview')[1].release();
     expect(commits).toHaveLength(1);
-    expect(commits[0]).toMatchObject({ width: 12, height: 9 });
+    // At the assumed 300 DPI, 12 x 9 px is 1.0 x 0.76 mm: 10 x 8 dots at the 0.1 mm line interval (#34).
+    expect(commits[0]).toMatchObject({ width: 10, height: 8 });
   });
 
   it('a change the preview does not read starts no render and keeps the one in flight', async () => {
@@ -261,7 +262,7 @@ describe('each flow has the steps that reach its output (#53)', () => {
     expect(pending('relief')).toHaveLength(1);
     expect(FLOWS.relief).not.toContain('adjust');
     expect(FLOWS.relief).not.toContain('dither');
-    store().edit(setDepth({ smoothingRadius: 5 }));
+    store().edit(setDepth({ smoothingMm: 0.5 }));
     expect(pending('relief')).toHaveLength(2);
     expect(FLOWS.relief).toContain('relief');
   });
@@ -279,7 +280,7 @@ describe('each flow has the steps that reach its output (#53)', () => {
   it('no relief renders outside the relief job', () => {
     for (const job of ['photo', 'vector'] as const) {
       useUIStore.getState().setJob(job);
-      store().edit(setDepth({ smoothingRadius: 3 + held.length }));
+      store().edit(setDepth({ smoothingMm: 0.3 + held.length / 10 }));
       expect(pending('relief'), job).toHaveLength(0);
     }
   });

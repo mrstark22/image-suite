@@ -8,6 +8,7 @@ import { useDocumentStore } from '../store/documentStore';
 import { useRenderStore } from '../store/renderStore';
 import { useUIStore } from '../store/uiStore';
 import { usePreferencesStore } from '../store/preferencesStore';
+import { useProfilesStore } from '../store/profilesStore';
 import { useViewStore, type SubstrateMask } from '../store/viewStore';
 import { resetAll } from './document';
 import { canvasIsFlat, isAvailable, menuShortcut, runCommand, type ShortcutCommand } from './shortcuts';
@@ -73,7 +74,8 @@ export const MENUS: readonly Menu[] = [
       ],
       [
         commandItem('export', 'Go to Export', 'export'),
-        { id: 'test-card', label: 'Calibration Test Card…', enabled: () => true, run: () => ui().setTestGridDialogOpen(true) },
+        { id: 'profiles', label: 'Machines & Materials…', enabled: () => true, run: () => useProfilesStore.getState().openManager() },
+        { id: 'calibrate', label: 'Calibrate…', enabled: () => true, run: () => useProfilesStore.getState().openCalibrate() },
       ],
       [{ id: 'close', label: 'Close Image', enabled: hasDoc, run: () => docs().close(), danger: true }],
     ],

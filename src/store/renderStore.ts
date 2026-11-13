@@ -1,8 +1,10 @@
+import type { PreparedHistogram } from '../wasm/wasm-bridge';
+import type { ResolvedDepthSource } from '../types/depth';
+import type { DepthModelProgress } from '../lib/ai-depth';
 import { create } from 'zustand';
 import type { ImageDocument } from '../types/document';
-import type { VectorLayer, VectorResult } from '../types/vector';
+import type { VectorResult } from '../types/vector';
 import type { PreviewSource } from '../lib/crop';
-import { MM_PER_INCH } from '../lib/document-size';
 import { sameValue } from '../lib/document';
 import type { ExportProgress, SourceStage } from '../types/worker-messages';
 import { useDocumentStore } from './documentStore';
@@ -18,14 +20,6 @@ import { withDrawnColours } from '../lib/trace-palette';
  * traced (colours, merges and removals, the cutline) is in the document's
  * tracing settings, so it is undoable (#32).
  */
-/** Background removal's result: replaces the `source`-stage render it was computed from. */
-interface BackgroundRemoval {
-  key: string;
-  pixels: ArrayBuffer;
-  /** The `source`-stage pixels before removal, for Restore. */
-  original: ArrayBuffer;
-}
-
 interface RenderState {
   /**
    * The `source`-stage render (cropped, flattened, resampled, unadjusted) at
@@ -35,28 +29,28 @@ interface RenderState {
   source: PreviewSource | null;
   /** The latest committed preview, the same size as `source`. */
   processed: ArrayBuffer | null;
-  /** Background removal applied to the current `source`, if any. Not part of the document. */
-  backgroundRemoval: BackgroundRemoval | null;
+  /**
+   * Histogram of the committed preview's `prepared` stage (after tone,
+   * colour and detail, before the dither): the tones the Adjust step acts on.
+   */
+  preparedHistogram: PreparedHistogram | null;
   /** Increases on every commit to `processed`, so the canvas redraws. */
   previewVersion: number;
+  /** The relief heightmap the view shows (16-bit, the size of `source`). The export computes the same at full resolution. */
   depthHeightMap: ArrayBuffer | null;
+  /** The relief render's state: the source used, the AI model's progress, and why it failed. */
+  relief: ReliefStatus;
   vectorResult: VectorResult | null;
   autoTrace: boolean;
   /** True when the tracing settings changed while auto-trace was off. */
   isVectorStale: boolean;
   /**
    * Everything in the document that `vectorResult` was traced from, or null
-   * when it was not traced (a test grid overlay). The trace is stale when any
+   * when there is no trace. The trace is stale when any
    * of it changes: the trace reads the adjustments and the size as well as
    * the tracing settings (#23, review of #84).
    */
   tracedInputs: TraceInputs | null;
-  /**
-   * The background-removed pixels the trace shown read, or null if it read the
-   * image as opened. Removal is not in the document, so it is recorded beside
-   * `tracedInputs` (review of #84).
-   */
-  tracedRemoval: ArrayBuffer | null;
   /**
    * The layers hidden on screen, by `layerKey`, kept across traces so a
    * re-trace does not show them again. A colour layer is known by its
@@ -89,17 +83,15 @@ interface RenderState {
    * nothing, when the render was made from a `source`-stage render that is
    * neither the one carried nor the one held (the caller renders again).
    */
-  commitRender: (render: { key: string; sourceStage: SourceStage | null; pixels: ArrayBuffer; durationMs: number }) => boolean;
+  commitRender: (render: {
+    key: string;
+    sourceStage: SourceStage | null;
+    pixels: ArrayBuffer;
+    histogram?: PreparedHistogram;
+    durationMs: number;
+  }) => boolean;
   setDepthHeightMap: (buffer: ArrayBuffer | null) => void;
-  /**
-   * Replaces the `source`-stage pixels (background removal) with `buffer`,
-   * computed from `from`. Does nothing and returns false unless the current
-   * source is still that render. The pixels are not part of the document: a
-   * new crop or image discards them.
-   */
-  replaceSourcePixels: (buffer: ArrayBuffer, from: PreviewSource) => boolean;
-  /** Undoes background removal. */
-  restoreSource: () => void;
+  setRelief: (relief: Partial<ReliefStatus>) => void;
   setVectorResult: (result: VectorResult | null) => void;
   setAutoTrace: (autoTrace: boolean) => void;
   /** Turns auto-trace on and traces now. */
@@ -111,8 +103,6 @@ interface RenderState {
    */
   cancelTrace: () => void;
   setIsTracing: (tracing: boolean) => void;
-  /** Shows `layer` (a test grid's cut paths) as the vector result, in place of any trace. */
-  addVectorLayer: (layer: VectorLayer) => void;
   clearVectors: () => void;
   toggleVectorLayer: (layerId: string) => void;
   setIsProcessing: (processing: boolean) => void;
@@ -122,16 +112,15 @@ interface RenderState {
 
 
 /**
- * True when the trace shown was made from the document as it is now (or is
- * not a trace at all, like a test grid), so exporting it writes what is on
- * screen. False while a newer trace is due or the settings changed.
+ * True when the trace shown was made from the document as it is now, so
+ * exporting it writes what is on screen. False while a newer trace is due or the settings changed.
  */
 export function traceIsCurrent(): boolean {
-  const { vectorResult, tracedInputs, tracedRemoval, backgroundRemoval } = useRenderStore.getState();
+  const { vectorResult, tracedInputs } = useRenderStore.getState();
   const doc = useDocumentStore.getState().doc;
   if (!vectorResult || !doc) return false;
-  if (tracedInputs === null) return true;
-  return sameValue(tracedInputs, traceInputsOf(doc)) && tracedRemoval === (backgroundRemoval?.pixels ?? null);
+  if (tracedInputs === null) return false;
+  return sameValue(tracedInputs, traceInputsOf(doc));
 }
 
 /**
@@ -143,41 +132,28 @@ export function pxPerMmOfSource(doc: ImageDocument, source: Pick<PreviewSource, 
   return doc.mmPerPx === null ? null : source.width / (source.crop.width * doc.mmPerPx);
 }
 
-/** Preview pixels per inch of the open document, or `null` while its size is not set. */
-export function previewDpi(): number | null {
-  const doc = useDocumentStore.getState().doc;
-  const source = useRenderStore.getState().source;
-  if (!doc || !source) return null;
-  const pxPerMm = pxPerMmOfSource(doc, source);
-  return pxPerMm === null ? null : pxPerMm * MM_PER_INCH;
+/** What the relief panel shows about the last relief render. */
+export interface ReliefStatus {
+  /** The source the heightmap shown came from (`auto` resolved); null before one. */
+  source: ResolvedDepthSource | null;
+  /** The AI model's download or estimate in progress, or null. */
+  model: DepthModelProgress | null;
+  /** Why the last relief render failed; null when it did not. No heightmap is shown then. */
+  error: string | null;
 }
 
-function summed(layers: VectorLayer[]): Pick<VectorResult, 'totalPaths' | 'totalNodes'> {
-  return {
-    totalPaths: layers.reduce((acc, l) => acc + l.paths.length, 0),
-    totalNodes: layers.reduce((acc, l) => acc + l.paths.reduce((n, p) => n + (p.nodeCount || 0), 0), 0),
-  };
-}
-
-/**
- * True when changing background removal leaves the trace on screen out of
- * date: a trace is shown and none will replace it, as auto-trace is off. With
- * auto-trace on, the scheduler traces again (review of #84).
- */
-function removalOutdatesTrace(s: Pick<RenderState, 'vectorResult' | 'tracedInputs' | 'autoTrace'>): boolean {
-  return s.vectorResult !== null && s.tracedInputs !== null && !s.autoTrace;
-}
+const EMPTY_RELIEF: ReliefStatus = { source: null, model: null, error: null };
 
 const EMPTY_RESULTS = {
   source: null,
   processed: null,
-  backgroundRemoval: null,
+  preparedHistogram: null,
   depthHeightMap: null,
+  relief: EMPTY_RELIEF,
   vectorResult: null,
   autoTrace: true,
   isVectorStale: false,
   tracedInputs: null,
-  tracedRemoval: null,
   hiddenLayers: [] as string[],
   isProcessing: false,
   processingDurationMs: 0,
@@ -191,7 +167,7 @@ export const useRenderStore = create<RenderState>((set, get) => ({
   errorMessage: null,
   exportProgress: null,
 
-  commitRender: ({ key, sourceStage, pixels, durationMs }) => {
+  commitRender: ({ key, sourceStage, pixels, histogram, durationMs }) => {
     const held = get().source;
     if (!sourceStage && held?.key !== key) return false;
     const doc = useDocumentStore.getState().doc;
@@ -207,12 +183,10 @@ export const useRenderStore = create<RenderState>((set, get) => ({
             height: sourceStage.height,
           }
         : s.source;
-      // Background removal belongs to the render it was computed from.
-      const removal = s.backgroundRemoval?.key === source?.key ? s.backgroundRemoval : null;
       return {
-        source: removal && source ? { ...source, buffer: removal.pixels } : source,
-        backgroundRemoval: removal,
+        source,
         processed: pixels,
+        preparedHistogram: histogram ?? null,
         previewVersion: s.previewVersion + 1,
         processingDurationMs: durationMs,
       };
@@ -221,32 +195,7 @@ export const useRenderStore = create<RenderState>((set, get) => ({
   },
 
   setDepthHeightMap: (depthHeightMap) => set({ depthHeightMap }),
-
-  replaceSourcePixels: (buffer, from) => {
-    const current = get().source;
-    const same = current !== null && current.key === from.key && buffer.byteLength === current.width * current.height * 4;
-    if (!same) return false;
-    const original = get().backgroundRemoval?.original ?? current.buffer;
-    set((s) => ({
-      source: { ...current, buffer },
-      backgroundRemoval: { key: current.key, pixels: buffer, original },
-      isVectorStale: s.isVectorStale || removalOutdatesTrace(s),
-    }));
-    return true;
-  },
-
-  restoreSource: () => {
-    const { source, backgroundRemoval } = get();
-    if (!source || !backgroundRemoval || backgroundRemoval.key !== source.key) {
-      set({ backgroundRemoval: null });
-      return;
-    }
-    set((s) => ({
-      source: { ...source, buffer: backgroundRemoval.original },
-      backgroundRemoval: null,
-      isVectorStale: s.isVectorStale || removalOutdatesTrace(s),
-    }));
-  },
+  setRelief: (relief) => set((s) => ({ relief: { ...s.relief, ...relief } })),
 
   // Called with a trace's result only while nothing it read has changed, so the
   // document's tracing settings are the ones it was traced with.
@@ -265,7 +214,6 @@ export const useRenderStore = create<RenderState>((set, get) => ({
       },
       isVectorStale: false,
       tracedInputs: doc ? traceInputsOf(doc) : null,
-      tracedRemoval: get().backgroundRemoval?.pixels ?? null,
     });
   },
 
@@ -280,35 +228,14 @@ export const useRenderStore = create<RenderState>((set, get) => ({
       const changed =
         s.vectorResult !== null &&
         s.tracedInputs !== null &&
-        (!doc || !sameValue(traceInputsOf(doc), s.tracedInputs) || s.tracedRemoval !== (s.backgroundRemoval?.pixels ?? null));
+        (!doc || !sameValue(traceInputsOf(doc), s.tracedInputs));
       return { autoTrace: false, traceRequest: s.traceRequest + 1, isTracing: false, isVectorStale: s.isVectorStale || changed };
     }),
 
   setIsTracing: (isTracing) => set({ isTracing }),
 
-  addVectorLayer: (layer) => {
-    const source = get().source;
-    const dpi = previewDpi();
-    const layers = [layer];
-    set({
-      // Not a trace, so not traced with any settings.
-      tracedInputs: null,
-      tracedRemoval: null,
-      // Nor can it be out of date: a flag left by an earlier change would block its export.
-      isVectorStale: false,
-      autoTrace: false,
-      vectorResult: {
-        layers,
-        palette: [],
-        ...summed(layers),
-        dimensions: { width: source?.width ?? 1000, height: source?.height ?? 1000 },
-        pxPerMm: dpi === null ? null : dpi / MM_PER_INCH,
-      },
-    });
-  },
-
   clearVectors: () =>
-    set({ vectorResult: null, autoTrace: false, isVectorStale: false, tracedInputs: null, tracedRemoval: null, hiddenLayers: [] }),
+    set({ vectorResult: null, autoTrace: false, isVectorStale: false, tracedInputs: null, hiddenLayers: [] }),
 
   toggleVectorLayer: (layerId) => {
     const vr = get().vectorResult;
@@ -357,15 +284,12 @@ useDocumentStore.subscribe((state, prev) => {
 
   // By value: Reset All and recipes build new objects even when nothing in them changes.
   // Any input of the trace counts: adjustments and the size as well as the tracing settings.
-  // A test grid's paths are not a trace of the image, so nothing makes them
-  // stale and they stay exportable (review of #84).
   const render = useRenderStore.getState();
-  const showsTestGrid = render.vectorResult !== null && render.tracedInputs === null;
   // The colour a layer is drawn in is not traced: it is applied to the result on screen (#91).
-  if (render.vectorResult && !showsTestGrid && !sameValue(doc.vector.palette, before.vector.palette)) {
+  if (render.vectorResult && !sameValue(doc.vector.palette, before.vector.palette)) {
     useRenderStore.setState({ vectorResult: withDrawnColours(render.vectorResult, doc.vector.palette) });
   }
-  if (!render.autoTrace && !showsTestGrid && !sameValue(traceInputsOf(doc), traceInputsOf(before))) {
+  if (!render.autoTrace && !sameValue(traceInputsOf(doc), traceInputsOf(before))) {
     useRenderStore.setState({ isVectorStale: true });
   }
 });

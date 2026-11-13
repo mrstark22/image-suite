@@ -22,12 +22,12 @@ import { AIPanel } from '../../src/components/panels/AIPanel';
 import { DitheringPanel } from '../../src/components/panels/DitheringPanel';
 import { ExportPanel } from '../../src/components/panels/ExportPanel';
 import { ShortcutsDialog } from '../../src/components/dialogs/ShortcutsDialog';
+import { ProfilesDialog } from '../../src/components/dialogs/ProfilesDialog';
 import { AdjustmentsPanel } from '../../src/components/panels/AdjustmentsPanel';
 import { VectorizationPanel } from '../../src/components/panels/VectorizationPanel';
 import { DepthMapPanel } from '../../src/components/panels/DepthMapPanel';
 import { CropStepPanel, ImageStepPanel, NeedsImage, SizeStepPanel } from '../../src/components/panels/PrepSteps';
 import { SizeDialog } from '../../src/components/dialogs/SizeDialog';
-import { MaterialTestGridDialog } from '../../src/components/dialogs/MaterialTestGridDialog';
 import { DropZone } from '../../src/components/shared/DropZone';
 import { connectSchedulers, createSchedulers } from '../../src/lib/schedulers';
 import { CanvasRulers } from '../../src/components/canvas/CanvasRulers';
@@ -36,24 +36,14 @@ import { setPipeline, type Pipeline } from '../../src/lib/pipeline-client';
 import { useDocumentStore } from '../../src/store/documentStore';
 import { useRenderStore } from '../../src/store/renderStore';
 import { useUIStore } from '../../src/store/uiStore';
-import { setDepth, setDetail, setDither, setVector } from '../../src/lib/document';
+import { usePreferencesStore } from '../../src/store/preferencesStore';
+import { setBackground, setDepth, setDetail, setDither, setVector } from '../../src/lib/document';
 import type { DitherAlgorithm } from '../../src/types/dither';
 import type { TraceColorMode, TraceShapes, VectorResult } from '../../src/types/vector';
 import type { DepthSource, DepthViewMode } from '../../src/types/depth';
 import type { PreviewSource } from '../../src/lib/crop';
 import { decodedImage, resetStores } from '../helpers/documents';
 import { accessibleName, button, click, mount, one, press, setInputValue, settle, type Mounted } from '../helpers/dom';
-
-// The test grid dialog opens its grid through this module; a test makes it fail.
-const testGridDocument = vi.hoisted(() => ({ failWith: null as Error | null }));
-vi.mock('../../src/lib/test-grid-document', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../src/lib/test-grid-document')>();
-  return {
-    ...actual,
-    openTestGridRaster: (...args: Parameters<typeof actual.openTestGridRaster>) =>
-      testGridDocument.failWith ? Promise.reject(testGridDocument.failWith) : actual.openTestGridRaster(...args),
-  };
-});
 
 let mounted: Mounted | null = null;
 const render = (el: React.ReactElement) => (mounted = mount(el));
@@ -76,68 +66,25 @@ function openWithPreview(): void {
   useRenderStore.setState({ source: previewSource(), processed: new ArrayBuffer(4 * 4 * 4) });
 }
 
-const realReplace = useRenderStore.getState().replaceSourcePixels;
-
 beforeEach(() => {
   resetStores();
   useRenderStore.setState({
     source: null,
     processed: null,
     exportProgress: null,
-    backgroundRemoval: null,
     vectorResult: null,
     isTracing: false,
   });
   useUIStore.setState({ job: 'photo' });
-  testGridDocument.failWith = null;
 });
 
 afterEach(() => {
   mounted?.unmount();
   mounted = null;
   setPipeline(null);
-  useRenderStore.setState({ replaceSourcePixels: realReplace });
   vi.restoreAllMocks();
 });
 
-describe('Background step: messages carry the tone of what happened', () => {
-  function removeWith(processBgRemoval: Pipeline['processBgRemoval']) {
-    setPipeline({ processBgRemoval } as unknown as Pipeline);
-    openWithPreview();
-    const { container } = render(<AIPanel />);
-    return { container, run: () => settle(() => button(container, /Remove Background/).click()) };
-  }
-
-  it('a failure is shown as an error alert, with the reason, not in the success style', async () => {
-    vi.spyOn(console, 'error').mockImplementation(() => undefined);
-    const { container, run } = removeWith(() => Promise.reject(new Error('engine failed to load')));
-    await run();
-    const alert = one(container, '[role=alert]');
-    expect(alert.getAttribute('data-tone')).toBe('error');
-    expect(alert.textContent).toContain('engine failed to load');
-    expect(container.querySelector('[data-tone=success]')).toBeNull();
-  });
-
-  it('a success is shown as a success status', async () => {
-    useRenderStore.setState({ replaceSourcePixels: () => true });
-    const { container, run } = removeWith(() =>
-      Promise.resolve({ buffer: new ArrayBuffer(64), width: 4, height: 4, removedPixelCount: 3, durationMs: 1 }),
-    );
-    await run();
-    const status = one(container, '[role=status]');
-    expect(status.getAttribute('data-tone')).toBe('success');
-    expect(container.querySelector('[role=alert]')).toBeNull();
-  });
-
-  it('a result discarded because the image changed is a warning, not a success', async () => {
-    useRenderStore.setState({ replaceSourcePixels: () => false });
-    const { container, run } = removeWith(() =>
-      Promise.resolve({ buffer: new ArrayBuffer(64), width: 4, height: 4, removedPixelCount: 3, durationMs: 1 }),
-    );
-    await run();
-    expect(one(container, '[role=status]').getAttribute('data-tone')).toBe('warning');
-  });
-});
 
 describe('Export step: progress and cancel', () => {
   it('encoding shows its percentage on a progress bar, and Cancel asks the worker to stop', () => {
@@ -160,7 +107,7 @@ describe('Export step: progress and cancel', () => {
     URL.createObjectURL = createObjectURL;
     openWithPreview();
     const { container } = render(<ExportPanel />);
-    await settle(() => button(container, /Export Prepared Image/).click());
+    await settle(() => button(container, /Export (Prepared Image|for Pass-Through)/).click());
     expect(exportRaster).toHaveBeenCalledTimes(1);
     const alert = one(container, '[role=alert]');
     expect(alert.getAttribute('data-tone')).toBe('error');
@@ -200,10 +147,13 @@ function inaccessibleControls(root: HTMLElement): string[] {
 }
 
 describe('every control in the migrated panels is reachable and named', () => {
-  it('Background', () => {
+  it('Background, with removal applied', () => {
+    setPipeline({ setModelProgressListener: () => undefined, backgroundPreview: () => new Promise(() => undefined) } as unknown as Pipeline);
     openWithPreview();
+    useDocumentStore.getState().edit(setBackground({ enabled: true }));
     const { container } = render(<AIPanel />);
-    expect(container.querySelectorAll('button, input, select').length).toBeGreaterThan(4);
+    // Restore, and the two sliders with their number fields.
+    expect(container.querySelectorAll('button, input, select').length).toBe(5);
     expect(inaccessibleControls(container)).toEqual([]);
   });
 
@@ -235,6 +185,35 @@ describe('every control in the migrated panels is reachable and named', () => {
     }
   });
 
+  it('the Machines & Materials manager: both lists, a material, a calibration and a confirmation (#33)', async () => {
+    const p = await import('../../src/lib/profiles');
+    const store = await import('../../src/store/profilesStore');
+    let d = p.seedProfiles();
+    const cat = p.addCategory(d, 'Hardwoods');
+    const mat = p.addMaterial(cat.data, { name: 'White oak', finish: '', supplier: '', notes: '', categoryId: cat.id });
+    const other = p.addMaterial(mat.data, { name: 'Red oak', finish: '', supplier: '', notes: '', categoryId: null });
+    const t = p.addThickness(other.data, mat.id, 3);
+    d = p.saveCalibration(t.data, { kind: 'cut', machineId: d.machines[0].id, materialId: mat.id, thicknessId: t.id }, {
+      speedMmS: 20, powerMinPct: 60, powerMaxPct: 60, passes: 2, lineIntervalMm: null, toneCurve: null, depthCurve: null, kerfMm: 0.2, status: 'unverified', notes: '',
+    }).data;
+    store.setProfileStorage(store.memoryProfileStorage(d));
+    await store.loadProfiles();
+    const { container } = render(<ProfilesDialog />);
+    act(() => store.useProfilesStore.getState().openManager({ tab: 'machines', id: d.machines[0].id }));
+    expect(inaccessibleControls(container), 'machines').toEqual([]);
+    act(() => store.useProfilesStore.getState().openManager({ tab: 'materials', id: mat.id }));
+    expect(container.querySelectorAll('button, input, select, textarea').length).toBeGreaterThan(12);
+    expect(inaccessibleControls(container), 'material').toEqual([]);
+    click(button(container, /^Edit cutting 3 mm calibration on 60 W CO2$/));
+    expect(inaccessibleControls(container), 'calibration').toEqual([]);
+    click(button(container, /^Delete$/));
+    expect(container.querySelector('[role=alertdialog]')).not.toBeNull();
+    expect(inaccessibleControls(container), 'confirmation').toEqual([]);
+    // Escape closes it like every dialog.
+    press('Escape');
+    expect(store.useProfilesStore.getState().managerOpen).toBe(false);
+  });
+
   it('the shortcuts dialog', () => {
     const { container } = render(<ShortcutsDialog isOpen onClose={() => {}} />);
     expect(container.querySelector('[role=dialog]')).not.toBeNull();
@@ -248,8 +227,9 @@ describe('every control in the migrated panels is reachable and named', () => {
       useDocumentStore.getState().edit(setDetail({ clahe: true, adaptiveThreshold: true, unsharpStrength: 50 }));
       const { container, unmount } = mount(<AdjustmentsPanel />);
       for (const toggle of container.querySelectorAll<HTMLButtonElement>('h3 button[aria-expanded=false]')) click(toggle);
-      expect(container.querySelectorAll('h3 button[aria-expanded=true]')).toHaveLength(5);
-      expect(container.querySelectorAll('input[type=range]').length).toBeGreaterThan(20);
+      expect(container.querySelectorAll('h3 button[aria-expanded=true]')).toHaveLength(6);
+      // 20 in the photo job, which hides saturation and vibrance (they barely change the greys burned).
+      expect(container.querySelectorAll('input[type=range]').length).toBeGreaterThanOrEqual(20);
       expect(inaccessibleControls(container), `size ${mmPerPx}`).toEqual([]);
       unmount();
     }
@@ -310,8 +290,8 @@ describe('every control in the migrated panels is reachable and named', () => {
 
   it('Relief, for every source and view mode', () => {
     openWithPreview();
-    const sources: DepthSource[] = ['ai-estimation', 'tonal-height', 'distance-transform'];
-    const views: DepthViewMode[] = ['3d-interactive', '3d-shaded', 'heatmap', 'grayscale'];
+    const sources: DepthSource[] = ['auto', 'ai-estimation', 'tonal-height', 'distance-transform'];
+    const views: DepthViewMode[] = ['3d', 'heightmap'];
     const { container, rerender } = render(<DepthMapPanel />);
     for (const source of sources) {
       for (const viewMode of views) {
@@ -320,15 +300,17 @@ describe('every control in the migrated panels is reachable and named', () => {
         expect(inaccessibleControls(container), `${source} ${viewMode}`).toEqual([]);
       }
     }
-    // Each group of cards says which card is chosen: the last view mode and source set.
+    // Each group of cards says which card is chosen: the last source, bevel and view mode set.
     const pressed = [...container.querySelectorAll('[aria-pressed=true]')].map((b) => accessibleName(b));
     expect(pressed).toEqual([
-      expect.stringMatching(/^Raw 2D Grayscale/),
-      expect.stringMatching(/^Vector & Logo Bevel/),
-      expect.stringMatching(/^Prismatic/),
+      expect.stringMatching(/^Shape/),
+      expect.stringMatching(/^Round/),
+      expect.stringMatching(/^Heightmap/),
     ]);
-    const invert = one<HTMLInputElement>(container, 'input[type=checkbox]');
-    expect(accessibleName(invert)).toBe('Invert Z-Axis Height');
+    const invert = [...container.querySelectorAll<HTMLInputElement>('input[type=checkbox]')].find(
+      (c) => accessibleName(c) === 'Carve in instead of raising'
+    )!;
+    expect(invert).toBeTruthy();
     expect(invert.getAttribute('aria-describedby')).toBeTruthy();
   });
 
@@ -353,20 +335,6 @@ describe('every control in the migrated panels is reachable and named', () => {
     const { container } = render(<SizeDialog />);
     expect(container.querySelector('[role=dialog]')).not.toBeNull();
     expect(container.querySelectorAll('input[type=number]')).toHaveLength(2);
-    expect(inaccessibleControls(container)).toEqual([]);
-  });
-
-  it('the test grid dialog, for a raster and a vector grid', () => {
-    openWithPreview();
-    const { container } = render(<MaterialTestGridDialog isOpen onClose={() => {}} />);
-    expect(container.querySelectorAll('input[type=number]')).toHaveLength(5);
-    expect(inaccessibleControls(container)).toEqual([]);
-    const output = [...container.querySelectorAll('select')].find((el) => accessibleName(el) === 'Output Format')!;
-    act(() => {
-      output.value = 'vector';
-      output.dispatchEvent(new Event('change', { bubbles: true }));
-    });
-    expect(container.querySelectorAll('input[type=number]')).toHaveLength(4);
     expect(inaccessibleControls(container)).toEqual([]);
   });
 
@@ -402,7 +370,7 @@ describe('canvas controls a keyboard can reach (#55 review)', () => {
 
   it('the ruler unit switch is disabled while the size is not set, since only px can be measured', () => {
     useUIStore.setState({ showRulers: true });
-    useDocumentStore.getState().open(decodedImage(4, 4));
+    useDocumentStore.getState().open(decodedImage(4, 4), null);
     useRenderStore.setState({ source: previewSource() });
     const { container } = render(<CanvasRulers />);
     expect(one<HTMLButtonElement>(container, 'button').disabled).toBe(true);
@@ -478,15 +446,27 @@ describe('dialogs on the shared Dialog', () => {
     }
   });
 
-  it('a test grid that fails to open is shown as an error alert with the reason, and the dialog stays open', async () => {
-    testGridDocument.failWith = new Error('the grid is larger than the largest image allowed');
-    const onClose = vi.fn();
-    const { container } = render(<MaterialTestGridDialog isOpen onClose={onClose} />);
-    await settle(() => button(container, /Generate Calibration Grid/).click());
-    const alert = one(container, '[role=alert]');
-    expect(alert.getAttribute('data-tone')).toBe('error');
-    expect(alert.textContent).toContain('larger than the largest image allowed');
-    expect(onClose).not.toHaveBeenCalled();
+  it('applying a size in the dialog marks it as set by hand and remembers its DPI for the next image without one', () => {
+    useDocumentStore.getState().open(decodedImage(400, 300));
+    expect(useDocumentStore.getState().doc!.sizeOrigin).toBe('assumed');
+    useUIStore.setState({ isSizeDialogOpen: true });
+    const { container } = render(<SizeDialog />);
+    expect(container.textContent).toContain('300 DPI was assumed');
+    const width = container.querySelectorAll<HTMLInputElement>('input[type=number]')[0];
+    act(() => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!;
+      setter.call(width, '80');
+      width.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    act(() => button(container, /^Apply$/).click());
+    const doc = useDocumentStore.getState().doc!;
+    expect(doc.sizeOrigin).toBe('user');
+    // 400 px across 80 mm is 127 DPI.
+    expect(doc.mmPerPx).toBeCloseTo(0.2, 12);
+    expect(usePreferencesStore.getState().lastAppliedDpi).toBeCloseTo(127, 9);
+    useDocumentStore.getState().open(decodedImage(50, 50));
+    expect(useDocumentStore.getState().doc!.sizeOrigin).toBe('assumed');
+    expect(useDocumentStore.getState().doc!.mmPerPx).toBeCloseTo(0.2, 12);
   });
 });
 
@@ -676,13 +656,26 @@ const RUN_TIME_STYLES: Record<string, RegExp[]> = {
   'src/components/canvas/PreviewCanvas.tsx': [
     /^style=\{\{ transform: `translate\(\$\{pan\.x\}px, \$\{pan\.y\}px\) scale\(\$\{zoom\}\)`, '--view-zoom': zoom \} as React\.CSSProperties\}$/,
     /^style=\{\{ left: `\$\{splitPosition \* 100\}%` \}\}$/,
+    // Below 100% the area-averaged copy is drawn smaller and laid over the image at its size.
+    /^style=\{\{ width: dims\.width, height: dims\.height \}\}$/,
   ],
   // The crop box, and the four dimmed areas around it, follow the crop being drawn.
   'src/components/canvas/CanvasCropOverlay.tsx': [CROP_GEOMETRY],
+  // A calibration card is drawn in its own proportions, or at its size in mm (#40).
+  'src/components/dialogs/CardPicture.tsx': [/^style=\{\{ aspectRatio: `\$\{layout\.widthMm\} \/ \$\{layout\.heightMm\}`, width: realSize \? `\$\{layout\.widthMm\}mm` : `min\(100%, \$\{fitHeightVh\(layout\)\}vh\)` \}\}$/],
+  // The controls over a card's cells sit where the cells are; a layer's swatch is its LightBurn colour.
+  // Card 1's list of cells has a column per power on the card (#56).
+  'src/components/dialogs/CalibrateDialog.tsx': [
+    /^style=\{placeAt\(layout, /,
+    /^style=\{\{ background: r\.colour \}\}$/,
+    /^style=\{\{ gridTemplateColumns: `auto repeat\(\$\{powers\.length\}, minmax\(44px, 1fr\)\)` \}\}$/,
+  ],
+  // A card read from a photo is shown flattened, in its own proportions (#56).
+  'src/components/dialogs/CardPhotoReader.tsx': [/^style=\{\{ aspectRatio: `\$\{W\} \/ \$\{H\}` \}\}$/],
 };
 
 /** Inline style attributes across src: exactly the run-time values allowed above. */
-const INLINE_STYLE_COUNT = 11;
+const INLINE_STYLE_COUNT = 20;
 
 describe('inline styles (#55)', () => {
   it('no component has one, apart from values computed at run time', () => {

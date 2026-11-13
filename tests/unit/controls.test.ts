@@ -5,14 +5,6 @@
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { DraftField, SliderGesture, isValueKey } from '../../src/lib/slider-input';
-import {
-  INITIAL_GRID_FORM,
-  committedGridValues,
-  fieldText,
-  gridFormReducer,
-  type GridField,
-  type GridForm,
-} from '../../src/lib/test-grid-form';
 import { canApplySize, sizeDraftReducer, type SizeDraft } from '../../src/lib/size-draft';
 import { useDocumentStore, setGestureEndTarget } from '../../src/store/documentStore';
 import { setTonal } from '../../src/lib/document';
@@ -155,57 +147,5 @@ describe('size dialog state (review finding 3)', () => {
     const state = sizeDraftReducer(type({ pending: null, editing: null }, ''), { type: 'suggest', scale: 25.4 / 72 });
     expect(state.pending).toBeCloseTo(25.4 / 72, 12);
     expect(state.editing).toBeNull();
-  });
-});
-
-describe('material test grid fields (re-review finding A)', () => {
-  /** Types `text` one character at a time, as a keyboard does, after selecting all. */
-  function typeInto(form: GridForm, field: GridField, text: string): GridForm {
-    let state = form;
-    for (let i = 1; i <= text.length; i++) {
-      state = gridFormReducer(state, { type: 'type', field, text: text.slice(0, i) });
-    }
-    return state;
-  }
-
-  it('typing 150 into Grid Resolution one character at a time ends at 150, not 1200', () => {
-    let form = typeInto(INITIAL_GRID_FORM, 'dpi', '150');
-    expect(fieldText(form, 'dpi')).toBe('150');
-    form = gridFormReducer(form, { type: 'commit', field: 'dpi' });
-    expect(form.values.dpi).toBe(150);
-    expect(typeInto(INITIAL_GRID_FORM, 'dpi', '600').drafts.dpi).toBe('600');
-  });
-
-  it('clamps only when committed: below and above the range, and whole numbers for counts', () => {
-    const commit = (field: GridField, text: string) =>
-      gridFormReducer(typeInto(INITIAL_GRID_FORM, field, text), { type: 'commit', field }).values[field];
-    expect(commit('dpi', '20')).toBe(50);
-    expect(commit('dpi', '5000')).toBe(1200);
-    expect(commit('rows', '0')).toBe(1);
-    expect(commit('rows', '99')).toBe(15);
-    expect(commit('cols', '3.6')).toBe(4);
-    expect(commit('boxSizeMm', '7.5')).toBe(7.5);
-    expect(commit('gapMm', '0')).toBe(0);
-  });
-
-  it('an empty or non-numeric field keeps its previous value when committed', () => {
-    const typed = typeInto(INITIAL_GRID_FORM, 'dpi', '450');
-    const set = gridFormReducer(typed, { type: 'commit', field: 'dpi' });
-    const cleared = gridFormReducer(gridFormReducer(set, { type: 'type', field: 'dpi', text: '' }), {
-      type: 'commit',
-      field: 'dpi',
-    });
-    expect(cleared.values.dpi).toBe(450);
-    expect(fieldText(cleared, 'dpi')).toBe('450');
-  });
-
-  it('Generate uses text typed but not yet blurred', () => {
-    const form = typeInto(typeInto(INITIAL_GRID_FORM, 'dpi', '150'), 'rows', '8');
-    expect(committedGridValues(form)).toMatchObject({ dpi: 150, rows: 8, cols: 5 });
-  });
-
-  it('closing the dialog drops half-typed text', () => {
-    const form = gridFormReducer(typeInto(INITIAL_GRID_FORM, 'dpi', '15'), { type: 'discardDrafts' });
-    expect(fieldText(form, 'dpi')).toBe(String(INITIAL_GRID_FORM.values.dpi));
   });
 });

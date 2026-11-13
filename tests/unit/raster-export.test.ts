@@ -12,7 +12,7 @@ import { exportPlan, nativeTarget } from '../../src/lib/render-target';
 import { cancelRasterExport, exportRaster } from '../../src/lib/raster-export';
 import type { ImageDocument } from '../../src/types/document';
 import type { ExportProgress, RasterExport } from '../../src/types/worker-messages';
-import { currentDoc, labelledImage, resetStores } from '../helpers/documents';
+import { currentDoc, greyscale, labelledImage, resetStores } from '../helpers/documents';
 import { loadPixels, startTestPipeline, type TestPipeline } from '../helpers/pipeline';
 import { decodePng } from '../helpers/png-decode';
 import { decodeBmp } from '../helpers/bmp-decode';
@@ -35,6 +35,8 @@ const MM_PER_PX = 0.0847;
 
 async function openLabelled(width: number, height: number, mmPerPx: number | null = MM_PER_PX) {
   store().open(await loadPixels(pipeline.api, labelledImage(width, height), width, height, 'photo.png'), mmPerPx);
+  // The greyscale path at native resolution; the dithered export is tested below and in photo-engraving.test.ts.
+  greyscale();
   await pipeline.settled();
 }
 
@@ -111,18 +113,16 @@ describe('raster export at full resolution', () => {
     expect(png.phys!.x).toBe(23622);
   });
 
-  it('writes a dithered image as 8-bit greyscale, byte for byte', async () => {
+  it('writes a dithered image as 1-bit black and white at the dot grid, bit for bit (#39)', async () => {
+    // 640 px at 254 DPI is 64 mm: at the default 0.1 mm line interval, 640 dots.
     await openLabelled(640, 480, 25.4 / 254);
     store().edit(setDither({ algorithm: 'floyd-steinberg' }));
     const expected = await nativeFinal(currentDoc());
     const png = decodePng(new Uint8Array((await exported('png')).bytes));
-    expect(png.colorType).toBe(0);
+    expect([png.width, png.height, png.bitDepth, png.colorType]).toEqual([640, 480, 1, 0]);
     expect(png.phys).toEqual({ x: 10000, y: 10000, unit: 1 });
     let mismatches = 0;
-    for (let i = 0; i < png.samples.length; i++) {
-      if (png.samples[i] !== expected[i * 4]) mismatches++;
-      if (png.samples[i] !== 0 && png.samples[i] !== 255) mismatches++;
-    }
+    for (let i = 0; i < png.samples.length; i++) if (png.samples[i] * 255 !== expected[i * 4]) mismatches++;
     expect(mismatches).toBe(0);
   });
 
@@ -137,14 +137,6 @@ describe('raster export at full resolution', () => {
     expect(png.phys!.x).toBe(10000);
   });
 
-  it('refuses while background removal (preview-sized) is applied, rather than leave it out', async () => {
-    await openLabelled(200, 100);
-    const source = render().source!;
-    expect(render().replaceSourcePixels(source.buffer.slice(0), source)).toBe(true);
-    await expect(exportRaster(currentDoc(), 'png')).rejects.toThrow(/Background removal/);
-    render().restoreSource();
-    await expect(exportRaster(currentDoc(), 'png')).resolves.not.toBeNull();
-  });
 });
 
 describe('export progress, pausing the preview, and cancelling', () => {

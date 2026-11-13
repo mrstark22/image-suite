@@ -1,8 +1,9 @@
+import type { PreparedHistogram } from '../wasm/wasm-bridge';
 import type { ImageDocument } from './document';
 import type { CropRect } from './image';
 import type { RenderOutput, RenderTarget } from './render';
 import type { DepthResult } from './depth';
-import type { DepthConfig } from './depth';
+import type { DepthModelProgress } from '../lib/ai-depth';
 
 /** A render of the document for the preview or the relief view, at the preview target. */
 export interface DocumentRenderRequest {
@@ -13,13 +14,23 @@ export interface DocumentRenderRequest {
    * result carries the `source`-stage pixels only when its key differs.
    */
   haveSourceKey: string | null;
-  /** Background removal's replacement for the `source`-stage render (stopgap until phase 5). */
-  sourceStagePixels?: ArrayBuffer;
   /**
    * How far the preview runs: `final` (with the dither) by default, or
    * `prepared` in the vector job, which shows the image the trace reads.
    */
   stage?: 'prepared' | 'final';
+  /**
+   * Show the `final` stage as it should burn (#41) instead of its pixels.
+   * The preview only; exports never take it.
+   */
+  simulation?: BurnSimulation;
+}
+
+/** Burn simulation settings: spot diameter in pixels of the render, and colours. */
+export interface BurnSimulation {
+  spotPx: number;
+  base: [number, number, number];
+  burn: [number, number, number];
 }
 
 /** The `source`-stage render a result was made from, sent when the main thread does not have it. */
@@ -36,6 +47,8 @@ export interface PreviewRenderResult {
   /** The key of the `source`-stage render this was made from. */
   key: string;
   final: RenderOutput;
+  /** Histogram of the `prepared` stage this render passed through: what the Adjust step shows. */
+  histogram: PreparedHistogram;
   sourceStage: SourceStage | null;
   durationMs: number;
 }
@@ -51,7 +64,6 @@ export interface ReliefRenderResult {
 export interface TraceRequest {
   doc: ImageDocument;
   target: RenderTarget;
-  sourceStagePixels?: ArrayBuffer;
 }
 
 /** What loading a source reports. */
@@ -73,29 +85,20 @@ export interface SourceRefusal {
   refused: { message: string; widthPx: number; heightPx: number };
 }
 
-export interface ProcessDepthPayload {
-  buffer: ArrayBuffer;
-  width: number;
-  height: number;
-  config: DepthConfig;
+/** Progress of a relief render or heightmap export: the AI model's, or the export's. */
+export interface ReliefProgress {
+  model?: DepthModelProgress;
+  export?: ExportProgress;
 }
 
-export interface ProcessBgRemovalPayload {
-  buffer: ArrayBuffer;
-  width: number;
-  height: number;
-  tolerance: number;
-  featherRadius: number;
-  mode: 'auto-border' | 'white-bg' | 'black-bg' | 'custom-color';
-  customColor?: { r: number; g: number; b: number };
-}
-
-export interface ProcessBgRemovalResult {
-  buffer: ArrayBuffer;
-  width: number;
-  height: number;
-  removedPixelCount: number;
-  durationMs: number;
+/** What background removal would do, for the panel's comparison (#50). */
+export interface BackgroundPreview {
+  /** The `source` stage without removal, RGBA8. */
+  original: ArrayBuffer;
+  /** Coverage per pixel: 255 kept, 0 removed. */
+  alpha: ArrayBuffer;
+  widthPx: number;
+  heightPx: number;
 }
 
 /** Raster export formats (design section 6). JPEG and WebP carry no DPI here and are not offered. */

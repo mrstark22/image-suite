@@ -2,6 +2,7 @@ import React, { useEffect, useReducer, useState } from 'react';
 import { Maximize, Check } from 'lucide-react';
 import { useDocumentStore } from '../../store/documentStore';
 import { useUIStore } from '../../store/uiStore';
+import { usePreferencesStore } from '../../store/preferencesStore';
 import { setScale } from '../../lib/document';
 import {
   cropRectOf,
@@ -23,6 +24,10 @@ const UNIT_OPTIONS: SelectOption<PhysicalUnit>[] = [
   { value: 'in', label: 'Inches (in)' },
 ];
 
+function dpiOfScale(mmPerPx: number): number {
+  return MM_PER_INCH / mmPerPx;
+}
+
 function rounded(value: number, unit: PhysicalUnit): string {
   return String(Number(value.toFixed(unit === 'mm' ? 1 : 3)));
 }
@@ -31,8 +36,8 @@ function rounded(value: number, unit: PhysicalUnit): string {
  * Sets the physical size of the image as currently cropped, by its width or
  * its height in mm or inches. That sets the document's scale (mm per source
  * pixel); the DPI is shown as derived from it. The file's own DPI is offered
- * as a suggestion only. Opens by itself when an image is loaded, since the
- * size starts as not set.
+ * as a suggestion. An image opens with a size already (the file's
+ * resolution or an assumed one), so this dialog only opens when asked.
  */
 export const SizeDialog: React.FC = () => {
   const isOpen = useUIStore((s) => s.isSizeDialogOpen);
@@ -72,6 +77,8 @@ export const SizeDialog: React.FC = () => {
   const handleApply = () => {
     if (pending === null) return;
     useDocumentStore.getState().edit(setScale(pending));
+    // The next image whose file states no resolution opens at this one.
+    usePreferencesStore.getState().setLastAppliedDpi(MM_PER_INCH / pending);
     close();
   };
 
@@ -96,6 +103,12 @@ export const SizeDialog: React.FC = () => {
         <StatusMessage tone="warning">
           Size not set. Enter the width or height this image should have on the material. Sharpening, the adaptive
           threshold and export need it.
+        </StatusMessage>
+      )}
+      {doc.mmPerPx !== null && doc.sizeOrigin === 'assumed' && (
+        <StatusMessage tone="info">
+          The file does not say how big it is, so {Number(dpiOfScale(doc.mmPerPx).toFixed(1))} DPI was assumed. Enter
+          the width or height it should have on the material.
         </StatusMessage>
       )}
 

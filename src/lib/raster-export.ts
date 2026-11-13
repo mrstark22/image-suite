@@ -7,17 +7,10 @@ import { exportPlan } from './render-target';
 
 /**
  * Why `doc` cannot be exported as a raster file now, or `null` when it can.
- *
- * Background removal is held as pixels at the preview's size (a stopgap until
- * it becomes a pipeline step in phase 5), so a full-resolution export cannot
- * include it. Rather than write a file without it, or a smaller one, export
- * is refused while it is applied.
+
  */
 export function rasterExportBlocker(doc: ImageDocument): string | null {
   if (doc.mmPerPx === null) return 'Set the size to export.';
-  if (useRenderStore.getState().backgroundRemoval) {
-    return 'Background removal works at preview resolution only, so it cannot be exported at full resolution yet. Restore the background to export.';
-  }
   return null;
 }
 

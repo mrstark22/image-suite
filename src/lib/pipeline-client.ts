@@ -13,8 +13,14 @@ export type Pipeline = Pick<
   | 'exportVectorFile'
   | 'exportRaster'
   | 'cancelExport'
-  | 'processDepth'
-  | 'processBgRemoval'
+  | 'backgroundPreview'
+  | 'hasBackgroundMask'
+  | 'setModelProgressListener'
+  | 'exportHeightmap'
+  | 'cancelModelDownload'
+  | 'ditherArtwork'
+  | 'readCardPhoto'
+  | 'readCardPhotoFile'
 >;
 
 let pipeline: Pipeline | null = null;

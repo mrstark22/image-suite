@@ -4,6 +4,7 @@ import type { RustWasmEngine } from '../wasm/wasm-bridge';
 import { sourceCropOf } from './document-size';
 import { pxPerMmOf, sourceStageKey } from './render-target';
 import { toRunParams } from './run-params';
+import { maskKey, MASK_MISSING_ERROR, type BackgroundMask } from './background';
 
 /**
  * Largest source accepted, in pixels (design section 5). Above it a source is
@@ -40,11 +41,10 @@ export interface RenderOptions {
    */
   cache?: boolean;
   /**
-   * Use these pixels as the `source`-stage render instead of computing it.
-   * Stopgap for background removal (phase 5), whose result is not yet a
-   * pipeline step. Must be `target`-sized RGBA8.
+   * The background mask for `doc` (see `maskKey`). Required while the
+   * document's background removal is on; a render without it throws.
    */
-  sourceStagePixels?: ArrayBuffer;
+  mask?: BackgroundMask;
 }
 
 /**
@@ -59,7 +59,7 @@ export class PipelineEngine {
   private source: (Held & { sourceId: string }) | null = null;
   private cache: (Held & { key: string }) | null = null;
 
-  constructor(private readonly core: RustWasmEngine) {}
+  constructor(readonly core: RustWasmEngine) {}
 
   /** True when the pixels of `sourceId` are held. */
   hasSource(sourceId: string): boolean {
@@ -174,40 +174,10 @@ export class PipelineEngine {
     // The source-stage render, either cached (left untouched) or owned by this call.
     let input: number;
     let owned: number | null = null;
-    if (options.sourceStagePixels) {
-      if (options.sourceStagePixels.byteLength !== bytes) {
-        throw new Error('The replacement source pixels do not match the render target.');
-      }
-      const removal = this.allocate(bytes, target);
-      try {
-        new Uint8Array(wasm.memory.buffer, removal, bytes).set(new Uint8Array(options.sourceStagePixels));
-        // The removal made the background transparent after step 2 ran, so
-        // flatten it the same way: at the same size and uncropped,
-        // `prepare_source` is step 2 alone (#18).
-        owned = this.core.wasm.prepare_source(
-          removal,
-          target.widthPx,
-          target.heightPx,
-          0,
-          0,
-          target.widthPx,
-          target.heightPx,
-          target.widthPx,
-          target.heightPx
-        );
-      } finally {
-        wasm.deallocate(removal, bytes);
-      }
-      if (!owned) {
-        throw new TooLargeError(
-          `Not enough memory on this device to render ${target.widthPx} × ${target.heightPx} px (${megapixels(target.widthPx, target.heightPx)} MP).`
-        );
-      }
-      input = owned;
-    } else if (options.cache) {
-      input = this.cachedSourceStage(doc, target).ptr;
+    if (options.cache) {
+      input = this.cachedSourceStage(doc, target, options.mask).ptr;
     } else {
-      owned = this.prepare(doc, target);
+      owned = this.prepare(doc, target, options.mask);
       input = owned;
     }
 
@@ -246,12 +216,13 @@ export class PipelineEngine {
     target: RenderTarget,
     stage: Stage,
     consume: (pixels: () => Uint8Array, pxPerMm: number | null) => Promise<T>,
-    boundary: (step: 'preparing' | 'processing') => Promise<void> = async () => undefined
+    boundary: (step: 'preparing' | 'processing') => Promise<void> = async () => undefined,
+    mask?: BackgroundMask
   ): Promise<T> {
     const pxPerMm = pxPerMmOf(doc, target);
     const bytes = target.widthPx * target.heightPx * 4;
     await boundary('preparing');
-    const ptr = this.prepare(doc, target);
+    const ptr = this.prepare(doc, target, mask);
     try {
       if (stage !== 'source') {
         await boundary('processing');
@@ -264,11 +235,11 @@ export class PipelineEngine {
   }
 
   /** The cached `source`-stage render of `doc` at `target`, computing it if needed. */
-  private cachedSourceStage(doc: ImageDocument, target: RenderTarget): Held & { key: string } {
+  private cachedSourceStage(doc: ImageDocument, target: RenderTarget, mask?: BackgroundMask): Held & { key: string } {
     const key = sourceStageKey(doc, target);
     if (this.cache?.key === key) return this.cache;
     this.dropCache();
-    const ptr = this.prepare(doc, target);
+    const ptr = this.prepare(doc, target, mask);
     this.cache = { key, ptr, width: target.widthPx, height: target.heightPx };
     return this.cache;
   }
@@ -281,11 +252,80 @@ export class PipelineEngine {
   }
 
   /**
+   * The coverage background removal gives a `target`-sized render, one byte
+   * per pixel (255 kept, 0 removed), with `doc`'s cutoff and softness. For
+   * showing what will be removed.
+   */
+  matteAlpha(doc: ImageDocument, target: RenderTarget, mask: BackgroundMask): ArrayBuffer {
+    const wasm = this.core.wasm;
+    const b = doc.steps.background;
+    const m = this.allocate(mask.data.length, target);
+    try {
+      new Uint8Array(wasm.memory.buffer, m, mask.data.length).set(mask.data);
+      const out = wasm.background_matte_alpha(m, mask.width, mask.height, target.widthPx, target.heightPx, b.cutoff / 100, b.softness / 100);
+      if (!out) throw this.tooLarge(target);
+      const bytes = target.widthPx * target.heightPx;
+      const alpha = new Uint8Array(wasm.memory.buffer, out, bytes).slice().buffer;
+      wasm.deallocate(out, bytes);
+      return alpha;
+    } finally {
+      wasm.deallocate(m, mask.data.length);
+    }
+  }
+
+  private tooLarge(target: RenderTarget): TooLargeError {
+    return new TooLargeError(
+      `Not enough memory on this device to render ${target.widthPx} × ${target.heightPx} px (${megapixels(target.widthPx, target.heightPx)} MP).`
+    );
+  }
+
+  /**
+   * Composites the `target`-sized render at `ptr` onto white with `doc`'s
+   * background mask, in place: background removal, after the turn and crop.
+   */
+  private applyBackground(doc: ImageDocument, target: RenderTarget, ptr: number, mask: BackgroundMask | undefined): void {
+    if (!doc.steps.background.enabled) return;
+    if (!mask || mask.key !== maskKey(doc)) throw new Error(MASK_MISSING_ERROR);
+    const wasm = this.core.wasm;
+    const b = doc.steps.background;
+    const m = this.allocate(mask.data.length, target);
+    try {
+      new Uint8Array(wasm.memory.buffer, m, mask.data.length).set(mask.data);
+      const ok = wasm.apply_background_matte(
+        ptr,
+        target.widthPx,
+        target.heightPx,
+        m,
+        mask.width,
+        mask.height,
+        b.cutoff / 100,
+        b.softness / 100
+      );
+      if (!ok) throw new Error('Background removal was given an invalid mask.');
+    } finally {
+      wasm.deallocate(m, mask.data.length);
+    }
+  }
+
+  /**
    * Steps 1 to 3 into a new buffer the caller frees. The crop is read from
    * the source as the file has it, and the result is then turned by the
-   * document's rotation (#65): an exact rearrangement of the pixels.
+   * document's rotation (#65): an exact rearrangement of the pixels. Then
+   * background removal composites the removed area onto white, which is what
+   * flattening a transparent pixel gives (#50).
    */
-  private prepare(doc: ImageDocument, target: RenderTarget): number {
+  private prepare(doc: ImageDocument, target: RenderTarget, mask?: BackgroundMask): number {
+    const ptr = this.prepareTurned(doc, target);
+    try {
+      this.applyBackground(doc, target, ptr, mask);
+    } catch (err) {
+      this.core.wasm.deallocate(ptr, target.widthPx * target.heightPx * 4);
+      throw err;
+    }
+    return ptr;
+  }
+
+  private prepareTurned(doc: ImageDocument, target: RenderTarget): number {
     const src = this.requireSource(doc.source.sourceId);
     const wasm = this.core.wasm;
     const crop = sourceCropOf(doc);

@@ -134,6 +134,17 @@ describe('fit', () => {
     }
   });
 
+  it('with a bar over the top of the canvas (the crop tool on a phone), the whole image fits below it', () => {
+    const phone = { width: 412, height: 380 };
+    for (const image of [{ width: 1600, height: 1200 }, { width: 1000, height: 1300 }]) {
+      const b = box(fitView(phone, image, 110), phone, image);
+      expect(b.top).toBeGreaterThanOrEqual(110);
+      expect(b.bottom).toBeLessThanOrEqual(phone.height - FIT_PADDING / 2 + 1e-9);
+      expect(b.left).toBeGreaterThanOrEqual(FIT_PADDING / 2 - 1e-9);
+      expect(b.right).toBeLessThanOrEqual(phone.width - FIT_PADDING / 2 + 1e-9);
+    }
+  });
+
   it('does not enlarge a small image beyond 100 %', () => {
     expect(fitView(CONTAINER, { width: 100, height: 50 }).zoom).toBe(1);
   });

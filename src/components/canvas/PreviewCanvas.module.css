@@ -42,6 +42,41 @@
   image-rendering: pixelated;
 }
 
+/* Below 100% the dots stay drawn (overlays and the crop measure them) but are not shown. */
+.hiddenCanvas {
+  visibility: hidden;
+}
+
+/* Their area average, laid over them at the same size and enlarged smoothly. */
+.averagedCanvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  image-rendering: auto;
+  pointer-events: none;
+}
+
+/*
+ * Below 100% in the photo job: a quiet note that the dots are averaged. At
+ * the top, below the ruler, clear of the zoom bar in the bottom corner; a
+ * phone has its zoom and Undo pills at the top, so there it sits at the bottom.
+ */
+.dotsHint {
+  position: absolute;
+  left: 50%;
+  top: calc(24px + var(--space-2));
+  transform: translateX(-50%);
+  z-index: 15;
+  padding: 3px 10px;
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--surface) 80%, transparent);
+  border: 1px solid var(--border);
+  color: var(--text-2);
+  font-size: var(--text-sm);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
 .svgOverlay {
   position: absolute;
   top: 0;
@@ -164,4 +199,17 @@
 
 .cutPath {
   stroke: #ff0000;
+}
+
+/* The relief view before its first heightmap, or after a failure. */
+.reliefPending {
+  color: var(--text-2);
+  font-size: 13px;
+}
+
+@media (max-width: 599px) {
+  .dotsHint {
+    top: auto;
+    bottom: var(--space-3);
+  }
 }

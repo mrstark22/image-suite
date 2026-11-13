@@ -103,8 +103,9 @@
   }
 
   /* At the top, under the buttons: the canvas's zoom bar has the bottom corner. */
+  /* Below the Undo and Redo pill (top left, 32 to 76 px). */
   .hudHint {
-    top: 72px;
+    top: 84px;
     bottom: auto;
     width: max-content;
     max-width: calc(100% - 24px);
@@ -144,4 +145,15 @@
   overflow: hidden;
   clip: rect(0 0 0 0);
   white-space: nowrap;
+}
+
+/* A phone held sideways: the Undo and Redo pill takes the top left corner, where the size badge sits. */
+@media (max-height: 500px) and (orientation: landscape) {
+  .hudBadge {
+    display: none;
+  }
+
+  .hudOverlay {
+    justify-content: flex-end;
+  }
 }

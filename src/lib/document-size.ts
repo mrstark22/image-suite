@@ -107,3 +107,17 @@ export function exportResolution(doc: ImageDocument, renderWidthPx: number): { d
   }
   return { dpi: pxPerMm * MM_PER_INCH, pxPerMm };
 }
+
+/**
+ * The size as one line, saying where it came from: "Assumed 300 DPI:
+ * 135.5 × 90.3 mm" when the file stated no resolution, "File 72 DPI: …"
+ * when it did, and "300 DPI: …" once the user has set it. `null` while the
+ * size is not set.
+ */
+export function describePhysicalSize(doc: ImageDocument): string | null {
+  const size = physicalSize(doc);
+  const dpi = dpiOf(doc);
+  if (!size || dpi === null) return null;
+  const prefix = doc.sizeOrigin === 'assumed' ? 'Assumed ' : doc.sizeOrigin === 'file' ? 'File ' : '';
+  return `${prefix}${Number(dpi.toFixed(1))} DPI: ${size.widthMm.toFixed(1)} × ${size.heightMm.toFixed(1)} mm`;
+}

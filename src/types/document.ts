@@ -46,6 +46,20 @@ export interface DetailSettings {
 /** How far the image is turned clockwise, in degrees (#65). */
 export type Rotation = 0 | 90 | 180 | 270;
 
+/**
+ * Background removal (phase 5, #50): parameters only. The mask is derived
+ * data, computed by the segmentation model from the image as turned and
+ * cropped, and never stored in the document.
+ */
+export interface BackgroundSettings {
+  /** Remove the background. */
+  enabled: boolean;
+  /** How sure the model must be that a pixel is subject, 1 to 99 %. */
+  cutoff: number;
+  /** Width of the edge transition, 0 (hard) to 100 % of the model's range. */
+  softness: number;
+}
+
 /** The edit steps, which the pipeline runs in a fixed order. */
 export interface EditSteps {
   /**
@@ -55,6 +69,8 @@ export interface EditSteps {
   rotation: Rotation;
   /** In integer pixels of the image as turned; `null` is the whole image. */
   crop: CropRect | null;
+  /** Applied after the turn and the crop, before the adjustments. */
+  background: BackgroundSettings;
   tonal: TonalAdjustments;
   color: ColorAdjustments;
   detail: DetailSettings;
@@ -66,12 +82,21 @@ export interface EditSteps {
  * scale, the edit steps and the workflow settings. An immutable plain value;
  * every change produces a new document that shares its unchanged parts.
  */
+/** Where a document's physical size came from. */
+export type SizeOrigin = 'file' | 'assumed' | 'user';
+
 export interface ImageDocument {
   /** New for every loaded file. */
   id: string;
   source: SourceInfo;
   /** Millimetres per source pixel. `null` means the size has not been set. */
   mmPerPx: number | null;
+  /**
+   * Where `mmPerPx` came from: the resolution the file states, an assumed
+   * resolution (the last one the user applied, or 300 DPI), or the user
+   * setting it. Meaningless while `mmPerPx` is null.
+   */
+  sizeOrigin: SizeOrigin;
   steps: EditSteps;
   vector: VectorConfig;
   depth: DepthConfig;

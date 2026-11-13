@@ -11,20 +11,24 @@ export interface OrbitCamera {
   azimuth: number;
   /** Degrees above the surface. */
   elevation: number;
-  /** Distance from the target, in mesh units. */
+  /**
+   * Distance from the target as a multiple of the framing distance
+   * (`framingDistance`): 1 fits the whole plate in the view, under 1 is closer.
+   */
   distance: number;
+  /** Pan, in the same relative units: multiplied by the framing distance when drawn. */
   panX: number;
   panY: number;
 }
 
-export const DEFAULT_CAMERA: OrbitCamera = { azimuth: 45, elevation: 35, distance: 2.6, panX: 0, panY: 0 };
+export const DEFAULT_CAMERA: OrbitCamera = { azimuth: 45, elevation: 35, distance: 1, panX: 0, panY: 0 };
 
 /** Degrees of orbit per pixel dragged. */
 export const ORBIT_DEG_PER_PX = 0.4;
 export const MIN_ELEVATION = 10;
 export const MAX_ELEVATION = 88;
-export const MIN_DISTANCE = 0.8;
-export const MAX_DISTANCE = 6.0;
+export const MIN_DISTANCE = 0.25;
+export const MAX_DISTANCE = 3.0;
 /** Pan per pixel dragged, as a fraction of the camera's distance. */
 const PAN_PER_PX = 0.003;
 
@@ -101,4 +105,67 @@ export function pinchCamera(camera: OrbitCamera, start: PointerPair, now: Pointe
   const m0 = midpoint(start);
   const m1 = midpoint(now);
   return panBy(dollied, m1.x - m0.x, m1.y - m0.y);
+}
+
+/** The relief plate as drawn: a box centred on x and y, from z = -depth to 0. */
+export interface PlateBox {
+  halfX: number;
+  halfY: number;
+  depth: number;
+}
+
+/** Vertical field of view of the 3D view, in degrees. */
+export const FOV_Y_DEG = 45;
+/** Room left around the framed plate: 1.1 leaves about 5% each side. */
+export const FRAME_MARGIN = 1.1;
+
+/** The unit vectors of a camera at (azimuth, elevation) looking at the target: right, up and back (towards the eye). */
+export function cameraBasis(azimuthDeg: number, elevationDeg: number): { right: number[]; up: number[]; back: number[] } {
+  const az = (azimuthDeg * Math.PI) / 180;
+  const el = (elevationDeg * Math.PI) / 180;
+  const back = [Math.cos(el) * Math.sin(az), -Math.cos(el) * Math.cos(az), Math.sin(el)];
+  // right = worldUp x back, normalised; up = back x right.
+  const rx = -back[1];
+  const ry = back[0];
+  const rl = Math.hypot(rx, ry) || 1;
+  const right = [rx / rl, ry / rl, 0];
+  const up = [back[1] * right[2] - back[2] * right[1], back[2] * right[0] - back[0] * right[2], back[0] * right[1] - back[1] * right[0]];
+  return { right, up, back };
+}
+
+/**
+ * The smallest distance from the plate's centre at which a camera at
+ * (azimuth, elevation) sees every corner of the plate inside the view, with
+ * `margin` to spare. A corner at (x, y, b) in the camera's right, up and back
+ * axes is in view when |x| <= (d - b) tan(fovX / 2) and |y| <= (d - b)
+ * tan(fovY / 2), so d is the largest of b + |x| / tanX and b + |y| / tanY.
+ */
+export function fitDistance(box: PlateBox, azimuthDeg: number, elevationDeg: number, aspect: number, fovYDeg = FOV_Y_DEG, margin = FRAME_MARGIN): number {
+  const { right, up, back } = cameraBasis(azimuthDeg, elevationDeg);
+  const tanY = Math.tan((fovYDeg * Math.PI) / 360) / margin;
+  const tanX = tanY * aspect;
+  let d = 0;
+  for (const sx of [-1, 1]) {
+    for (const sy of [-1, 1]) {
+      for (const sz of [-1, 1]) {
+        // Relative to the target, which is the middle of the plate's depth.
+        const p = [sx * box.halfX, sy * box.halfY, (sz * box.depth) / 2];
+        const x = p[0] * right[0] + p[1] * right[1] + p[2] * right[2];
+        const y = p[0] * up[0] + p[1] * up[1] + p[2] * up[2];
+        const b = p[0] * back[0] + p[1] * back[1] + p[2] * back[2];
+        d = Math.max(d, b + Math.abs(x) / tanX, b + Math.abs(y) / tanY);
+      }
+    }
+  }
+  return d;
+}
+
+/**
+ * The distance that `distance: 1` means: the plate fits the view from every
+ * direction around it at this elevation, so orbiting around does not zoom.
+ */
+export function framingDistance(box: PlateBox, elevationDeg: number, aspect: number, fovYDeg = FOV_Y_DEG, margin = FRAME_MARGIN): number {
+  let d = 0;
+  for (let az = 0; az < 360; az += 5) d = Math.max(d, fitDistance(box, az, elevationDeg, aspect, fovYDeg, margin));
+  return d;
 }

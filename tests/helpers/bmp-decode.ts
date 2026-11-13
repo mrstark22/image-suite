@@ -11,12 +11,12 @@ export interface DecodedBmp {
   fileSize: number;
   dataOffset: number;
   palette: Uint8Array;
-  /** Top-down rows; one value per pixel for 8-bit, [r, g, b] triples for 24-bit. */
+  /** Top-down rows; one value per pixel for 1-bit (the palette index) and 8-bit, [r, g, b] triples for 24-bit. */
   pixels: Uint8Array;
   paddingBytes: number[];
 }
 
-/** Decodes an uncompressed, bottom-up 8-bit or 24-bit BMP. */
+/** Decodes an uncompressed, bottom-up 1-bit, 8-bit or 24-bit BMP. */
 export function decodeBmp(buffer: ArrayBuffer): DecodedBmp {
   const bytes = new Uint8Array(buffer);
   const view = new DataView(buffer);
@@ -34,9 +34,18 @@ export function decodeBmp(buffer: ArrayBuffer): DecodedBmp {
   if (infoSize !== 40 || planes !== 1 || compression !== 0) throw new Error('Unsupported BMP header');
   if (height <= 0) throw new Error('Expected a bottom-up BMP');
 
+  const palette = bytes.slice(14 + infoSize, dataOffset);
+  if (bitsPerPixel === 1) {
+    const stride1 = Math.ceil(width / 32) * 4;
+    const pixels1 = new Uint8Array(width * height);
+    for (let y = 0; y < height; y++) {
+      const rowStart = dataOffset + (height - 1 - y) * stride1;
+      for (let x = 0; x < width; x++) pixels1[y * width + x] = (bytes[rowStart + (x >> 3)] >> (7 - (x & 7))) & 1;
+    }
+    return { width, height, bitsPerPixel, pixelsPerMetreX, pixelsPerMetreY, fileSize, dataOffset, palette, pixels: pixels1, paddingBytes: [] };
+  }
   const channels = bitsPerPixel / 8;
   const stride = Math.ceil((width * channels) / 4) * 4;
-  const palette = bytes.slice(14 + infoSize, dataOffset);
   const pixels = new Uint8Array(width * height * channels);
   const paddingBytes: number[] = [];
   for (let y = 0; y < height; y++) {

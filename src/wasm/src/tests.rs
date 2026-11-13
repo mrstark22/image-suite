@@ -50,12 +50,10 @@ fn default_tonal() -> TonalParams {
 fn dither(px: &mut [u8], w: usize, h: usize, algorithm: DitherAlgo) {
     let params = DitherParams {
         algorithm,
-        threshold: 128,
         serpentine: true,
         matrix_scale: 1,
-        inverted_burn: false,
     };
-    apply_dithering(px, w, h, &params);
+    apply_dithering(px, w, h, &params, None);
 }
 
 fn all_algorithms() -> Vec<DitherAlgo> {
@@ -66,6 +64,7 @@ fn all_algorithms() -> Vec<DitherAlgo> {
         DitherAlgo::Bayer2,
         DitherAlgo::Bayer4,
         DitherAlgo::Bayer8,
+        DitherAlgo::BlueNoise,
     ]
 }
 
@@ -90,7 +89,11 @@ fn tonal_lut_inverts() {
 #[test]
 fn error_diffusion_preserves_tone() {
     for gray in [32u8, 96, 128, 160, 224] {
-        for algorithm in [DitherAlgo::FloydSteinberg, DitherAlgo::Jarvis] {
+        for algorithm in [
+            DitherAlgo::FloydSteinberg,
+            DitherAlgo::Jarvis,
+            DitherAlgo::BlueNoise,
+        ] {
             let mut px = gray_image(128, 128, |_, _| gray);
             dither(&mut px, 128, 128, algorithm);
             let error = (white_fraction(&px) - gray as f32 / 255.0).abs();
@@ -167,4 +170,77 @@ fn tone_only_fast_path_matches_the_table_for_every_value() {
         assert_eq!(out[2], lut[inp[2] as usize]);
         assert_eq!(out[3], inp[3], "alpha untouched");
     }
+}
+
+#[test]
+fn positive_clarity_steepens_midtones() {
+    for (clarity, steeper) in [(100.0, true), (-100.0, false)] {
+        let mut params = default_tonal();
+        params.clarity = clarity;
+        let lut = compute_tonal_lut(&params);
+        let slope = (lut[138] as f32 - lut[118] as f32) / 20.0;
+        assert_eq!(slope > 1.0, steeper, "clarity {clarity}: slope {slope}");
+    }
+}
+
+#[test]
+fn clahe_keeps_white_white_and_flat_flat_at_any_size() {
+    use crate::clahe::apply_clahe;
+    for (w, h) in [(400, 300), (37, 53), (2048, 1365), (5, 3)] {
+        for grid in [1, 7, 8, 24] {
+            let mut white = gray_image(w, h, |_, _| 255);
+            apply_clahe(&mut white, w, h, 2.5, grid);
+            assert_eq!(white_fraction(&white), 1.0, "{w}x{h} grid {grid}");
+            let mut grey = gray_image(w, h, |_, _| 128);
+            apply_clahe(&mut grey, w, h, 2.5, grid);
+            let first = grey[0];
+            assert!(
+                (0..w * h).all(|i| grey[i * 4] == first),
+                "{w}x{h} grid {grid} not flat"
+            );
+        }
+    }
+}
+
+#[test]
+fn tone_response_keeps_white_and_black_and_inverts_the_curve() {
+    use crate::dither::tone_response_lut;
+    // A material that darkens quickly: half power already gives 80% darkness.
+    let curve = [0.0, 0.8, 0.9, 1.0];
+    let lut = tone_response_lut(&curve).unwrap();
+    assert_eq!(lut[255], 255);
+    assert_eq!(lut[0], 0);
+    // Asking for 40% darkness (value 153) needs only a light burn: well above 153.
+    assert!(lut[153] > 200, "lut[153] = {}", lut[153]);
+    assert!(lut.windows(2).all(|p| p[0] <= p[1]));
+}
+
+#[test]
+fn burn_simulation_grows_dots_with_spot_size() {
+    use crate::burn_sim::simulate_burn;
+    let mut small = gray_image(9, 9, |x, y| if x == 4 && y == 4 { 0 } else { 255 });
+    let mut big = small.clone();
+    simulate_burn(&mut small, 9, 9, 1.0, [255, 255, 255], [0, 0, 0]);
+    simulate_burn(&mut big, 9, 9, 2.5, [255, 255, 255], [0, 0, 0]);
+    let darkness = |p: &[u8]| (0..81).map(|i| 255 - p[i * 4] as u32).sum::<u32>();
+    assert!(darkness(&big) > darkness(&small));
+    // A neighbour of the dot is touched only by the larger spot.
+    assert_eq!(small[(4 * 9 + 5) * 4], 255);
+    assert!(big[(4 * 9 + 5) * 4] < 255);
+}
+
+#[test]
+fn prepared_histogram_counts_each_channel_and_luma() {
+    use crate::prepared_histogram;
+    // Two mid-grey pixels and one pure red one.
+    let px = [128, 128, 128, 255, 128, 128, 128, 255, 255, 0, 0, 255];
+    let bins = prepared_histogram(&px);
+    assert_eq!(bins[128], 2);
+    assert_eq!(bins[255], 1);
+    assert_eq!(bins[256 + 128], 2);
+    assert_eq!(bins[256], 1);
+    assert_eq!(bins[768 + 128], 2);
+    // Red's Rec. 709 luma: 0.2126 * 255 = 54.2.
+    assert_eq!(bins[768 + 54], 1);
+    assert_eq!(bins[768..].iter().sum::<u32>(), 3);
 }

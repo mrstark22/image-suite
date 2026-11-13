@@ -6,8 +6,10 @@ import styles from './Histogram.module.css';
 
 export const Histogram: React.FC = () => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const previewProcessedBuffer = useRenderStore((s) => s.processed);
-  const previewDimensions = useRenderStore((s) => s.source);
+  // The `prepared` stage's histogram, computed by the core during the preview
+  // render: the tones after the adjustments and before the dither (#1 of the
+  // acceptance review). The dithered preview would show only 0 and 255.
+  const histogram = useRenderStore((s) => s.preparedHistogram);
   const tonal = useDocumentStore((s) => s.doc?.steps.tonal ?? DEFAULT_TONAL);
 
   useEffect(() => {
@@ -20,34 +22,13 @@ export const Histogram: React.FC = () => {
     const height = canvas.height;
     ctx.clearRect(0, 0, width, height);
 
-    if (!previewProcessedBuffer || !previewDimensions) {
+    if (!histogram) {
       // Draw placeholder empty grid
       ctx.fillStyle = 'rgba(255, 255, 255, 0.05)';
       ctx.fillRect(0, 0, width, height);
       return;
     }
-
-    const pixels = new Uint8ClampedArray(previewProcessedBuffer);
-    const totalPixels = previewDimensions.width * previewDimensions.height;
-
-    const rBins = new Uint32Array(256);
-    const gBins = new Uint32Array(256);
-    const bBins = new Uint32Array(256);
-    const lumaBins = new Uint32Array(256);
-
-    // Sample pixels with step for fast execution
-    const step = totalPixels > 500000 ? 8 : 4;
-    for (let i = 0; i < totalPixels * 4; i += step * 4) {
-      const r = pixels[i];
-      const g = pixels[i + 1];
-      const b = pixels[i + 2];
-      const luma = Math.round(0.2126 * r + 0.7152 * g + 0.0722 * b);
-
-      rBins[r]++;
-      gBins[g]++;
-      bBins[b]++;
-      lumaBins[luma]++;
-    }
+    const { r: rBins, g: gBins, b: bBins, luma: lumaBins } = histogram;
 
     let maxCount = 1;
     for (let i = 1; i < 255; i++) {
@@ -109,12 +90,12 @@ export const Histogram: React.FC = () => {
     ctx.lineTo(wpX, height);
     ctx.stroke();
     ctx.setLineDash([]);
-  }, [previewProcessedBuffer, previewDimensions, tonal]);
+  }, [histogram, tonal]);
 
   return (
     <div className={styles.histogramCard}>
       <div className={styles.histogramHeader}>
-        <span>RGB & Luma Distribution</span>
+        <span>Tones before dithering</span>
         <div className={styles.channelBadges}>
           <span className={styles.badgeR}>R</span>
           <span className={styles.badgeG}>G</span>

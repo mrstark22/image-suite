@@ -8,9 +8,11 @@ import {
   RotateCcw,
   Flame,
   Wand2,
+  Contrast,
 } from 'lucide-react';
 import { useDocumentStore } from '../../store/documentStore';
 import { useRenderStore } from '../../store/renderStore';
+import { useUIStore } from '../../store/uiStore';
 import { DocumentSlider } from '../shared/Slider';
 import { Histogram } from '../shared/Histogram';
 import { Button } from '../shared/Button';
@@ -29,6 +31,7 @@ import {
 } from '../../lib/document';
 import { autoLevels } from '../../lib/auto-levels';
 import { ADJUSTMENT_PRESETS, SECTION_RESETS, type AdjustmentPresetId } from '../../lib/adjustment-edits';
+import { useLayout } from '../shared/breakpoints';
 import styles from './Panels.module.css';
 
 /** Shown on controls whose lengths are in millimetres while the size is not set. */
@@ -45,15 +48,21 @@ export const AdjustmentsPanel: React.FC = () => {
   const source = useRenderStore((s) => s.source);
   // Sharpening and the adaptive threshold have lengths in mm, so they need a size.
   const sizeSet = doc?.mmPerPx != null;
+  // A photo is engraved in grey: saturation and vibrance barely move its grey
+  // tones, so they are shown only where colour is kept (the vector job).
+  const photo = useUIStore((s) => s.job) === 'photo';
 
-  // Accordion state - Basic Tone and Levels open by default
-  const [openSections, setOpenSections] = useState<Record<string, boolean>>({
+  // Sections: on a phone only Tone, the most used, starts open so the list
+  // is scannable; a wider screen starts with every section open.
+  const isPhone = useLayout() === 'phone';
+  const [openSections, setOpenSections] = useState<Record<string, boolean>>(() => ({
     tone: true,
-    levels: false,
-    detail: false,
-    color: false,
-    filters: false,
-  });
+    range: !isPhone,
+    levels: !isPhone,
+    detail: !isPhone,
+    color: !isPhone,
+    filters: !isPhone,
+  }));
 
   const grayscaleLabelId = useId();
 
@@ -62,11 +71,9 @@ export const AdjustmentsPanel: React.FC = () => {
   };
 
   // Section activity indicators
-  const isToneActive =
-    tonal.exposure !== 0 ||
-    tonal.brightness !== 0 ||
-    tonal.contrast !== 0 ||
-    tonal.midtones !== 0 ||
+  const isToneActive = tonal.exposure !== 0 || tonal.brightness !== 0 || tonal.contrast !== 0 || tonal.midtones !== 0;
+
+  const isRangeActive =
     tonal.highlights !== 0 ||
     tonal.shadows !== 0 ||
     tonal.whites !== 0 ||
@@ -96,19 +103,18 @@ export const AdjustmentsPanel: React.FC = () => {
   // Preset Handlers: each chip is one edit.
   const applyPreset = (name: AdjustmentPresetId) => edit(ADJUSTMENT_PRESETS[name]);
 
+  // "Invert" is not offered here: the Invert toggle below is the one inversion (#37).
   const grayscaleOptions: Array<{ id: GrayscaleMode; label: string }> = [
-    { id: 'none', label: 'Color' },
+    { id: 'none', label: photo ? 'Standard' : 'Color' },
     { id: 'rec709', label: 'Rec.709' },
     { id: 'average', label: 'Avg' },
     { id: 'desaturate', label: 'Desat' },
-    { id: 'inverted', label: 'Invert' },
   ];
 
   return (
     <div className={styles.panel}>
-      {/* Header */}
-      <div className={styles.panelHeader}>
-        <span className={styles.panelTitle}>Tonal & Enhancements</span>
+      {/* The step's own header carries its title; this row holds its actions. */}
+      <div className={styles.panelActions}>
         <Button variant="link" onClick={() => edit(resetAdjustments)} title="Reset every tone, color and detail adjustment">
           Reset All
         </Button>
@@ -169,7 +175,7 @@ export const AdjustmentsPanel: React.FC = () => {
 
       {/* Accordion 1: Tone & Exposure */}
       <Section
-        title={<AdjustedTitle title="Basic Tone & Exposure" adjusted={isToneActive} />}
+        title={<AdjustedTitle title="Tone" adjusted={isToneActive} />}
         icon={<Sun size={15} />}
         collapse={{ open: openSections.tone, onToggle: () => toggleSection('tone') }}
         actions={<SectionReset adjusted={isToneActive} label="Reset Tone" update={SECTION_RESETS.tone} />}
@@ -208,6 +214,14 @@ export const AdjustmentsPanel: React.FC = () => {
           update={(v) => setTonal({ midtones: v })}
           reset={setTonal({ midtones: 0 })}
         />
+      </Section>
+
+      <Section
+        title={<AdjustedTitle title="Highlights & Shadows" adjusted={isRangeActive} />}
+        icon={<Contrast size={15} />}
+        collapse={{ open: openSections.range, onToggle: () => toggleSection('range') }}
+        actions={<SectionReset adjusted={isRangeActive} label="Reset Highlights and Shadows" update={SECTION_RESETS.range} />}
+      >
         <DocumentSlider
           label="Highlights"
           value={tonal.highlights ?? 0}
@@ -278,10 +292,10 @@ export const AdjustmentsPanel: React.FC = () => {
 
       {/* Accordion 3: Clarity & Texture */}
       <Section
-        title={<AdjustedTitle title="Clarity & Texture" adjusted={isDetailActive} />}
+        title={<AdjustedTitle title="Detail" adjusted={isDetailActive} />}
         icon={<Sparkles size={15} />}
         collapse={{ open: openSections.detail, onToggle: () => toggleSection('detail') }}
-        actions={<SectionReset adjusted={isDetailActive} label="Reset Clarity" update={SECTION_RESETS.detail} />}
+        actions={<SectionReset adjusted={isDetailActive} label="Reset Detail" update={SECTION_RESETS.detail} />}
       >
         <DocumentSlider
           label="Clarity (Midtone Contrast)"
@@ -320,7 +334,7 @@ export const AdjustmentsPanel: React.FC = () => {
 
       {/* Accordion 4: Color & Grayscale */}
       <Section
-        title={<AdjustedTitle title="Color & Grayscale" adjusted={isColorActive} />}
+        title={<AdjustedTitle title="Colour & Grey" adjusted={isColorActive} />}
         icon={<Palette size={15} />}
         collapse={{ open: openSections.color, onToggle: () => toggleSection('color') }}
         actions={<SectionReset adjusted={isColorActive} label="Reset Color" update={SECTION_RESETS.color} />}
@@ -348,22 +362,32 @@ export const AdjustmentsPanel: React.FC = () => {
           </div>
         </div>
 
-        <DocumentSlider
-          label="Saturation"
-          value={color.saturation}
-          min={-100}
-          max={100}
-          update={(v) => setColor({ saturation: v })}
-          reset={setColor({ saturation: 0 })}
-        />
-        <DocumentSlider
-          label="Vibrance"
-          value={color.vibrance ?? 0}
-          min={-100}
-          max={100}
-          update={(v) => setColor({ vibrance: v })}
-          reset={setColor({ vibrance: 0 })}
-        />
+        {!photo && (
+          <>
+            <DocumentSlider
+              label="Saturation"
+              value={color.saturation}
+              min={-100}
+              max={100}
+              update={(v) => setColor({ saturation: v })}
+              reset={setColor({ saturation: 0 })}
+            />
+            <DocumentSlider
+              label="Vibrance"
+              value={color.vibrance ?? 0}
+              min={-100}
+              max={100}
+              update={(v) => setColor({ vibrance: v })}
+              reset={setColor({ vibrance: 0 })}
+            />
+          </>
+        )}
+        {photo && (
+          <div className={styles.controlNote}>
+            Temperature and Tint act as colour filters before the grey conversion: warm lightens reds and skin and
+            darkens blues; cool does the opposite.
+          </div>
+        )}
         <DocumentSlider
           label="Temperature (Cool / Warm)"
           value={color.temperature}

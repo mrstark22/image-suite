@@ -6,6 +6,15 @@ A browser tool for preparing images for laser engraving and CNC work. It is bein
 
 **Read `docs/plan.md` first.** It is the agreed plan: the goal, what "good" means for each workflow, what is kept and dropped, the architecture, the phases, and the known defects. Work is tracked in GitHub issues; the plan's "Tracking" table lists the tracking issue for each phase, and each work item states its problem, what to do and a "done when" test.
 
+What exists now (phases 0 to 5 and the UI redesign are built; phase 6 is not being built):
+
+- **Three jobs** (Vector, Photo, Relief), each a short ordered flow of steps in one document with an undoable recipe.
+- **Profiles**: machines, categories, materials, thicknesses and calibrations, edited in File > Machines & Materials, stored in the browser, moved between computers by exporting and importing a file.
+- **Calibration cards**: File > Calibrate exports photo, cut and depth cards (as a LightBurn project or plain files) and saves the results as calibrations. Photo cards 1 and 2 can be read from a photo or scan of the burned card (`src/lib/card-reader.ts`, `src/wasm/src/card_photo.rs`, `CardPhotoReader.tsx`); cut cards are read by eye and depth cards from measured depths or a 3D scan.
+- **Background removal**: an undoable document step run by the ISNet model; the mask is computed per crop inside the pipeline.
+- **Photo**: the image is resampled to the machine's dot grid (dot pitch, default 0.1 mm), dithered (default Jarvis, serpentine) and exported as a 1-bit PNG or BMP with its DPI.
+- **Relief**: one heightmap feeds the 3D view and the export (full-resolution 16-bit PNG); heights from tone, shape (exact distance transform) or AI depth.
+
 The owner uses two CO2 lasers (60 W and 155 W) with LightBurn, and does not review code line by line. Tests and browser checks are what keep the work honest.
 
 ## Working rules
@@ -58,11 +67,13 @@ The exported functions take long positional argument lists, and the call must ma
 2. **Heavy work runs in the worker**, not on the main thread.
 3. **Transfer, do not copy**: pass `ArrayBuffer`s as transferables; never encode images as Base64.
 4. **Free WASM memory**: every `allocate` has a `deallocate` in a `finally` block, and views are re-read after any call that can grow memory.
-5. **Physical units**: anything measured in the real world is stored in millimetres. Raster export renders at the source's full resolution and writes the document's DPI (#17); vector exports trace again at full resolution and are written in millimetres (#23, #30); the heightmap export stays preview-sized until phase 4.
+5. **Physical units**: anything measured in the real world is stored in millimetres. An image opens with a size: the file's own DPI, or an assumed DPI (the last one the user applied, else 300) that the Size step marks as assumed. Raster export renders at the source's full resolution and writes the document's DPI (#17); vector exports trace again at full resolution and are written in millimetres (#23, #30); the relief's one heightmap is computed again at full resolution and written as a 16-bit PNG with the document's DPI (#42, #46).
+6. **Models are self-hosted and pinned.** Model files live in `public/models/` (ISNet for background removal, split in two parts; Depth Anything V2 Small for AI depth). Each is declared with its byte size and SHA-256 and loaded through `src/lib/model-file.ts`, which checks the checksum and caches the file in IndexedDB. Both run on one ONNX Runtime setup, `src/lib/ort-runtime.ts`: the CPU-only `onnxruntime-web/wasm` build, whose `.wasm` Vite copies into `assets/`. Nothing is fetched from another host.
+7. **Cross-origin isolation**: production (`vercel.json`), the dev server and the preview server (`vite.config.ts`) all send COOP `same-origin` and COEP `require-corp`. Keep them the same.
 
 ## Tests
 
-- Tests live in `tests/unit/`; shared helpers are in `tests/helpers/`.
+- Tests live in `tests/unit/`; shared helpers are in `tests/helpers/`. Vitest excludes `.claude/**`, so agent worktrees under `.claude/worktrees` are not run from the main checkout.
 - `it.fails` marks a known, tracked defect. It passes while the defect exists. When you fix the defect, change it to `it` in the same commit.
 - Browser checks are allowed: run the app in a headless browser to take screenshots and verify UI and layout changes at desktop, tablet and phone widths. The owner also tests the UI by hand, so say what was and was not checked in a browser.
 

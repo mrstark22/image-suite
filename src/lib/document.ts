@@ -3,11 +3,13 @@ import type { DitherConfig } from '../types/dither';
 import type { VectorConfig } from '../types/vector';
 import type { DepthConfig } from '../types/depth';
 import type {
+  BackgroundSettings,
   DetailSettings,
   DocumentUpdate,
   EditSteps,
   ImageDocument,
   Rotation,
+  SizeOrigin,
   SourceInfo,
 } from '../types/document';
 import { RECIPE_VERSION, type EditRecipe, type EditStep } from '../types/recipe';
@@ -47,6 +49,13 @@ export const DEFAULT_COLOR: ColorAdjustments = {
   tint: 0,
 };
 
+/** Off; the cutoff and softness were tuned on ISNet's output (docs/background-removal.md). */
+export const DEFAULT_BACKGROUND: BackgroundSettings = {
+  enabled: false,
+  cutoff: 50,
+  softness: 60,
+};
+
 /**
  * The sharpen radius and adaptive block match the old pixel defaults (1.5 px
  * and 15 px) at 300 DPI.
@@ -62,13 +71,51 @@ export const DEFAULT_DETAIL: DetailSettings = {
   adaptiveConstant: 2,
 };
 
+/**
+ * The line interval used while neither a calibration nor the machine gives
+ * one: 0.1 mm (254 DPI), a common photo interval on a CO2 laser. The UI says
+ * when it is in use.
+ */
+export const DEFAULT_DOT_PITCH_MM = 0.1;
+
+/**
+ * A new document is dithered with Jarvis-Judice-Ninke error diffusion,
+ * serpentine, at the machine's dot pitch: the best general-purpose choice
+ * for photos on wood with a CO2 laser. Error diffusion follows the image, so
+ * edges and fine texture (hair, grain, eyes) stay sharp at one dot per
+ * pixel, which an ordered (Bayer or blue-noise) mask cannot match; Jarvis
+ * spreads each error over 12 neighbours, which gives smoother midtones and
+ * fewer "worm" streaks than Floyd-Steinberg. Blue noise is offered for large
+ * flat areas, where it has no streaks at all.
+ */
 export const DEFAULT_DITHER: DitherConfig = {
-  algorithm: 'none',
-  threshold: 128,
+  algorithm: 'jarvis',
   serpentine: true,
   matrixScale: 1,
-  invertedBurn: false,
+  dotPitchMm: DEFAULT_DOT_PITCH_MM,
+  dotPitchOrigin: 'default',
+  toneCurve: null,
 };
+
+/**
+ * The dither settings the user chooses, as opposed to the dot pitch and tone
+ * curve, which come from the machine and calibration in use. Resetting the
+ * dither or applying a recipe changes only these.
+ */
+type ChosenDither = Pick<DitherConfig, 'algorithm' | 'serpentine' | 'matrixScale'>;
+
+/**
+ * The chosen settings in `params`. A recipe saved before #37 may also carry
+ * `threshold` (a brightness bias, removed) and `invertedBurn` (removed: the
+ * Adjust step's Invert is the one inversion); they are dropped.
+ */
+function chosenDither(params: Partial<DitherConfig>): Partial<ChosenDither> {
+  const out: Partial<ChosenDither> = {};
+  if (params.algorithm !== undefined) out.algorithm = params.algorithm;
+  if (params.serpentine !== undefined) out.serpentine = params.serpentine;
+  if (params.matrixScale !== undefined) out.matrixScale = params.matrixScale;
+  return out;
+}
 
 export const DEFAULT_VECTOR: VectorConfig = {
   colorMode: 'mono',
@@ -87,24 +134,42 @@ export const DEFAULT_VECTOR: VectorConfig = {
 };
 
 export const DEFAULT_DEPTH: DepthConfig = {
-  source: 'tonal-height',
-  bevelStyle: 'prismatic',
+  source: 'auto',
+  bevelStyle: 'round',
+  bevelWidthMm: 1.5,
+  shapeIsLight: false,
+  detail: 30,
+  smoothingMm: 0.1,
   invertZ: false,
-  zMin: 0,
-  zMax: 100,
-  smoothingRadius: 2.0,
-  depthScale: 3.0,
-  reliefAngle: 45,
-  export16Bit: true,
-  detailEmboss: 0,
-  aiWeight: 75,
-  tonalBlend: 25,
-  surfaceDenoise: 2.0,
-  viewMode: '3d-shaded',
+  maxDepthMm: 2,
+  viewMode: '3d',
   material: 'walnut',
   lightAngle: 315,
-  lightElevation: 45,
+  exaggeration: 1,
 };
+
+const DEPTH_CHOICES: { [K in keyof DepthConfig]?: readonly unknown[] } = {
+  source: ['auto', 'ai-estimation', 'distance-transform', 'tonal-height'],
+  bevelStyle: ['chamfer', 'round', 'cove'],
+  viewMode: ['3d', 'heightmap'],
+  material: ['walnut', 'brass', 'slate', 'grayscale'],
+};
+
+/**
+ * The relief settings in `params` that this version still has, with a valid
+ * value. A recipe saved before #44 carries settings that were removed or
+ * renamed; those are dropped and the defaults stand.
+ */
+export function knownDepthSettings(params: object): Partial<DepthConfig> {
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(params)) {
+    if (!(key in DEFAULT_DEPTH)) continue;
+    const choices = DEPTH_CHOICES[key as keyof DepthConfig];
+    const fallback = DEFAULT_DEPTH[key as keyof DepthConfig];
+    if (choices ? choices.includes(value) : typeof value === typeof fallback) out[key] = value;
+  }
+  return out as Partial<DepthConfig>;
+}
 
 /**
  * `next`, a newly opened image, with the settings of `previous`, the image it
@@ -122,6 +187,7 @@ export function defaultSteps(): EditSteps {
   return {
     rotation: 0,
     crop: null,
+    background: { ...DEFAULT_BACKGROUND },
     tonal: { ...DEFAULT_TONAL },
     color: { ...DEFAULT_COLOR },
     detail: { ...DEFAULT_DETAIL },
@@ -136,12 +202,14 @@ export function defaultSteps(): EditSteps {
 export function createDocument(
   id: string,
   source: SourceInfo,
-  mmPerPx: number | null = null
+  mmPerPx: number | null = null,
+  sizeOrigin: SizeOrigin = 'user'
 ): ImageDocument {
   return {
     id,
     source,
     mmPerPx,
+    sizeOrigin,
     steps: defaultSteps(),
     vector: { ...DEFAULT_VECTOR },
     depth: { ...DEFAULT_DEPTH },
@@ -165,6 +233,11 @@ export function sameValue(a: unknown, b: unknown): boolean {
 
 function withSteps(doc: ImageDocument, steps: Partial<EditSteps>): ImageDocument {
   return { ...doc, steps: { ...doc.steps, ...steps } };
+}
+
+/** Changes background removal's settings (#50). */
+export function setBackground(partial: Partial<BackgroundSettings>): DocumentUpdate {
+  return (d) => withSteps(d, { background: { ...d.steps.background, ...partial } });
 }
 
 /** Changes some tonal adjustments. */
@@ -243,7 +316,7 @@ export function setScale(mmPerPx: number): DocumentUpdate {
   if (!Number.isFinite(mmPerPx) || mmPerPx <= 0) {
     throw new RangeError(`A scale must be a positive number of millimetres per pixel, not ${mmPerPx}`);
   }
-  return (d) => ({ ...d, mmPerPx });
+  return (d) => ({ ...d, mmPerPx, sizeOrigin: 'user' });
 }
 
 /** Restores every edit step (crop included) and workflow setting to its default. Keeps the scale. */
@@ -263,7 +336,8 @@ export const resetAdjustments: DocumentUpdate = (d) =>
   withSteps(d, { tonal: { ...DEFAULT_TONAL }, color: { ...DEFAULT_COLOR }, detail: { ...DEFAULT_DETAIL } });
 
 /** Restores the dither settings. */
-export const resetDither: DocumentUpdate = (d) => withSteps(d, { dither: { ...DEFAULT_DITHER } });
+export const resetDither: DocumentUpdate = (d) =>
+  withSteps(d, { dither: { ...d.steps.dither, ...chosenDither(DEFAULT_DITHER) } });
 
 /** Restores the tracing settings. */
 export const resetVector: DocumentUpdate = (d) => ({ ...d, vector: { ...DEFAULT_VECTOR } });
@@ -285,17 +359,17 @@ export function applyRecipe(recipe: EditRecipe): DocumentUpdate {
     const tonal = { ...DEFAULT_TONAL };
     const color = { ...DEFAULT_COLOR };
     const detail = { ...DEFAULT_DETAIL };
-    const dither = { ...DEFAULT_DITHER };
+    const dither = { ...d.steps.dither, ...chosenDither(DEFAULT_DITHER) };
     const vector = { ...DEFAULT_VECTOR };
     const depth = { ...DEFAULT_DEPTH };
     for (const step of recipe.steps) {
       if (step.type === 'tonal') Object.assign(tonal, step.params);
       if (step.type === 'color') Object.assign(color, step.params);
       if (step.type === 'detail') Object.assign(detail, step.params);
-      if (step.type === 'dither') Object.assign(dither, step.params);
+      if (step.type === 'dither') Object.assign(dither, chosenDither(step.params));
       // Only settings the tracer still has: a recipe saved before phase 2 carries old ones (#32).
       if (step.type === 'vectorize') Object.assign(vector, knownKeys(step.params, DEFAULT_VECTOR));
-      if (step.type === 'depth') Object.assign(depth, step.params);
+      if (step.type === 'depth') Object.assign(depth, knownDepthSettings(step.params));
     }
     return { ...d, steps: { ...d.steps, tonal, color, detail, dither }, vector, depth };
   };

@@ -67,3 +67,22 @@
     min-height: var(--touch-target);
   }
 }
+
+/*
+ * A collapsible section's title reads as a group heading, not as one more
+ * field label: body size, the main text colour and a full touch row.
+ */
+.toggle {
+  min-height: 32px;
+  font-size: var(--text-lg);
+  font-weight: var(--weight-strong);
+  color: var(--text);
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+@media (pointer: coarse) {
+  .toggle {
+    min-height: var(--touch-target);
+  }
+}

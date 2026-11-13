@@ -19,11 +19,12 @@ import {
   setTonal,
   setVector,
 } from '../../src/lib/document';
-import { cropRectOf, dpiOf, exportResolution, mmPerPxForLength, physicalSize } from '../../src/lib/document-size';
+import { usePreferencesStore, FALLBACK_DPI } from '../../src/store/preferencesStore';
+import { cropRectOf, describePhysicalSize, dpiOf, exportResolution, mmPerPxForLength, physicalSize } from '../../src/lib/document-size';
 import { previewBoxToSource, type PreviewSource } from '../../src/lib/crop';
 import { exportPlan, previewTarget, pxPerMmOf } from '../../src/lib/render-target';
 import { nearestOddAtLeast3, toRunParams } from '../../src/lib/run-params';
-import { currentDoc, labelledImage, openPhoto, PHOTO, previewMismatches, resetStores } from '../helpers/documents';
+import { currentDoc, greyscale, labelledImage, openPhoto, PHOTO, previewMismatches, resetStores } from '../helpers/documents';
 import { loadPixels, startTestPipeline, type TestPipeline } from '../helpers/pipeline';
 import { loadWasm, runPipeline, grayImage } from '../helpers/wasm';
 
@@ -99,12 +100,46 @@ describe('size derivation', () => {
     expect(pxPerMmOf(currentDoc(), target)).toBeCloseTo(2048 / 508, 9);
   });
 
-  it('the size is not set until it is set, whatever the file claims', () => {
+  it('opens at the resolution the file states, marked as from the file', () => {
     resetStores();
     openPhoto(72);
-    expect(currentDoc().mmPerPx).toBeNull();
-    expect(physicalSize(currentDoc())).toBeNull();
-    expect(dpiOf(currentDoc())).toBeNull();
+    expect(dpiOf(currentDoc())).toBeCloseTo(72, 9);
+    expect(currentDoc().sizeOrigin).toBe('file');
+    // 6000 px at 72 DPI is 6000 / 72 inches.
+    expect(physicalSize(currentDoc())!.widthMm).toBeCloseTo((6000 / 72) * 25.4, 6);
+    expect(describePhysicalSize(currentDoc())).toBe('File 72 DPI: 2116.7 × 1411.1 mm');
+  });
+
+  it('a file that states no resolution opens at 300 DPI, marked as assumed', () => {
+    resetStores();
+    openPhoto(null);
+    expect(FALLBACK_DPI).toBe(300);
+    expect(dpiOf(currentDoc())).toBeCloseTo(300, 9);
+    expect(currentDoc().sizeOrigin).toBe('assumed');
+    expect(describePhysicalSize(currentDoc())).toBe('Assumed 300 DPI: 508.0 × 338.7 mm');
+  });
+
+  it('a file that states no resolution opens at the resolution last applied by hand', () => {
+    resetStores();
+    usePreferencesStore.getState().setLastAppliedDpi(254);
+    openPhoto(null);
+    expect(dpiOf(currentDoc())).toBeCloseTo(254, 9);
+    expect(currentDoc().sizeOrigin).toBe('assumed');
+    // The file's own resolution still wins over the remembered one.
+    openPhoto(96);
+    expect(dpiOf(currentDoc())).toBeCloseTo(96, 9);
+    expect(currentDoc().sizeOrigin).toBe('file');
+  });
+
+  it('setting the size by hand clears the assumption, and undo brings it back', () => {
+    resetStores();
+    openPhoto(null);
+    useDocumentStore.getState().edit(setScale(25.4 / 200));
+    expect(currentDoc().sizeOrigin).toBe('user');
+    expect(dpiOf(currentDoc())).toBeCloseTo(200, 9);
+    useDocumentStore.getState().undo();
+    expect(currentDoc().sizeOrigin).toBe('assumed');
+    expect(dpiOf(currentDoc())).toBeCloseTo(300, 9);
   });
 
   it('rejects a scale that is not a positive number', () => {
@@ -125,6 +160,7 @@ describe('crop followed by other edits (#15), rendered', () => {
   async function openLabelled(width: number, height: number) {
     resetStores();
     store().open(await loadPixels(pipeline.api, labelledImage(width, height), width, height));
+    greyscale();
     await pipeline.settled();
   }
 
@@ -159,7 +195,8 @@ describe('crop followed by other edits (#15), rendered', () => {
     store().edit(setDetail({ unsharpStrength: 50, adaptiveThreshold: true }));
     await check(200 / 600);
 
-    store().edit(setDither({ ...DEFAULT_DITHER, algorithm: 'floyd-steinberg' }));
+    // Greyscale, so the preview stays at the crop's own pixels (a dithered one is on the dot grid, #34).
+    store().edit(setDither({ ...DEFAULT_DITHER, algorithm: 'none', serpentine: false }));
     store().edit(setVector({ threshold: 90 }));
     await check(200 / 600);
   });
@@ -193,6 +230,7 @@ describe('crop followed by other edits (#15), rendered', () => {
   it('a 6000x4000 photo renders a 2048x1365 preview from the full source, and a crop of it at up to 2048 px', async () => {
     resetStores();
     store().open(await loadPixels(pipeline.api, labelledImage(6000, 4000), 6000, 4000));
+    greyscale();
     await pipeline.settled();
     expect([useRenderStore.getState().source?.width, useRenderStore.getState().source?.height]).toEqual([2048, 1365]);
     // A 3000x4000 half is rendered from the source at 1536x2048, not cut from the whole-image preview at 1024x1365.
@@ -269,6 +307,8 @@ describe('size not set', () => {
   });
 
   it('export refuses while the size is not set, and works once it is set', () => {
+    resetStores();
+    openPhoto(null, null);
     expect(() => exportResolution(currentDoc(), 2048)).toThrow(/Set the size/);
     expect(() => exportPlan(currentDoc())).toThrow(/Set the size/);
     store().edit(setScale(25.4 / 300));

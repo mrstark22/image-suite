@@ -15,8 +15,9 @@ export function ignoredFilesMessage(openedName: string, ignoredCount: number): s
  * Opens the first of `files` as a new document, replacing the current one.
  * When more than one file is given, the rest are not opened and the user is
  * told so. When the current document has edits, `confirmReplace` is asked
- * first; returning false cancels. Size is the first step: the size dialog
- * opens, with the size not set.
+ * first; returning false cancels. Opening never stops for a size: the
+ * document takes the file's resolution, or an assumed one (see
+ * `initialSize`), and the user can change it from the Size step.
  */
 export async function openImageFiles(
   files: File[],
@@ -36,10 +37,6 @@ export async function openImageFiles(
     useUIStore.getState().setReducedOpenOffer({ file: err.file, message: err.message, ...err.size });
     return;
   }
-  if (useDocumentStore.getState().doc?.mmPerPx === null) {
-    useUIStore.getState().setSizeDialogOpen(true);
-  }
-
   if (files.length > 1) {
     useRenderStore.getState().setErrorMessage(ignoredFilesMessage(first.name, files.length - 1));
   }
@@ -47,8 +44,8 @@ export async function openImageFiles(
 
 /**
  * Opens `file` at `size`, smaller than the file's own: the choice made in
- * the reduced-open dialog (#69). The document records both sizes. Size is
- * the first step, as for any image.
+ * the reduced-open dialog (#69). The document records both sizes. Its size
+ * starts as for any image.
  */
 export async function openImageReduced(
   file: File,
@@ -57,9 +54,6 @@ export async function openImageReduced(
     decodeImageFile(f, sourceId, undefined, reduceTo)
 ): Promise<void> {
   await useDocumentStore.getState().load(file, (f, sourceId) => decode(f, sourceId, size));
-  if (useDocumentStore.getState().doc?.mmPerPx === null) {
-    useUIStore.getState().setSizeDialogOpen(true);
-  }
 }
 
 /** Asks the user, in the browser, whether to discard edits to the current image. */

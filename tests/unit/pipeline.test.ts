@@ -252,3 +252,25 @@ describe('the engine', () => {
     expect(engine.hasSource('huge')).toBe(false);
   });
 });
+
+describe('the Adjust histogram (prepared stage)', () => {
+  it('counts the tones the dither receives, not the dithered 0 and 255', () => {
+    const doc = setDither({ algorithm: 'floyd-steinberg' })(setTonal({ contrast: 20 })(photoDoc()));
+    const pt = previewTarget(doc, PREVIEW_EDGE);
+    const prepared = new Uint8Array(engine.render(doc, pt, 'prepared').pixels);
+    const expected = new Uint32Array(256);
+    for (let i = 0; i < prepared.length; i += 4) {
+      const l = Math.min(255, Math.floor((2126 * prepared[i] + 7152 * prepared[i + 1] + 722 * prepared[i + 2] + 5000) / 10000));
+      expected[l]++;
+    }
+    const final = new Uint8Array(engine.render(doc, pt, 'final').pixels);
+    // The final render is dithered: only black and white.
+    expect(final.every((v, i) => (i & 3) === 3 || v === 0 || v === 255)).toBe(true);
+    const hist = engine.core.preparedHistogram();
+    expect(Array.from(hist.luma)).toEqual(Array.from(expected));
+    // A photo spreads over the midtones.
+    let mid = 0;
+    for (let i = 64; i < 192; i++) mid += hist.luma[i];
+    expect(mid / (pt.widthPx * pt.heightPx)).toBeGreaterThan(0.3);
+  });
+});

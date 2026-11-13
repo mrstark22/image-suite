@@ -3,10 +3,11 @@
  */
 import { DEFAULT_PREFERENCES, usePreferencesStore } from '../../src/store/preferencesStore';
 import type { LoadedSource } from '../../src/lib/image-loader';
-import { newSourceId, setOpenDefaults } from '../../src/store/documentStore';
+import { newSourceId } from '../../src/store/documentStore';
 import { useDocumentStore } from '../../src/store/documentStore';
 import { useRenderStore } from '../../src/store/renderStore';
 import { useUIStore } from '../../src/store/uiStore';
+import { setDither } from '../../src/lib/document';
 
 /** Pixel value used to label each preview pixel, so a crop can be checked exactly. */
 export function labelOf(x: number, y: number): [number, number, number] {
@@ -41,16 +42,27 @@ export function decodedImage(widthPx: number, heightPx: number, fileDpi: number 
 /** A 6000x4000 photo; its preview target is 2048x1365. */
 export const PHOTO = { widthPx: 6000, heightPx: 4000, previewWidth: 2048, previewHeight: 1365 };
 
-/** Opens the 6000x4000 photo (metadata only). */
-export function openPhoto(fileDpi: number | null = null): void {
-  useDocumentStore.getState().open(decodedImage(PHOTO.widthPx, PHOTO.heightPx, fileDpi, 'photo.jpg'));
+/**
+ * Opens the 6000x4000 photo (metadata only). Its size starts as opening sets
+ * it, unless `mmPerPx` is given; `null` opens it with no size.
+ */
+export function openPhoto(fileDpi: number | null = null, mmPerPx?: number | null): void {
+  useDocumentStore.getState().open(decodedImage(PHOTO.widthPx, PHOTO.heightPx, fileDpi, 'photo.jpg'), mmPerPx);
+  greyscale();
 }
 
 /** Closes any document and resets the stores between tests. */
+/**
+ * Turns the open document's dither off without an undo entry. A new document
+ * is dithered on the machine's dot grid (#34); tests of the greyscale path,
+ * the crop and the size at native resolution start from here.
+ */
+export function greyscale(): void {
+  useDocumentStore.getState().syncAll(setDither({ algorithm: 'none' }));
+}
+
 export function resetStores(): void {
   useDocumentStore.getState().close();
-  // No material chosen: documents open with the plain defaults.
-  setOpenDefaults(null);
   useRenderStore.setState({ errorMessage: null });
   useUIStore.setState({ isSizeDialogOpen: false });
   usePreferencesStore.setState({ ...DEFAULT_PREFERENCES });

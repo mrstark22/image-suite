@@ -44,3 +44,39 @@
   background: var(--surface-hover);
   color: var(--text);
 }
+
+/* Touch: the dismiss button is a full touch target. */
+@media (pointer: coarse) {
+  .dismiss {
+    width: var(--touch-target);
+    height: var(--touch-target);
+    margin: -8px -8px -8px 0;
+  }
+}
+
+/*
+ * Phone: the full width inside the rulers, below the Undo and Redo pill
+ * (its top is the 24 px ruler plus 8 px, its height a 44 px touch target
+ * and its border), so it covers neither the pill nor the step controls.
+ */
+@media (max-width: 599px) {
+  .banner {
+    top: calc(24px + var(--space-2) + var(--touch-target) + 2px + var(--space-2));
+    left: calc(24px + var(--space-2));
+    right: var(--space-2);
+    transform: none;
+    max-width: none;
+    align-items: flex-start;
+    padding: var(--space-2) var(--space-2) var(--space-2) var(--space-3);
+    font-size: var(--text-md);
+    box-shadow: var(--shadow-md);
+  }
+
+  .icon {
+    margin-top: 1px;
+  }
+
+  .message {
+    overflow-wrap: anywhere;
+  }
+}

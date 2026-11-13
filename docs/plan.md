@@ -66,7 +66,7 @@ These come from the problems that motivated the project. Each becomes an automat
 
 ### Drop for now
 
-- The current flood-fill background removal, and the silent luminance heuristic that stands in for AI depth when the model fails.
+- The current flood-fill background removal (removed in phase 5), and the silent luminance heuristic that stands in for AI depth when the model fails.
 - Scene graph, drawing tools (pen, node, shape, text), grouping, booleans, project file.
 - CAM, toolpaths, G-code. The `.lbrn2` exporter writes an invented JSON format, not LightBurn's.
 - Multi-layer compositing, text layers, multi-image import and placing an image on a larger blank canvas (done in LightBurn instead). Removed in phase 1 (#15), before the new document model.
@@ -155,7 +155,7 @@ Test burns cannot be removed, because the result depends on the physical machine
 
 Selecting a machine and a material (and, for cutting, a thickness) loads exactly the matching calibration. Nothing is matched loosely. No calibration is offered for a different machine, a different material or, for cutting, a different thickness. Starting a new material or thickness from an existing calibration is an explicit copy, marked as not yet verified until that material's own card is burned. The hard-coded material presets inherited from the old code base (with categories such as "Hardwood") are removed.
 
-Profiles are stored locally and can be exported and imported as files. Signing in syncs them across computers (see Accounts and sync).
+Profiles are stored in the browser and are edited in File > Machines & Materials. They move between computers by exporting a file and importing it on the other (see Accounts and sync).
 
 ### Photo calibration
 
@@ -164,7 +164,7 @@ Profiles are stored locally and can be exported and imported as files. Signing i
 
 ### Reading a card from a photo
 
-Instead of judging the card by eye, the user can photograph or scan it and let the tool measure it (issue #56).
+Built (issue #56; `src/lib/card-reader.ts`, `src/wasm/src/card_photo.rs`, `CardPhotoReader.tsx`). Instead of judging a photo card by eye, the user can photograph or scan it and let the tool measure it. Only photo cards 1 and 2 carry markers; cut and depth cards do not.
 
 - Cards carry burned corner markers and unburned reference patches, so one picture is enough to locate the card, correct perspective and even out the lighting.
 - Cards are self-describing. The machine and material are chosen before export, and the card carries them, with the grid's speed and power values, as a burned machine-readable code and a text label. The tool reads the code and asks the user to confirm; if it cannot be read, the user picks from a list. This also lets a card exported on one device be read on another, since profiles are stored per browser.
@@ -210,31 +210,30 @@ This runs alongside phase 1, so each workflow's panels are built once in the new
 
 ## Accounts and sync
 
-Profiles live in the browser, so they exist only on the computer that made them. The user has two machines, each with its own computer.
+**Decision: sign-in and sync are not being built now.** They need a backend and an account with a hosting provider, which the project does not have, and they would add stored personal data, running costs, a privacy policy and terms.
 
-- **Principle.** The tool works fully in the browser with no account. Signing in adds sync across computers. Images are never uploaded; only profiles and settings are.
-- **Local-first.** Profiles are always read from and written to the browser store and synced in the background, so the tool keeps working offline. The profile store is built sync-ready from the start: stable IDs, modified times, a version on every record, and deletions recorded instead of erased.
-- **Conflicts.** The most recent change wins and the other is kept as a recoverable previous version.
-- **Cost of this.** It adds a backend, stored personal data, running costs, a privacy policy and terms, none of which the project has today.
-- **Paid plan.** Possible later if the tool is offered as a service: free and complete in the browser, with sync as a paid feature. Not scheduled.
-- **Before this lands.** Profile export and import as files, and self-describing calibration cards, already let two computers share profiles by hand.
+The supported way to move profiles between computers is a file: Machines & Materials > Export writes every machine, material and calibration to a file, and Import on the other computer merges it, keeping the most recent change where a record is in both. Calibration cards also carry their machine, material and settings, so a card exported on one computer can be read on another.
+
+The profile store stays sync-ready (stable IDs, modified times, a version on every record, deletions recorded instead of erased), which the import merge already uses. If sync is taken up later, it is local-first: the browser store stays the source, images are never uploaded, and the app has no sign-in or sync controls until then.
 
 ## Background removal
 
-A real segmentation model run in the browser, replacing the flood fill. The model file is self-hosted and version-pinned, download progress is shown, and failure is reported, never silently replaced by a heuristic. Model choice depends on a licence check.
+A real segmentation model run in the browser, replacing the flood fill. The model file is self-hosted and version-pinned, download progress is shown, and failure is reported, never silently replaced by a heuristic.
+
+Model (#49): ISNet "general use" (DIS, Apache-2.0), converted to float16: 90.7 MB, SHA-256 `1e00f2f0…18f0`, served from `public/models/` and derived from the rembg release file by `scripts/derive-bg-model.py`. Smaller candidates (U2-Netp, 8-bit ISNet) were not good enough on ordinary photos. Removal is an edit step holding only its settings; the mask is derived data, computed per crop and applied inside the pipeline, so every output has it (#50). Details and the comparison: `docs/background-removal.md`.
 
 ## Phases
 
-0. **Safety net.** CI running typecheck, Vitest and Rust tests. Property tests for every kept piece. Delete dropped code.
-1. **Core.** Document, pipeline, units, transparency. Full-resolution export with correct physical size.
-   - **UI redesign**, alongside phase 1: design direction, workflow-based shell, responsive layout, shared components. Each later phase builds its panels in the new design.
-2. **Vector workflow.** Segmentation, sub-pixel boundaries, stroke and fill classification, centreline, curve fitting, export in real units.
-3. **Profiles and photo workflow.** Machine, category, material, thickness and calibration profiles; device-grid resampling, clarity and CLAHE fixes, real blue noise, 1-bit export, photo calibration cards, cut calibration cards.
-4. **Relief workflow.** Single heightmap for view and export, model handling, option clean-up, depth calibration.
-5. **Background removal.**
-6. **Accounts and profile sync.** Backend and sign-in choice, local-first sync of profiles. A paid plan is recorded but not scheduled.
+State as of November 2026. "Built" means merged with tests; it does not mean burned and confirmed on the owner's machines (see Open questions).
 
-Phases 2 to 5 are independent after phase 1 and can be reordered. Phases 0 to 2 with the UI redesign form the first milestone: a tracer that fixes the main frustration, on a sound core, in the new interface.
+0. **Safety net.** Built. CI runs typecheck, Vitest and Rust tests; property tests cover every kept piece; dropped code is deleted.
+1. **Core.** Built. Document, pipeline, units, transparency; full-resolution export with the document's physical size. An image opens with a size: the file's DPI, or an assumed DPI (the last one applied, else 300) shown as assumed.
+   - **UI redesign**, alongside phase 1: built. Workflow shell, side panel on desktop, bottom sheet on phone, shared components on design tokens.
+2. **Vector workflow.** Built. Segmentation, sub-pixel boundaries, stroke and fill classification, centreline, curve fitting, SVG and DXF in millimetres.
+3. **Profiles and photo workflow.** Built. Machine, category, material, thickness and calibration profiles (File > Machines & Materials); the photo is resampled to the machine's dot grid (default 0.1 mm dot pitch), dithered (default Jarvis, serpentine; real blue noise available) and exported as 1-bit PNG or BMP with its DPI. Photo, cut and depth calibration cards are exported through File > Calibrate (as a LightBurn project or plain files), and the results the user reads off the burned card are saved as calibrations. Photo cards 1 and 2 can also be read from a photo or flatbed scan of the burned card (#56): the core finds the corner markers, the card code is checked, and the tool proposes a cell or tone curve for the user to confirm. Cut and depth cards carry no photo markers: cut cards are read by eye, depth cards by measured depths or a 3D scan (STL or PLY).
+4. **Relief workflow.** Built. One heightmap feeds the 3D view and the export, a full-resolution 16-bit PNG with the document's DPI and the depth curve's inverse applied; self-hosted AI depth model; exact distance transform. A 3D scan of a depth card (#61) is not built.
+5. **Background removal.** Built. An undoable document step run by ISNet (see Background removal).
+6. **Accounts and profile sync.** Not being built (see Accounts and sync). Profiles move between computers as a file.
 
 ### Tracking
 
@@ -255,11 +254,15 @@ Labels: `phase` marks the tracking issues; `area: infra`, `area: core`, `area: v
 
 ## Known defects in kept code
 
-To fix as each piece is ported. Verified in the audit unless marked.
+None open from the November audit. Defects found since are tracked as GitHub issues.
 
-- Clarity is inverted: positive values flatten midtones (`src/wasm/src/tonal.rs:93`).
-- CLAHE darkens the bottom and right bands when the image is not divisible by the grid (`src/wasm/src/clahe.rs`). Reported, reproduced by the audit.
-- The dither threshold slider is a brightness bias that speckles pure white and black (`src/wasm/src/dither.rs:68`). Reported.
+### Fixed
+
+The audit's defects, each with the issue that fixed it:
+
+- Clarity is inverted: positive values flatten midtones (`src/wasm/src/tonal.rs:93`). Fixed in #35: positive clarity steepens the midtones (`tests/unit/tonal-pipeline.test.ts`).
+- CLAHE darkens the bottom and right bands when the image is not divisible by the grid (`src/wasm/src/clahe.rs`). Reported, reproduced by the audit. Fixed in #36: even tiles, clip by tile area, all counts redistributed, centre-anchored interpolation (`tests/unit/photo-engraving.test.ts`).
+- The dither threshold slider is a brightness bias that speckles pure white and black (`src/wasm/src/dither.rs:68`). Reported. Fixed in #37: the slider is removed (the tone controls and the calibration's tone curve do its job), and the hidden `invertedBurn` is removed in favour of the Adjust step's visible Invert.
 - Tracing uses the unadjusted render of the crop, ignoring adjustments (the trace scheduler in `src/lib/schedulers.ts`; #23). Fixed in #23: the trace reads the `prepared` stage, and export traces again at full resolution (`src/lib/vector-file-export.ts`).
 - K-means seeds from evenly spaced pixel positions, which often coincide (`src/wasm/src/vector.rs:843`). Fixed in #28: `vector.rs` is replaced by `src/wasm/src/trace/`, whose colour step uses k-means++ in CIELAB (`trace/colour.rs`).
 - "Optimize & Smooth Nodes" throws on WASM trace output (`src/lib/vector-smoother.ts:27`). Fixed in #32: the smoother is removed; curve fitting is part of the tracer (`trace/fit.rs`).
@@ -267,13 +270,15 @@ To fix as each piece is ported. Verified in the audit unless marked.
 - Checkboxes, preset chips and reset buttons in the adjustments panel are not undoable. Reported. Fixed in #15 (part 2) and #21: every control changes the document through `edit` or a gesture in `src/store/documentStore.ts`, and `tests/unit/undo-every-control.test.ts` undoes each kind of edit.
 - Stale worker results can overwrite the current preview. Reported. Fixed in #19: the schedulers in `src/lib/render-scheduler.ts` commit a result only if nothing it read has changed.
 - Relief: transparent pixels count as ink, so a logo on a transparent background gives a flat map (`src/wasm/src/depth.rs:40`). Reported. Fixed by flattening transparency in the core: since #16 the relief reads the flattened `source` stage; #18 adds its test.
-- Relief: the Export panel's heightmap button sends 16-bit data down the 8-bit path (`src/components/panels/ExportPanel.tsx:316`). Since #17, which removed that path, the button writes through the 16-bit encoder; removing the duplicate button stays with #46.
-- Relief: AI depth falls back to a heuristic with no message (`src/lib/ai-depth.ts:127`), and its cache key is weak (`src/workers/pipeline-api.ts`, `computeQuickBufferHash`).
-- Existing tests check output shape, not correctness.
+- Relief: the Export panel's heightmap button sends 16-bit data down the 8-bit path (`src/components/panels/ExportPanel.tsx:316`). Since #17, which removed that path, the button writes through the 16-bit encoder; removing the duplicate button stays with #46. Fixed in #46: one export control, the heightmap computed again at full resolution with the document's DPI.
+- Relief: AI depth falls back to a heuristic with no message (`src/lib/ai-depth.ts:127`), and its cache key is weak (`src/workers/pipeline-api.ts`, `computeQuickBufferHash`). Fixed in #43: failures are reported and no heightmap is made; the estimate is reused only for byte-identical model input.
+- Existing tests checked output shape, not correctness. Fixed from phase 0 on: every algorithm has a test of its defining property.
 
 ## Open questions
 
-- Line interval and typical materials on each machine.
-- Relief: on the CO2 machines the heightmap runs in LightBurn's Grayscale image mode (power varies per pixel between min and max power). LightBurn's 3D Sliced mode is galvo-only and does not apply. Still to confirm: whether Grayscale mode uses more than 8 bits of a 16-bit image, and how the user runs reliefs today (passes, speed, power range).
-- A sample LightBurn project (one image on one layer set to Pass-Through) saved from the user's LightBurn, to confirm how Pass-Through and CO2 settings are written. Not needed to start the exporter.
-- Background removal model and its licence.
+- **LightBurn project format.** The `.lbrn2` exporter for calibration cards is written against third-party sample files (see Getting cards into LightBurn). It has not been confirmed against a project saved from the owner's LightBurn, including how Pass-Through and the CO2 controller's settings are written.
+- **Grayscale mode bit depth.** Reliefs run in LightBurn's Grayscale image mode. Whether it uses more than 8 bits of a 16-bit image is unknown; the export writes 16-bit PNG, which loses nothing either way.
+- **No real card has been read.** No calibration card burned on the owner's machines has been read back into the tool, so the saved settings and curves are unproven on real burns.
+- Line interval and typical materials on each machine, and how the owner runs reliefs today (passes, speed, power range).
+
+Settled: the AI depth model is Depth Anything V2 **Small** (Apache-2.0; the Base, Large and Giant models are CC-BY-NC-4.0 and are not used), onnx-community's conversion at revision `4472b7362082ad9968fee890ca0f1e5aca36b93d`, 27.3 MB, served from `public/models/depth-anything-v2-small-q8.onnx`. The background model is ISNet general use (Apache-2.0), see Background removal. Both are pinned by SHA-256 and checked by `src/lib/model-file.ts`, and both run on ONNX Runtime Web (MIT), CPU-only WebAssembly build, served by the app (`src/lib/ort-runtime.ts`).

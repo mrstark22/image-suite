@@ -45,7 +45,7 @@ export function pixelsPerMetre(pxPerMm: number): number {
 interface PngLayout {
   width: number;
   height: number;
-  bitDepth: 8 | 16;
+  bitDepth: 1 | 8 | 16;
   colourType: number;
   /** Bytes in one row, without its filter byte. */
   rowBytes: number;
@@ -199,6 +199,38 @@ export async function encodePng8(
 }
 
 /**
+ * Encodes a 1-bit black-and-white PNG (greyscale, bit depth 1; 1 is white)
+ * from RGBA8 rows whose red channel is 0 or 255: a dithered image for
+ * LightBurn's Pass-Through mode (#39). `readRgba` is as for `encodePng8`.
+ * Throws if any pixel is neither black nor white, rather than guess.
+ */
+export async function encodePng1(
+  readRgba: () => Uint8Array | Uint8ClampedArray,
+  width: number,
+  height: number,
+  options: { pxPerMm?: number; onProgress?: EncodeProgress } = {}
+): Promise<Uint8Array> {
+  if (readRgba().length < width * height * 4) {
+    throw new Error(`The pixels are fewer than ${width} × ${height} RGBA.`);
+  }
+  const writeRow: RowWriter = (y, out) => {
+    const rgba = readRgba();
+    out.fill(0);
+    let s = y * width * 4;
+    for (let x = 0; x < width; x++, s += 4) {
+      const v = rgba[s];
+      if (v === 255) out[x >> 3] |= 0x80 >> (x & 7);
+      else if (v !== 0) throw new Error(`Pixel ${x}, ${y} is grey (${v}), not black or white: the image is not dithered.`);
+    }
+  };
+  return encodePng(
+    { width, height, bitDepth: 1, colourType: 0, rowBytes: Math.ceil(width / 8), pxPerMm: options.pxPerMm },
+    writeRow,
+    options.onProgress
+  );
+}
+
+/**
  * Encodes a 16-bit heightmap buffer into a 16-bit greyscale PNG, writing
  * `pHYs` when `pxPerMm` is given.
  */
@@ -221,4 +253,32 @@ export async function encodePngGrayscale16(
     }
   };
   return encodePng({ width, height, bitDepth: 16, colourType: 0, rowBytes: width * 2, pxPerMm }, writeRow);
+}
+
+/**
+ * `png` (any PNG, such as a canvas's `toBlob` output) with a `pHYs` chunk
+ * declaring `pxPerMm`, inserted straight after IHDR. A PNG that already has
+ * one is returned unchanged: its stated resolution is its own.
+ */
+export function withPngResolution(png: Uint8Array, pxPerMm: number): Uint8Array {
+  const view = new DataView(png.buffer, png.byteOffset, png.byteLength);
+  const ihdrEnd = 8 + 12 + view.getUint32(8, false);
+  for (let pos = 8; pos + 8 <= png.length; pos += 12 + view.getUint32(pos, false)) {
+    const type = String.fromCharCode(png[pos + 4], png[pos + 5], png[pos + 6], png[pos + 7]);
+    if (type === 'pHYs') return png;
+    if (type === 'IDAT') break;
+  }
+  const ppm = pixelsPerMetre(pxPerMm);
+  if (!(ppm >= 1 && ppm <= 0x7fffffff)) throw new Error(`Cannot write a resolution of ${pxPerMm} px/mm.`);
+  const out = new Uint8Array(png.length + 21);
+  out.set(png.subarray(0, ihdrEnd), 0);
+  const o = new DataView(out.buffer);
+  o.setUint32(ihdrEnd, 9, false);
+  out.set([0x70, 0x48, 0x59, 0x73], ihdrEnd + 4); // "pHYs"
+  o.setUint32(ihdrEnd + 8, ppm, false);
+  o.setUint32(ihdrEnd + 12, ppm, false);
+  out[ihdrEnd + 16] = 1; // unit: metre
+  o.setUint32(ihdrEnd + 17, computeCrc32(out, ihdrEnd + 4, 13), false);
+  out.set(png.subarray(ihdrEnd), ihdrEnd + 21);
+  return out;
 }

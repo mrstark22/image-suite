@@ -1,5 +1,15 @@
-//! CLAHE (Contrast Limited Adaptive Histogram Equalization) in Rust
-//! Optimized with precomputed coordinate lookup tables and fast integer luminance
+//! CLAHE (Contrast Limited Adaptive Histogram Equalization).
+//!
+//! The image is split into `grid_size` x `grid_size` tiles (fewer when the
+//! image is smaller than that in pixels) whose edges are spread evenly over the
+//! image, so no tile is a sliver when a side is not divisible by the grid
+//! (#36). Each tile's histogram is clipped at `clip_limit` times its own mean
+//! bin count, and every clipped count is given back evenly to all bins, so
+//! each tile's mapping covers exactly its own pixels. Pixels take the mapping
+//! of the four nearest tile centres, bilinearly weighted.
+//!
+//! Properties (tests in `tests/unit/clahe.test.ts`): pure white stays pure
+//! white, and a flat image stays flat, for any image size and grid.
 
 pub fn apply_clahe(
     pixels: &mut [u8],
@@ -12,119 +22,92 @@ pub fn apply_clahe(
         return;
     }
 
-    let tile_w = (width / grid_size).max(4);
-    let tile_h = (height / grid_size).max(4);
-    let tiles_x = (width + tile_w - 1) / tile_w;
-    let tiles_y = (height + tile_h - 1) / tile_h;
+    let tiles_x = grid_size.min(width);
+    let tiles_y = grid_size.min(height);
+    // Tile i spans [edges[i], edges[i + 1]).
+    let edges = |tiles: usize, len: usize| -> Vec<usize> {
+        (0..=tiles).map(|i| i * len / tiles).collect::<Vec<_>>()
+    };
+    let xs = edges(tiles_x, width);
+    let ys = edges(tiles_y, height);
 
-    // Compute tile histograms and CDFs
-    let mut cdfs = Vec::with_capacity(tiles_x * tiles_y);
-    let clip_val = (((tile_w * tile_h) as f32 / 256.0) * clip_limit).round() as u32;
+    let luma = |p: &[u8], idx: usize| -> usize {
+        ((p[idx] as u32 * 77 + p[idx + 1] as u32 * 150 + p[idx + 2] as u32 * 29 + 128) >> 8)
+            .min(255) as usize
+    };
 
+    // One 256-entry mapping per tile, in 0..=255.
+    let mut maps: Vec<[f32; 256]> = Vec::with_capacity(tiles_x * tiles_y);
     for ty in 0..tiles_y {
         for tx in 0..tiles_x {
-            let mut hist = [0u32; 256];
-            let start_x = tx * tile_w;
-            let end_x = (start_x + tile_w).min(width);
-            let start_y = ty * tile_h;
-            let end_y = (start_y + tile_h).min(height);
-            let tile_pixel_count = (end_x - start_x) * (end_y - start_y);
-
-            for y in start_y..end_y {
-                let row_offset = y * width;
-                for x in start_x..end_x {
-                    let idx = (row_offset + x) * 4;
-                    // Fast integer perceptual luminance (0.299R + 0.587G + 0.114B ~= (77R + 150G + 29B) >> 8)
-                    let gray = ((pixels[idx] as u32 * 77
-                        + pixels[idx + 1] as u32 * 150
-                        + pixels[idx + 2] as u32 * 29)
-                        >> 8) as usize;
-                    hist[gray.min(255)] += 1;
+            let mut hist = [0f32; 256];
+            for y in ys[ty]..ys[ty + 1] {
+                for x in xs[tx]..xs[tx + 1] {
+                    hist[luma(pixels, (y * width + x) * 4)] += 1.0;
                 }
             }
-
-            // Clip histogram
-            let mut excess = 0u32;
-            for val in hist.iter_mut() {
-                if *val > clip_val {
-                    excess += *val - clip_val;
-                    *val = clip_val;
+            let count = ((xs[tx + 1] - xs[tx]) * (ys[ty + 1] - ys[ty])) as f32;
+            // Clip relative to this tile's own area, then give the excess back evenly.
+            let clip = clip_limit.max(1.0) * count / 256.0;
+            let mut excess = 0f32;
+            for v in hist.iter_mut() {
+                if *v > clip {
+                    excess += *v - clip;
+                    *v = clip;
                 }
             }
-
-            let bonus = excess / 256;
-            for val in hist.iter_mut() {
-                *val += bonus;
-            }
-
-            // Build Cumulative Distribution Function (CDF)
-            let mut cdf = [0.0f32; 256];
-            let mut sum = 0u32;
-            let count_f = if tile_pixel_count == 0 {
-                1.0
-            } else {
-                tile_pixel_count as f32
-            };
+            let bonus = excess / 256.0;
+            let mut map = [0f32; 256];
+            let mut sum = 0f32;
             for i in 0..256 {
-                sum += hist[i];
-                cdf[i] = (sum as f32) / count_f;
+                sum += hist[i] + bonus;
+                map[i] = (sum / count * 255.0).min(255.0);
             }
-            cdfs.push(cdf);
+            maps.push(map);
         }
     }
 
-    // Precompute X coordinate mapping tables (eliminates 4M divisions per frame)
-    let max_tx = tiles_x.saturating_sub(1);
-    let mut tx_arr = Vec::with_capacity(width);
-    let mut next_tx_arr = Vec::with_capacity(width);
-    let mut dx_arr = Vec::with_capacity(width);
-    let inv_tile_w = 1.0 / tile_w as f32;
+    // For each coordinate: the two neighbouring tile centres and the weight of the second.
+    let lerp_table = |edges: &[usize], len: usize| -> Vec<(usize, usize, f32)> {
+        let tiles = edges.len() - 1;
+        let centres: Vec<f32> = (0..tiles)
+            .map(|i| (edges[i] + edges[i + 1]) as f32 / 2.0)
+            .collect();
+        (0..len)
+            .map(|p| {
+                let c = p as f32 + 0.5;
+                if c <= centres[0] {
+                    return (0, 0, 0.0);
+                }
+                if c >= centres[tiles - 1] {
+                    return (tiles - 1, tiles - 1, 0.0);
+                }
+                let mut i = 0;
+                while centres[i + 1] < c {
+                    i += 1;
+                }
+                let t = (c - centres[i]) / (centres[i + 1] - centres[i]);
+                (i, i + 1, t)
+            })
+            .collect()
+    };
+    let lx = lerp_table(&xs, width);
+    let ly = lerp_table(&ys, height);
 
-    for x in 0..width {
-        let tx = (x / tile_w).min(max_tx);
-        let next_tx = (tx + 1).min(max_tx);
-        let dx = (x % tile_w) as f32 * inv_tile_w;
-        tx_arr.push(tx);
-        next_tx_arr.push(next_tx);
-        dx_arr.push(dx);
-    }
-
-    let max_ty = tiles_y.saturating_sub(1);
-    let inv_tile_h = 1.0 / tile_h as f32;
-
-    // Bilinear interpolation across tiles
-    for y in 0..height {
-        let ty = (y / tile_h).min(max_ty);
-        let next_ty = (ty + 1).min(max_ty);
-        let dy = (y % tile_h) as f32 * inv_tile_h;
-        let row_offset = y * width;
-        let ty_row = ty * tiles_x;
-        let next_ty_row = next_ty * tiles_x;
-
-        for x in 0..width {
-            let tx = tx_arr[x];
-            let next_tx = next_tx_arr[x];
-            let dx = dx_arr[x];
-
-            let idx = (row_offset + x) * 4;
-            let gray = ((pixels[idx] as u32 * 77
-                + pixels[idx + 1] as u32 * 150
-                + pixels[idx + 2] as u32 * 29)
-                >> 8) as usize;
-            let gray_clamped = gray.min(255);
-
-            let cdf_tl = cdfs[ty_row + tx][gray_clamped];
-            let cdf_tr = cdfs[ty_row + next_tx][gray_clamped];
-            let cdf_bl = cdfs[next_ty_row + tx][gray_clamped];
-            let cdf_br = cdfs[next_ty_row + next_tx][gray_clamped];
-
-            let top = cdf_tl * (1.0 - dx) + cdf_tr * dx;
-            let bot = cdf_bl * (1.0 - dx) + cdf_br * dx;
-            let final_val = ((top * (1.0 - dy) + bot * dy) * 255.0) as u8;
-
-            pixels[idx] = final_val;
-            pixels[idx + 1] = final_val;
-            pixels[idx + 2] = final_val;
+    for (y, &(ty0, ty1, fy)) in ly.iter().enumerate() {
+        for (x, &(tx0, tx1, fx)) in lx.iter().enumerate() {
+            let idx = (y * width + x) * 4;
+            let g = luma(pixels, idx);
+            let tl = maps[ty0 * tiles_x + tx0][g];
+            let tr = maps[ty0 * tiles_x + tx1][g];
+            let bl = maps[ty1 * tiles_x + tx0][g];
+            let br = maps[ty1 * tiles_x + tx1][g];
+            let top = tl + (tr - tl) * fx;
+            let bot = bl + (br - bl) * fx;
+            let v = (top + (bot - top) * fy).round().clamp(0.0, 255.0) as u8;
+            pixels[idx] = v;
+            pixels[idx + 1] = v;
+            pixels[idx + 2] = v;
         }
     }
 }

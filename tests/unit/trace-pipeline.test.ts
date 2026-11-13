@@ -8,7 +8,6 @@ import { useRenderStore } from '../../src/store/renderStore';
 import { useUIStore } from '../../src/store/uiStore';
 import { setScale, setTonal, setVector } from '../../src/lib/document';
 import { previewTarget } from '../../src/lib/render-target';
-import { vectorExportSource } from '../../src/lib/vector-file-export';
 import { exportedSvg } from '../helpers/exported';
 import { loadPixels, startTestPipeline, type TestPipeline } from '../helpers/pipeline';
 import { resetStores } from '../helpers/documents';
@@ -44,13 +43,20 @@ const pathCount = (r: VectorResult | null) => r?.layers.reduce((n, l) => n + l.p
 
 describe('tracing in the pipeline', () => {
   it('waits for the size, then traces', async () => {
-    store().open(await loadPixels(pipeline.api, greySquare(80, 60), 80, 60));
+    store().open(await loadPixels(pipeline.api, greySquare(80, 60), 80, 60), null);
     await pipeline.settled();
     expect(render().vectorResult).toBeNull();
     store().edit(setScale(0.1));
     await pipeline.settled();
     expect(render().vectorResult).not.toBeNull();
     expect(render().vectorResult?.pxPerMm).toBeCloseTo(10, 9);
+  });
+
+  it('traces at once at an assumed size: an image opened without a stated DPI does not wait', async () => {
+    store().open(await loadPixels(pipeline.api, greySquare(80, 60), 80, 60));
+    expect(store().doc?.sizeOrigin).toBe('assumed');
+    await pipeline.settled();
+    expect(render().vectorResult?.pxPerMm).toBeCloseTo(300 / 25.4, 9);
   });
 
   it('traces the adjusted image: darkening the image changes the trace (#23)', async () => {
@@ -87,8 +93,6 @@ describe('export traces at full resolution (#23)', () => {
     const shown = render().vectorResult!;
     expect(pathCount(shown)).toBe(0);
 
-    const source = vectorExportSource(shown, render().tracedInputs !== null, false);
-    expect(source).toBe('full-resolution');
     const file = await exportedSvg(pipeline.api, store().doc!, shown);
     expect(file.paths).toBe(1);
     // 4000 px at 0.05 mm per px: the file is 200 mm wide.

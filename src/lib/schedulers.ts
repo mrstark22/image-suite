@@ -1,4 +1,5 @@
 import { traceInputRefs } from './trace-inputs';
+import { cropRectOf } from './document-size';
 import type { ImageDocument } from '../types/document';
 import type { DocumentRenderRequest, PreviewRenderResult, ReliefRenderResult, TraceRequest } from '../types/worker-messages';
 import type { VectorResult } from '../types/vector';
@@ -7,8 +8,13 @@ import { useRenderStore } from '../store/renderStore';
 import { useUIStore } from '../store/uiStore';
 import { showsRelief, traces } from './workflows';
 import { RenderScheduler } from './render-scheduler';
-import { previewTarget, sourceStageKey } from './render-target';
-import { renderReliefPreview } from './depth-shader';
+import { photoPreviewTarget, previewTarget } from './render-target';
+import { burnSimulationSettings } from './burn-simulation';
+import { activeCalibration, activeProfiles, useProfilesStore } from '../store/profilesStore';
+import { heightmapToRgba } from './relief';
+import { RELIEF_SHAPE_KEYS } from '../types/depth';
+import * as Comlink from 'comlink';
+import type { ReliefProgress } from '../types/worker-messages';
 import { getPipeline, type Pipeline } from './pipeline-client';
 
 /** The preview, trace and relief schedulers (design section 2). */
@@ -26,21 +32,29 @@ const render = () => useRenderStore.getState();
 /** False while a raster export runs: renders wait for it (design section 5), and run when it ends. */
 const notExporting = () => render().exportProgress === null;
 
-/** Background removal's pixels, when they belong to the render `doc` would use now. */
-function removalFor(doc: ImageDocument): ArrayBuffer | undefined {
-  const removal = render().backgroundRemoval;
-  return removal && removal.key === sourceStageKey(doc, previewTarget(doc)) ? removal.pixels.slice(0) : undefined;
-}
-
 function renderRequest(doc: ImageDocument): DocumentRenderRequest {
+  const job = useUIStore.getState().job;
+  // The photo is shown on the machine's dot grid, one pixel per laser dot (#34).
+  const target = job === 'photo' ? photoPreviewTarget(doc).target : previewTarget(doc);
+  const stage = traces(job) ? 'prepared' : 'final';
+  let simulation: DocumentRenderRequest['simulation'];
+  if (job === 'photo' && useUIStore.getState().burnPreview && doc.steps.dither.algorithm !== 'none') {
+    const profiles = useProfilesStore.getState();
+    const pitchMm = (physicalSizeWidthMm(doc) ?? target.widthPx * doc.steps.dither.dotPitchMm) / target.widthPx;
+    simulation = burnSimulationSettings(pitchMm, activeProfiles(profiles).machine, activeCalibration('engrave', profiles)).simulation;
+  }
   return {
     doc,
-    target: previewTarget(doc),
+    target,
     haveSourceKey: render().source?.key ?? null,
-    sourceStagePixels: removalFor(doc),
     // The vector job shows the image the trace reads: adjusted, not dithered (#23).
-    stage: traces(useUIStore.getState().job) ? 'prepared' : 'final',
+    stage,
+    simulation,
   };
+}
+
+function physicalSizeWidthMm(doc: ImageDocument): number | null {
+  return doc.mmPerPx === null ? null : cropRectOf(doc).width * doc.mmPerPx;
 }
 
 function report(prefix: string) {
@@ -69,7 +83,7 @@ export function createSchedulers(pipeline: () => Pipeline): Schedulers {
 
   // Each scheduler's `select` lists exactly what its request reads.
   const preview = new RenderScheduler({
-    select: (doc: ImageDocument) => [doc.source, doc.mmPerPx, doc.steps, render().backgroundRemoval] as const,
+    select: (doc: ImageDocument) => [doc.source, doc.mmPerPx, doc.steps] as const,
     // In the relief job the relief is shown instead.
     enabled: () => !showsRelief(ui().job) && notExporting(),
     buildRequest: renderRequest,
@@ -79,6 +93,7 @@ export function createSchedulers(pipeline: () => Pipeline): Schedulers {
         key: res.key,
         sourceStage: res.sourceStage,
         pixels: res.final.pixels,
+        histogram: res.histogram,
         durationMs: res.durationMs,
       });
       if (!committed) preview.rerun();
@@ -89,7 +104,7 @@ export function createSchedulers(pipeline: () => Pipeline): Schedulers {
   const trace = new RenderScheduler({
     // Traces the adjusted image (#23): everything before the dither.
     // What the trace reads from the document is listed once, in `traceInputsOf` (#89).
-    select: (doc: ImageDocument) => [...traceInputRefs(doc), render().traceRequest, render().backgroundRemoval],
+    select: (doc: ImageDocument) => [...traceInputRefs(doc), render().traceRequest],
     // Waits for a gesture to end, so a slider drag does not trace every step.
     // Tracing settings are in millimetres, so nothing traces until the size is set.
     enabled: () => {
@@ -105,8 +120,7 @@ export function createSchedulers(pipeline: () => Pipeline): Schedulers {
     buildRequest: (doc: ImageDocument): TraceRequest => ({
       doc,
       target: previewTarget(doc),
-      sourceStagePixels: removalFor(doc),
-    }),
+      }),
     run: async (req: TraceRequest) => {
       render().setIsTracing(true);
       try {
@@ -119,26 +133,44 @@ export function createSchedulers(pipeline: () => Pipeline): Schedulers {
     fail: report('Tracing failed'),
   });
 
+  // The relief reads the crop and only the shape settings: lighting, material
+  // and the view's exaggeration are drawn by the view and never re-run it (#42).
+  const onReliefProgress = (p: ReliefProgress) => {
+    if (p.model) render().setRelief({ model: p.model });
+  };
   const relief = new RenderScheduler({
-    select: (doc: ImageDocument) => [doc.source, doc.steps.rotation, doc.steps.crop, doc.depth, render().backgroundRemoval] as const,
+    select: (doc: ImageDocument) =>
+      [doc.source, doc.steps.rotation, doc.steps.crop, doc.steps.background, doc.mmPerPx, ...RELIEF_SHAPE_KEYS.map((k) => doc.depth[k])] as const,
     enabled: () => showsRelief(ui().job) && notExporting(),
     buildRequest: renderRequest,
-    run: withSpinner((req: DocumentRenderRequest) => pipeline().renderRelief(req)),
+    run: withSpinner(async (req: DocumentRenderRequest) => {
+      render().setRelief({ error: null, model: null });
+      try {
+        return await pipeline().renderRelief(req, Comlink.proxy(onReliefProgress));
+      } finally {
+        render().setRelief({ model: null });
+      }
+    }),
     commit: (res: ReliefRenderResult) => {
-      const doc = useDocumentStore.getState().doc;
-      if (!doc) return;
-      const { width, height } = res.depth;
-      const shaded = renderReliefPreview(new Uint16Array(res.depth.heightMapBuffer), width, height, doc.depth);
+      const heights = new Uint16Array(res.depth.heightMapBuffer);
       const committed = render().commitRender({
         key: res.key,
         sourceStage: res.sourceStage,
-        pixels: shaded.buffer as ArrayBuffer,
+        pixels: heightmapToRgba(heights).buffer as ArrayBuffer,
         durationMs: res.durationMs,
       });
-      if (committed) render().setDepthHeightMap(res.depth.heightMapBuffer);
-      else relief.rerun();
+      if (committed) {
+        render().setDepthHeightMap(res.depth.heightMapBuffer);
+        render().setRelief({ source: res.depth.source, error: null });
+      } else relief.rerun();
     },
-    fail: report('Depth map generation failed'),
+    // Report failures, never substitute (#43): no heightmap is shown after one.
+    fail: (err: unknown) => {
+      const message = err instanceof Error ? err.message : String(err);
+      render().setDepthHeightMap(null);
+      render().setRelief({ error: message, model: null });
+      report('Depth map generation failed')(err);
+    },
   });
 
   return { preview, trace, relief };
@@ -164,7 +196,6 @@ export function connectSchedulers(schedulers: Schedulers, pipeline: () => Pipeli
     }),
     useRenderStore.subscribe((state, prev) => {
       const changed =
-        state.backgroundRemoval !== prev.backgroundRemoval ||
         state.traceRequest !== prev.traceRequest ||
         state.autoTrace !== prev.autoTrace ||
         (state.exportProgress === null) !== (prev.exportProgress === null);
@@ -176,6 +207,8 @@ export function connectSchedulers(schedulers: Schedulers, pipeline: () => Pipeli
       }
     }),
     useUIStore.subscribe((state, prev) => {
+      // The burn simulation changes only how the preview is drawn.
+      if (state.burnPreview !== prev.burnPreview && state.job === prev.job) schedulers.preview.rerun();
       if (state.job === prev.job) return;
       // The preview and the relief both write the preview: whichever the new job
       // shows renders again, and a result of the other still in flight is dropped.
@@ -187,6 +220,12 @@ export function connectSchedulers(schedulers: Schedulers, pipeline: () => Pipeli
         schedulers.preview.rerun();
       }
       schedulers.trace.refresh();
+    }),
+    // The simulation reads the machine's spot size and the calibration.
+    useProfilesStore.subscribe((state, prev) => {
+      if (useUIStore.getState().burnPreview && (state.data !== prev.data || state.machineId !== prev.machineId || state.materialId !== prev.materialId)) {
+        schedulers.preview.rerun();
+      }
     }),
   ];
   const doc = useDocumentStore.getState().doc;

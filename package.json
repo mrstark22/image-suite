@@ -17,7 +17,7 @@
     "comlink": "^4.4.2",
     "localforage": "^1.10.0",
     "lucide-react": "^0.475.0",
-    "onnxruntime-web": "^1.29.0",
+    "onnxruntime-web": "1.29.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "zustand": "^5.0.3"

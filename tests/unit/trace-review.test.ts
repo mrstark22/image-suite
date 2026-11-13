@@ -5,7 +5,6 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { useDocumentStore } from '../../src/store/documentStore';
 import { traceIsCurrent, useRenderStore } from '../../src/store/renderStore';
-import { generateTestGridVector } from '../../src/lib/test-grid-generator';
 import { useUIStore } from '../../src/store/uiStore';
 import { applyRecipe, recipeFromDocument, setTonal, setVector } from '../../src/lib/document';
 import { editPalette, paletteFromResult } from '../../src/lib/trace-palette';
@@ -268,18 +267,6 @@ it('the exported file of finding 1 is the same physical size as the image', asyn
 });
 
 describe('second review of #84', () => {
-  it('1: a test grid stays exportable when settings change', async () => {
-    store().open(await loadPixels(pipeline.api, colourBlocks(80, 40, [[255, 255, 255], [0, 0, 0]]), 80, 40), 0.1);
-    await pipeline.settled();
-    render().addVectorLayer(
-      generateTestGridVector({ rows: 2, cols: 2, boxSizeMm: 2, gapMm: 1, dpi: 254, type: 'power-matrix' } as Parameters<typeof generateTestGridVector>[0])
-    );
-    store().edit(setTonal({ contrast: 30 }));
-    store().edit(setVector({ threshold: 90 }));
-    expect(render().isVectorStale).toBe(false);
-    expect(traceIsCurrent()).toBe(true);
-  });
-
   it('2: a hidden colour stays hidden by colour when a re-trace renumbers the colours', async () => {
     store().open(await loadPixels(pipeline.api, colourBlocks(80, 40, [[255, 255, 255], [0, 0, 0]]), 80, 40), 0.1);
     await pipeline.settled();
@@ -361,7 +348,7 @@ describe('second review of #84', () => {
     await pipeline.settled();
     const { vectorExportRequest } = await import('../../src/lib/vector-file-export');
     const file = await pipeline.api.exportVectorFile(
-      vectorExportRequest(store().doc!, render().vectorResult!, 'full-resolution', null, 'dxf')
+      vectorExportRequest(store().doc!, render().vectorResult!, 'dxf')
     );
     expect(file.mimeType).toBe('application/dxf');
     expect(file.text).toContain('$INSUNITS');
@@ -369,31 +356,6 @@ describe('second review of #84', () => {
 });
 
 describe('third review of #84', () => {
-  it('2: a trace is no longer current once background removal changes, so it cannot be exported', async () => {
-    store().open(await loadPixels(pipeline.api, colourBlocks(80, 40, [[255, 255, 255], [0, 0, 0]]), 80, 40), 0.1);
-    await pipeline.settled();
-    render().setAutoTrace(false);
-    expect(traceIsCurrent()).toBe(true);
-
-    const source = render().source!;
-    const removed = new Uint8Array(source.buffer.slice(0));
-    for (let i = 3; i < removed.length / 2; i += 4) removed[i] = 0;
-    expect(render().replaceSourcePixels(removed.buffer, source)).toBe(true);
-    expect(traceIsCurrent()).toBe(false);
-    expect(render().isVectorStale).toBe(true);
-
-    // Tracing again makes the removal the one the trace read.
-    render().requestTrace();
-    await pipeline.settled();
-    expect(traceIsCurrent()).toBe(true);
-    expect(render().isVectorStale).toBe(false);
-
-    // Restoring the image outdates that trace in turn.
-    render().setAutoTrace(false);
-    render().restoreSource();
-    expect(traceIsCurrent()).toBe(false);
-    expect(render().isVectorStale).toBe(true);
-  });
 
   it('5: a fixed-aspect box sized from its top-left corner keeps its right and bottom edges on whole pixels', () => {
     const dims = { width: 400, height: 300 };
@@ -504,17 +466,6 @@ describe('fourth review of #84', () => {
 });
 
 describe('fifth review of #84', () => {
-  it('1: a test grid made while an earlier change was pending can still be exported', async () => {
-    store().open(await loadPixels(pipeline.api, colourBlocks(80, 40, [[255, 255, 255], [0, 0, 0]]), 80, 40), 0.1);
-    await pipeline.settled();
-    render().setAutoTrace(false);
-    store().edit(setTonal({ contrast: 30 }));
-    expect(render().isVectorStale).toBe(true);
-    render().addVectorLayer(render().vectorResult!.layers[0]);
-    expect(render().isVectorStale).toBe(false);
-    expect(traceIsCurrent()).toBe(true);
-  });
-
   it('5: a need too large to count is reported in words, not as a number of megabytes', () => {
     expect(() => parseTrace('{"error":"memory","bytes":18446744073709551615}', 10)).toThrow('This image is too large to trace on this device.');
     expect(() => parseTrace('{"error":"memory","bytes":0}', 10)).toThrow('This image is too large to trace on this device.');

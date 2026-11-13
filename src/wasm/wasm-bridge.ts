@@ -7,7 +7,16 @@ import initWasm from './pkg/image_suite_wasm.wasm?init';
 import wasmUrl from './pkg/image_suite_wasm.wasm?url';
 import type { VectorConfig, VectorResult } from '../types/vector';
 import { traceImageAt, type TraceExports } from '../lib/trace-call';
-import type { DepthConfig, DepthResult } from '../types/depth';
+import type { CardPhotoExports } from '../lib/card-photo-call';
+import type { DepthConfig, DepthResult, ResolvedDepthSource } from '../types/depth';
+
+/** 256-bin channel and luma histograms. */
+export interface PreparedHistogram {
+  r: Uint32Array;
+  g: Uint32Array;
+  b: Uint32Array;
+  luma: Uint32Array;
+}
 
 export interface WasmPipelineParams {
   width: number;
@@ -45,10 +54,14 @@ export interface WasmPipelineParams {
   sharpenRadius: number;
   // Dither
   ditherAlgorithm: string;
-  ditherThreshold: number;
   ditherSerpentine: boolean;
   ditherScale: number;
-  ditherInverted: boolean;
+  /**
+   * The calibration's tone response, applied before the dither (#39): the
+   * darkness burned (0 to 1) at evenly spaced levels from white to black, or
+   * null for none.
+   */
+  toneCurve: readonly number[] | null;
 }
 
 export interface WasmExports {
@@ -59,6 +72,30 @@ export interface WasmExports {
   deallocate: (ptr: number, size: number) => void;
   /** Turns an RGBA8 image clockwise by quarter turns into a new buffer, or returns 0. */
   rotate_quarter_turns: (src: number, width: number, height: number, turns: number) => number;
+  /**
+   * Composites an opaque RGBA8 render onto white with the coverage of an
+   * 8-bit probability map, in place (src/wasm/src/matte.rs). Returns 1, or 0.
+   */
+  apply_background_matte: (
+    img: number,
+    width: number,
+    height: number,
+    mask: number,
+    maskW: number,
+    maskH: number,
+    cutoff: number,
+    softness: number
+  ) => number;
+  /** The coverage of a probability map at `width` x `height`, one byte per pixel, as a new buffer or 0. */
+  background_matte_alpha: (
+    mask: number,
+    maskW: number,
+    maskH: number,
+    width: number,
+    height: number,
+    cutoff: number,
+    softness: number
+  ) => number;
   /** Crop, flatten onto white and resample in linear light; returns a new buffer or 0. */
   prepare_source: (
     src: number,
@@ -108,25 +145,50 @@ export interface WasmExports {
     sharpenRadius: number,
     // Dither
     ditherAlgoCode: number,
-    ditherThresh: number,
     ditherSerpentine: number,
     ditherScale: number,
-    ditherInverted: number
+    // Tone response before the dither: f32 values at a pointer, and their count (0 for none)
+    toneCurvePtr: number,
+    toneCurveLen: number
+  ) => void;
+  /** Burn simulation preview (#41), in place on a dithered RGBA8 image. */
+  simulate_burn: (
+    ptr: number,
+    width: number,
+    height: number,
+    spotPx: number,
+    baseR: number,
+    baseG: number,
+    baseB: number,
+    burnR: number,
+    burnG: number,
+    burnB: number
   ) => void;
   process_trace: TraceExports['process_trace'];
+  /** Reading a card photo (#56); called through `CardPhotoImage` in `card-photo-call.ts`. */
+  find_card_markers: CardPhotoExports['find_card_markers'];
+  get_card_markers_len: CardPhotoExports['get_card_markers_len'];
+  sample_card_patches: CardPhotoExports['sample_card_patches'];
+  rectify_card: CardPhotoExports['rectify_card'];
   get_trace_json_len: () => number;
+  get_prepared_histogram: () => number;
   process_depth: (
     ptr: number,
     width: number,
     height: number,
-    sourceMode: number,
-    bevelStyle: number,
-    invertZ: number,
-    smoothingRadius: number,
-    depthScale: number,
-    reliefAngle: number
+    source: number,
+    profile: number,
+    shapeIsLight: number,
+    invert: number,
+    smoothingPx: number,
+    bevelPx: number,
+    detail: number,
+    estPtr: number,
+    estWidth: number,
+    estHeight: number
   ) => number;
   get_depth_buf_len: () => number;
+  get_depth_resolved_source: () => number;
 }
 
 const ALGORITHM_CODE_MAP: Record<string, number> = {
@@ -137,6 +199,7 @@ const ALGORITHM_CODE_MAP: Record<string, number> = {
   'bayer-2': 4,
   'bayer-4': 5,
   'bayer-8': 6,
+  'blue-noise': 7,
 };
 
 export class RustWasmEngine {
@@ -216,45 +279,90 @@ export class RustWasmEngine {
   public processInPlace(ptr: number, params: WasmPipelineParams): void {
     const { width, height } = params;
     const algoCode = ALGORITHM_CODE_MAP[params.ditherAlgorithm] ?? 0;
-    const grayCodeMap: Record<string, number> = { none: 0, rec709: 1, average: 2, desaturate: 3, max: 4, inverted: 5 };
+    const grayCodeMap: Record<string, number> = {
+      none: 0,
+      rec709: 1,
+      average: 2,
+      desaturate: 3,
+      max: 4,
+      inverted: 5,
+    };
     const grayCode = grayCodeMap[params.grayscaleMode] ?? 0;
 
-    this.wasm.process_pipeline(
-      ptr,
-      width,
-      height,
-      params.exposure ?? 0,
-      params.brightness ?? 0,
-      params.contrast ?? 0,
-      params.midtones ?? 0,
-      params.highlights ?? 0,
-      params.shadows ?? 0,
-      params.whites ?? 0,
-      params.blacks ?? 0,
-      params.clarity ?? 0,
-      params.gamma ?? 1.0,
-      params.blackPoint ?? 0,
-      params.whitePoint ?? 255,
-      params.invert ? 1 : 0,
-      grayCode,
-      params.saturation ?? 0,
-      params.vibrance ?? 0,
-      params.temperature ?? 0,
-      params.tint ?? 0,
-      params.enableClahe ? 1 : 0,
-      params.claheClip ?? 2.5,
-      params.claheGrid ?? 8,
-      params.enableAdaptive ? 1 : 0,
-      params.adaptiveBlock ?? 15,
-      params.adaptiveC ?? 2,
-      params.sharpenAmount ?? 0,
-      params.sharpenRadius ?? 1.5,
-      algoCode,
-      params.ditherThreshold ?? 128,
-      params.ditherSerpentine ? 1 : 0,
-      params.ditherScale ?? 1,
-      params.ditherInverted ? 1 : 0
-    );
+    const curve = params.toneCurve && params.toneCurve.length >= 2 ? params.toneCurve : null;
+    const curveBytes = curve ? curve.length * 4 : 0;
+    const curvePtr = curve ? this.wasm.allocate(curveBytes) : 0;
+    try {
+      if (curve) {
+        // DataView: `allocate` does not promise 4-byte alignment.
+        const view = new DataView(this.wasm.memory.buffer, curvePtr, curve.length * 4);
+        curve.forEach((v, i) => view.setFloat32(i * 4, v, true));
+      }
+      this.wasm.process_pipeline(
+        ptr,
+        width,
+        height,
+        params.exposure ?? 0,
+        params.brightness ?? 0,
+        params.contrast ?? 0,
+        params.midtones ?? 0,
+        params.highlights ?? 0,
+        params.shadows ?? 0,
+        params.whites ?? 0,
+        params.blacks ?? 0,
+        params.clarity ?? 0,
+        params.gamma ?? 1.0,
+        params.blackPoint ?? 0,
+        params.whitePoint ?? 255,
+        params.invert ? 1 : 0,
+        grayCode,
+        params.saturation ?? 0,
+        params.vibrance ?? 0,
+        params.temperature ?? 0,
+        params.tint ?? 0,
+        params.enableClahe ? 1 : 0,
+        params.claheClip ?? 2.5,
+        params.claheGrid ?? 8,
+        params.enableAdaptive ? 1 : 0,
+        params.adaptiveBlock ?? 15,
+        params.adaptiveC ?? 2,
+        params.sharpenAmount ?? 0,
+        params.sharpenRadius ?? 1.5,
+        algoCode,
+        params.ditherSerpentine ? 1 : 0,
+        params.ditherScale ?? 1,
+        curvePtr,
+        curve ? curve.length : 0
+      );
+    } finally {
+      if (curvePtr) this.wasm.deallocate(curvePtr, curveBytes);
+    }
+  }
+
+  /**
+   * The histogram of the last `processInPlace` call's `prepared` stage (the
+   * tones the dither receives): 256 bins each of red, green, blue and luma.
+   */
+  public preparedHistogram(): PreparedHistogram {
+    const ptr = this.wasm.get_prepared_histogram();
+    // Copy with a DataView: the static is 4-byte aligned, but reading
+    // bytes makes no assumption about it.
+    const view = new DataView(this.wasm.memory.buffer, ptr, 1024 * 4);
+    const bins = new Uint32Array(1024);
+    for (let i = 0; i < 1024; i++) bins[i] = view.getUint32(i * 4, true);
+    return { r: bins.slice(0, 256), g: bins.slice(256, 512), b: bins.slice(512, 768), luma: bins.slice(768) };
+  }
+
+  /** Burn simulation preview (#41) in place on the dithered RGBA8 image at `ptr`. */
+  public simulateBurnAt(
+    ptr: number,
+    width: number,
+    height: number,
+    spotPx: number,
+    base: readonly [number, number, number],
+    burn: readonly [number, number, number]
+  ): void {
+    this.wasm.simulate_burn(ptr, width, height, spotPx, base[0], base[1], base[2], burn[0], burn[1], burn[2]);
   }
 
   /** Traces the RGBA8 image at `ptr` in WASM memory, in place (see `traceImageAt`). */
@@ -262,82 +370,83 @@ export class RustWasmEngine {
     return traceImageAt(this.wasm, ptr, width, height, pxPerMm, config);
   }
 
-  public processDepth(
-    inputBuffer: ArrayBuffer,
+  /**
+   * The relief heightmap of the RGBA8 image at `ptr` in WASM memory
+   * (`depth.rs`), for a render at `pxPerMm`; the argument order is
+   * `process_depth`'s in `lib.rs`. `estimate` is the AI depth estimate, needed
+   * for the `ai-estimation` source.
+   */
+  public depthAt(
+    ptr: number,
     width: number,
     height: number,
-    config: DepthConfig
+    config: DepthConfig,
+    pxPerMm: number,
+    estimate: DepthEstimate | null
   ): DepthResult {
     if (!this.exports) {
       throw new Error('Rust WebAssembly engine is not initialized');
     }
-
-    const byteLength = width * height * 4;
-    const ptr = this.exports.allocate(byteLength);
-    if (!ptr) {
-      throw new Error('Failed to allocate WebAssembly memory for depth computation');
+    if (config.source === 'ai-estimation' && !estimate) {
+      throw new Error('The AI depth estimate is missing.');
     }
-
+    const estBytes = estimate ? estimate.values.length * 4 : 0;
+    const estPtr = estimate ? this.exports.allocate(estBytes) : 0;
+    if (estimate && !estPtr) throw new Error('Failed to allocate WebAssembly memory for the depth estimate');
     try {
-      const wasmMem = new Uint8Array(this.exports.memory.buffer, ptr, byteLength);
-      wasmMem.set(new Uint8Array(inputBuffer));
-
-      const sourceCode =
-        config.source === 'distance-transform'
-          ? 1
-          : config.source === 'ai-estimation'
-          ? 2
-          : 0;
-
-      const bevelCode =
-        config.bevelStyle === 'dome'
-          ? 1
-          : config.bevelStyle === 'concave'
-          ? 2
-          : config.bevelStyle === 'flat'
-          ? 3
-          : 0;
-
+      if (estimate) new Float32Array(this.exports.memory.buffer, estPtr, estimate.values.length).set(estimate.values);
       const outPtr = this.exports.process_depth(
         ptr,
         width,
         height,
-        sourceCode,
-        bevelCode,
+        DEPTH_SOURCE_CODE[config.source],
+        BEVEL_CODE[config.bevelStyle] ?? 0,
+        config.shapeIsLight ? 1 : 0,
         config.invertZ ? 1 : 0,
-        config.smoothingRadius ?? 2.0,
-        config.depthScale ?? 1.0,
-        config.reliefAngle ?? 45.0
+        Math.max(0, config.smoothingMm) * pxPerMm,
+        Math.max(0, config.bevelWidthMm) * pxPerMm,
+        Math.max(0, Math.min(100, config.detail)) / 100,
+        estPtr,
+        estimate?.width ?? 0,
+        estimate?.height ?? 0
       );
-
       const outLen = this.exports.get_depth_buf_len();
-      if (!outPtr || outLen === 0) {
-        throw new Error('Depth map generation produced empty buffer');
+      if (!outPtr || outLen !== width * height) {
+        throw new Error('Depth map generation produced no heightmap');
       }
-
-      // Read 16-bit height values directly from WASM linear memory
-      const wasmU16View = new Uint16Array(this.exports.memory.buffer, outPtr, outLen);
-      const heightMapCopy = new Uint16Array(outLen);
-      heightMapCopy.set(wasmU16View);
-
-      let minZ = 65535;
-      let maxZ = 0;
-      for (let i = 0; i < outLen; i++) {
-        const val = heightMapCopy[i];
-        if (val < minZ) minZ = val;
-        if (val > maxZ) maxZ = val;
-      }
-
+      // Re-read the memory: the call may have grown it.
+      const heights = new Uint16Array(this.exports.memory.buffer, outPtr, outLen).slice();
+      const resolved = this.exports.get_depth_resolved_source();
       return {
-        heightMapBuffer: heightMapCopy.buffer as ArrayBuffer,
+        heightMapBuffer: heights.buffer as ArrayBuffer,
         width,
         height,
-        is16Bit: true,
-        minZ,
-        maxZ,
+        source: RESOLVED_SOURCE[resolved] ?? 'tonal-height',
       };
     } finally {
-      this.exports.deallocate(ptr, byteLength);
+      if (estPtr) this.exports.deallocate(estPtr, estBytes);
     }
   }
 }
+
+/** An AI depth estimate at its own size, larger values nearer. */
+export interface DepthEstimate {
+  values: Float32Array;
+  width: number;
+  height: number;
+}
+
+/** `SOURCE_*` codes of `depth.rs`. */
+const DEPTH_SOURCE_CODE: Record<DepthConfig['source'], number> = {
+  'tonal-height': 0,
+  'distance-transform': 1,
+  'ai-estimation': 2,
+  auto: 3,
+};
+const RESOLVED_SOURCE: Record<number, ResolvedDepthSource> = {
+  0: 'tonal-height',
+  1: 'distance-transform',
+  2: 'ai-estimation',
+};
+/** `PROFILE_*` codes of `depth.rs`. */
+const BEVEL_CODE: Record<DepthConfig['bevelStyle'], number> = { chamfer: 0, round: 1, cove: 2 };

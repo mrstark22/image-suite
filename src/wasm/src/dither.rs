@@ -2,6 +2,7 @@
 //! Implements:
 //! 1. Error Diffusion: Floyd-Steinberg (4-tap), Atkinson (6-tap), Jarvis (12-tap) with Serpentine scan
 //! 2. Ordered Bayer Matrices (2x2, 4x4, 8x8)
+//! 3. Blue noise: ordered dither against a void-and-cluster mask (#38)
 //!
 //! Each algorithm is checked against an independent reference in
 //! `tests/unit/dither-properties.test.ts`. Add an algorithm only together with
@@ -15,17 +16,93 @@ pub enum DitherAlgo {
     Bayer2,
     Bayer4,
     Bayer8,
+    BlueNoise,
 }
 
 pub struct DitherParams {
     pub algorithm: DitherAlgo,
-    pub threshold: u8,
     pub serpentine: bool,
     pub matrix_scale: usize,
-    pub inverted_burn: bool,
 }
 
-pub fn apply_dithering(pixels: &mut [u8], width: usize, height: usize, params: &DitherParams) {
+/// The blue-noise threshold mask (#38): 128 x 128 ranks 0 to 16383, made
+/// with the void-and-cluster method by `scripts/generate-blue-noise.mjs`.
+const BLUE_NOISE_SIZE: usize = 128;
+static BLUE_NOISE_BYTES: &[u8; BLUE_NOISE_SIZE * BLUE_NOISE_SIZE * 2] =
+    include_bytes!("blue_noise_128.bin");
+
+/// Rank of the blue-noise mask at (`x`, `y`), tiled.
+pub fn blue_noise_rank(x: usize, y: usize) -> u32 {
+    let i = ((y % BLUE_NOISE_SIZE) * BLUE_NOISE_SIZE + (x % BLUE_NOISE_SIZE)) * 2;
+    u16::from_le_bytes([BLUE_NOISE_BYTES[i], BLUE_NOISE_BYTES[i + 1]]) as u32
+}
+
+/// The look-up table that pre-compensates a material's tone response before
+/// dithering (#39). `curve` is the calibration's darkness burned (0 to 1) at
+/// evenly spaced input levels from white (index 0) to black (last index).
+/// Each grey value is mapped to the input level whose measured darkness is
+/// the darkness the value asks for, scaled onto the darkness the material can
+/// reach. Pure white maps to 255 and pure black to 0, so they stay clean.
+/// Returns None for a curve with fewer than 2 points or no tonal range.
+pub fn tone_response_lut(curve: &[f32]) -> Option<[u8; 256]> {
+    let n = curve.len();
+    if n < 2 {
+        return None;
+    }
+    // Make it non-decreasing: a measured dip is noise, not a real response.
+    let mut r = Vec::with_capacity(n);
+    let mut top = f32::MIN;
+    for &v in curve {
+        top = top.max(if v.is_finite() { v } else { 0.0 });
+        r.push(top);
+    }
+    let (lo, hi) = (r[0], r[n - 1]);
+    if hi - lo <= 1e-6 {
+        return None;
+    }
+    let mut lut = [0u8; 256];
+    for (value, out) in lut.iter_mut().enumerate() {
+        if value == 255 {
+            *out = 255;
+            continue;
+        }
+        if value == 0 {
+            *out = 0;
+            continue;
+        }
+        let want = lo + (1.0 - value as f32 / 255.0) * (hi - lo);
+        // First segment that reaches `want`.
+        let mut level = (n - 1) as f32;
+        for i in 1..n {
+            if r[i] >= want {
+                let span = r[i] - r[i - 1];
+                let t = if span > 0.0 {
+                    (want - r[i - 1]) / span
+                } else {
+                    0.0
+                };
+                level = (i - 1) as f32 + t;
+                break;
+            }
+        }
+        let v = 255.0 * (1.0 - level / (n - 1) as f32);
+        *out = v.round().clamp(0.0, 255.0) as u8;
+    }
+    Some(lut)
+}
+
+/// Dithers the RGBA8 image in place to pure black and white. The grey value
+/// dithered is the Rec. 601 luma of the encoded (sRGB) values, after `lut`
+/// when given; dithering is done on encoded values, which is the space a
+/// calibration's tone curve is measured in. Pure white (255) and pure black
+/// (0) come out unchanged under every algorithm and setting.
+pub fn apply_dithering(
+    pixels: &mut [u8],
+    width: usize,
+    height: usize,
+    params: &DitherParams,
+    lut: Option<&[u8; 256]>,
+) {
     if width == 0 || height == 0 {
         return;
     }
@@ -33,19 +110,16 @@ pub fn apply_dithering(pixels: &mut [u8], width: usize, height: usize, params: &
     let total = width * height;
     let mut gray = vec![0.0f32; total];
 
-    // Threshold density bias: nominal center is 128
-    // T > 128: bias is negative -> input is darker -> more black dots / heavier burn
-    // T < 128: bias is positive -> input is lighter -> fewer black dots / lighter burn
-    let thresh = params.threshold as f32;
-    let density_bias = 128.0 - thresh;
-
-    // Convert to grayscale float buffer (0.0 to 255.0) with threshold density bias
-    for i in 0..total {
+    for (i, g) in gray.iter_mut().enumerate() {
         let idx = i * 4;
-        let g = 0.299 * pixels[idx] as f32
+        let luma = 0.299 * pixels[idx] as f32
             + 0.587 * pixels[idx + 1] as f32
             + 0.114 * pixels[idx + 2] as f32;
-        gray[i] = (g + density_bias).clamp(0.0, 255.0);
+        let v = luma.round().clamp(0.0, 255.0) as u8;
+        *g = match lut {
+            Some(table) => table[v as usize] as f32,
+            None => v as f32,
+        };
     }
 
     const QUANT_THRESH: f32 = 128.0;
@@ -119,23 +193,33 @@ pub fn apply_dithering(pixels: &mut [u8], width: usize, height: usize, params: &
         DitherAlgo::Bayer8 => {
             dither_bayer_8(&mut gray, width, height, params.matrix_scale.max(1));
         }
+        DitherAlgo::BlueNoise => {
+            dither_blue_noise(&mut gray, width, height);
+        }
     }
 
-    // Write binary 0 or 255 back to pixel buffer
-    // gray[i] is already quantized to 255.0 (light / bg) or 0.0 (dark / fg)
-    let (fg, bg) = if params.inverted_burn {
-        (255u8, 0u8)
-    } else {
-        (0u8, 255u8)
-    };
-
-    for i in 0..total {
+    // gray[i] is now 255.0 (unburned) or 0.0 (burned). Inverting for
+    // materials that mark light is the tone step's Invert, before this.
+    for (i, &g) in gray.iter().enumerate() {
         let idx = i * 4;
-        let is_light = gray[i] >= 128.0;
-        let val = if is_light { bg } else { fg };
+        let val = if g >= 128.0 { 255u8 } else { 0u8 };
         pixels[idx] = val;
         pixels[idx + 1] = val;
         pixels[idx + 2] = val;
+    }
+}
+
+/// Ordered dither against the tiled blue-noise mask: a pixel is white when
+/// its grey level, as a fraction of 255, exceeds its mask rank's fraction of
+/// the mask. So a flat grey `g` comes out with `g / 255` of its pixels white.
+fn dither_blue_noise(gray: &mut [f32], width: usize, height: usize) {
+    let n = (BLUE_NOISE_SIZE * BLUE_NOISE_SIZE) as f32;
+    for y in 0..height {
+        for x in 0..width {
+            let idx = y * width + x;
+            let t = (blue_noise_rank(x, y) as f32 + 0.5) / n;
+            gray[idx] = if gray[idx] / 255.0 > t { 255.0 } else { 0.0 };
+        }
     }
 }
 

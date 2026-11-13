@@ -8,9 +8,12 @@
 // each function instead.
 #![allow(clippy::not_unsafe_ptr_arg_deref)]
 
+mod burn_sim;
+mod card_photo;
 mod clahe;
 mod depth;
 mod dither;
+mod matte;
 mod resample;
 mod rotate;
 mod sharpen;
@@ -22,8 +25,8 @@ mod trace;
 mod tests;
 
 use clahe::apply_clahe;
-use depth::{generate_depth_map_wasm, DepthParams};
-use dither::{apply_dithering, DitherAlgo, DitherParams};
+use depth::{generate_heightmap, resolve_source, DepthParams, Estimate};
+use dither::{apply_dithering, tone_response_lut, DitherAlgo, DitherParams};
 use resample::{prepare, Crop};
 use sharpen::apply_unsharp_mask;
 use threshold::apply_adaptive_threshold;
@@ -35,6 +38,15 @@ static mut LAST_JSON_BUF: Vec<u8> = Vec::new();
 
 #[allow(static_mut_refs)]
 static mut LAST_DEPTH_BUF: Vec<u16> = Vec::new();
+static mut LAST_DEPTH_SOURCE: u32 = 0;
+
+/// Histogram of the last `process_pipeline` call's `prepared` stage (after
+/// tone, colour, CLAHE, sharpening and threshold, before the dither): 256
+/// bins each of red, green, blue and Rec. 709 luma, in that order.
+static mut PREPARED_HISTOGRAM: [u32; 1024] = [0; 1024];
+
+#[allow(static_mut_refs)]
+static mut LAST_MARKERS: Vec<f32> = Vec::new();
 
 /// Allocates linear memory buffer for image pixels
 #[no_mangle]
@@ -173,10 +185,12 @@ pub extern "C" fn process_pipeline(
     sharpen_radius: f32,
     // Dither
     dither_algo_code: u32,
-    dither_thresh: u32,
     dither_serpentine: u32,
     dither_scale: usize,
-    dither_inverted: u32,
+    // Material tone response applied before the dither (#39): `tone_curve_len`
+    // f32 values at `tone_curve_ptr`, or 0 for none.
+    tone_curve_ptr: *const f32,
+    tone_curve_len: usize,
 ) {
     if ptr.is_null() || width == 0 || height == 0 {
         return;
@@ -225,6 +239,12 @@ pub extern "C" fn process_pipeline(
         apply_adaptive_threshold(pixels, width, height, adaptive_block, adaptive_c);
     }
 
+    // The histogram the Adjust step shows: the tones the dither receives.
+    let hist = prepared_histogram(pixels);
+    unsafe {
+        PREPARED_HISTOGRAM = hist;
+    }
+
     // 5. Dithering
     let algo = match dither_algo_code {
         1 => DitherAlgo::FloydSteinberg,
@@ -233,19 +253,87 @@ pub extern "C" fn process_pipeline(
         4 => DitherAlgo::Bayer2,
         5 => DitherAlgo::Bayer4,
         6 => DitherAlgo::Bayer8,
+        7 => DitherAlgo::BlueNoise,
         _ => DitherAlgo::None,
     };
 
     if !matches!(algo, DitherAlgo::None) {
         let dither_params = DitherParams {
             algorithm: algo,
-            threshold: dither_thresh as u8,
             serpentine: dither_serpentine != 0,
             matrix_scale: dither_scale,
-            inverted_burn: dither_inverted != 0,
         };
-        apply_dithering(pixels, width, height, &dither_params);
+        let lut = if tone_curve_ptr.is_null() || tone_curve_len == 0 {
+            None
+        } else {
+            // Read as bytes: `allocate` does not promise 4-byte alignment.
+            let bytes = unsafe {
+                std::slice::from_raw_parts(tone_curve_ptr as *const u8, tone_curve_len * 4)
+            };
+            let curve: Vec<f32> = bytes
+                .chunks_exact(4)
+                .map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+                .collect();
+            tone_response_lut(&curve)
+        };
+        apply_dithering(pixels, width, height, &dither_params, lut.as_ref());
     }
+}
+
+/// 256-bin red, green, blue and Rec. 709 luma histograms of RGBA8 `pixels`.
+pub(crate) fn prepared_histogram(pixels: &[u8]) -> [u32; 1024] {
+    let mut bins = [0u32; 1024];
+    for px in pixels.chunks_exact(4) {
+        let (r, g, b) = (px[0] as u32, px[1] as u32, px[2] as u32);
+        // Rec. 709 weights in 1/10000ths, rounded.
+        let luma = ((2126 * r + 7152 * g + 722 * b + 5000) / 10000).min(255);
+        bins[r as usize] += 1;
+        bins[256 + g as usize] += 1;
+        bins[512 + b as usize] += 1;
+        bins[768 + luma as usize] += 1;
+    }
+    bins
+}
+
+/// Address of the 1024 u32 bins written by the last `process_pipeline`
+/// (see `PREPARED_HISTOGRAM`).
+#[no_mangle]
+pub extern "C" fn get_prepared_histogram() -> *const u32 {
+    #[allow(static_mut_refs)]
+    unsafe {
+        PREPARED_HISTOGRAM.as_ptr()
+    }
+}
+
+/// Burn simulation preview (#41): replaces the dithered RGBA8 image at `ptr`
+/// in place with how it should look burned, each black pixel a round spot of
+/// diameter `spot_px` pixels coloured `burn_*` over the material colour
+/// `base_*`. A view only; exports never call it.
+#[no_mangle]
+pub extern "C" fn simulate_burn(
+    ptr: *mut u8,
+    width: usize,
+    height: usize,
+    spot_px: f32,
+    base_r: u32,
+    base_g: u32,
+    base_b: u32,
+    burn_r: u32,
+    burn_g: u32,
+    burn_b: u32,
+) {
+    if ptr.is_null() || width == 0 || height == 0 {
+        return;
+    }
+    let pixels = unsafe { std::slice::from_raw_parts_mut(ptr, width * height * 4) };
+    burn_sim::simulate_burn(
+        pixels,
+        width,
+        height,
+        spot_px,
+        [base_r as u8, base_g as u8, base_b as u8],
+        [burn_r as u8, burn_g as u8, burn_b as u8],
+    );
 }
 
 /// Traces the RGBA8 image at `ptr` (`width` x `height`) to vector paths and
@@ -349,42 +437,71 @@ pub extern "C" fn get_trace_json_len() -> usize {
     }
 }
 
-/// 3D Depth Map & Heightmap Relief pipeline executed in Rust WebAssembly
+/// The relief heightmap of the RGBA8 image at `ptr` (see `depth.rs`), as
+/// `width * height` 16-bit heights; its length is `get_depth_buf_len`. The
+/// source Auto resolves to is `get_depth_resolved_source`. For the estimate
+/// source, `est_ptr` holds `est_width * est_height` f32 depth estimates; it
+/// is ignored otherwise. Returns null on bad input or a missing estimate.
 #[no_mangle]
+#[allow(clippy::too_many_arguments)]
 pub extern "C" fn process_depth(
     ptr: *const u8,
     width: usize,
     height: usize,
-    source_mode: u32,
-    bevel_style: u32,
-    invert_z: u32,
-    smoothing_radius: f32,
-    depth_scale: f32,
-    relief_angle: f32,
+    source: u32,
+    profile: u32,
+    shape_is_light: u32,
+    invert: u32,
+    smoothing_px: f32,
+    bevel_px: f32,
+    detail: f32,
+    est_ptr: *const f32,
+    est_width: usize,
+    est_height: usize,
 ) -> *const u16 {
     if ptr.is_null() || width == 0 || height == 0 {
         return std::ptr::null();
     }
-
-    let size = width * height * 4;
-    let pixels = unsafe { std::slice::from_raw_parts(ptr, size) };
-
-    let params = DepthParams {
-        source_mode,
-        bevel_style,
-        invert_z: invert_z != 0,
-        smoothing_radius,
-        depth_scale,
-        relief_angle,
+    let pixels = unsafe { std::slice::from_raw_parts(ptr, width * height * 4) };
+    let estimate = if source == depth::SOURCE_ESTIMATE
+        && !est_ptr.is_null()
+        && est_width > 0
+        && est_height > 0
+    {
+        Some(Estimate {
+            values: unsafe { std::slice::from_raw_parts(est_ptr, est_width * est_height) },
+            width: est_width,
+            height: est_height,
+        })
+    } else {
+        None
     };
-
-    let depth16 = generate_depth_map_wasm(pixels, width, height, &params);
-
+    let params = DepthParams {
+        source,
+        profile,
+        shape_is_light: shape_is_light != 0,
+        invert: invert != 0,
+        smoothing_px,
+        bevel_px,
+        detail,
+    };
+    let resolved = resolve_source(pixels, width, height, source);
+    let depth16 = generate_heightmap(pixels, width, height, &params, estimate);
     #[allow(static_mut_refs)]
     unsafe {
+        LAST_DEPTH_SOURCE = resolved;
         LAST_DEPTH_BUF = depth16;
+        if LAST_DEPTH_BUF.is_empty() {
+            return std::ptr::null();
+        }
         LAST_DEPTH_BUF.as_ptr()
     }
+}
+
+/// The source the last `process_depth` used: Auto resolved to Tone (0) or Shape (1).
+#[no_mangle]
+pub extern "C" fn get_depth_resolved_source() -> u32 {
+    unsafe { LAST_DEPTH_SOURCE }
 }
 
 /// Returns the element count (u16 items) of the last generated depth buffer
@@ -394,4 +511,114 @@ pub extern "C" fn get_depth_buf_len() -> usize {
     unsafe {
         LAST_DEPTH_BUF.len()
     }
+}
+
+/// The 3 x 3 matrix at `matrix`, read unaligned: `allocate` does not promise alignment.
+fn read_matrix(matrix: *const f64) -> [f64; 9] {
+    std::array::from_fn(|i| unsafe { std::ptr::read_unaligned(matrix.add(i)) })
+}
+
+/// Finds the corner markers of a calibration card in the RGBA8 photo at
+/// `ptr` (#56, see `card_photo.rs`). Returns 4 floats per marker (centre x,
+/// centre y, size, dot ratio) in photo pixels; their count is
+/// `get_card_markers_len`.
+#[no_mangle]
+pub extern "C" fn find_card_markers(ptr: *const u8, width: usize, height: usize) -> *const f32 {
+    let found = if ptr.is_null() || width == 0 || height == 0 {
+        Vec::new()
+    } else {
+        let pixels = unsafe { std::slice::from_raw_parts(ptr, width * height * 4) };
+        card_photo::find_markers(pixels, width, height)
+    };
+    #[allow(static_mut_refs)]
+    unsafe {
+        LAST_MARKERS = found
+            .iter()
+            .flat_map(|m| [m.x, m.y, m.side, m.dot_ratio])
+            .collect();
+        LAST_MARKERS.as_ptr()
+    }
+}
+
+/// The number of floats written by the last `find_card_markers`.
+#[no_mangle]
+pub extern "C" fn get_card_markers_len() -> usize {
+    #[allow(static_mut_refs)]
+    unsafe {
+        LAST_MARKERS.len()
+    }
+}
+
+/// Samples `count` rectangles of a card photo (#56). `matrix` holds 9 f64
+/// (card mm to photo pixels, row-major), `rects` 4 f32 per rectangle (x, y,
+/// w, h in mm). Writes 2 f32 per rectangle to `out`: the median linear
+/// luminance and the clipped fraction (NaN median when outside the photo).
+/// Returns 1, or 0 on bad input.
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub extern "C" fn sample_card_patches(
+    ptr: *const u8,
+    width: usize,
+    height: usize,
+    matrix: *const f64,
+    rects: *const f32,
+    count: usize,
+    grid: u32,
+    out: *mut f32,
+) -> u32 {
+    if ptr.is_null()
+        || matrix.is_null()
+        || out.is_null()
+        || width < 2
+        || height < 2
+        || (count > 0 && rects.is_null())
+    {
+        return 0;
+    }
+    let pixels = unsafe { std::slice::from_raw_parts(ptr, width * height * 4) };
+    let m = read_matrix(matrix);
+    // `allocate` does not promise alignment, so the floats are read unaligned.
+    let list: Vec<[f32; 4]> = (0..count)
+        .map(|i| std::array::from_fn(|k| unsafe { std::ptr::read_unaligned(rects.add(i * 4 + k)) }))
+        .collect();
+    let samples = card_photo::sample_patches(pixels, width, height, &m, &list, grid as usize);
+    for (i, s) in samples.iter().enumerate() {
+        unsafe {
+            std::ptr::write_unaligned(out.add(i * 2), s.median);
+            std::ptr::write_unaligned(out.add(i * 2 + 1), s.clipped);
+        }
+    }
+    1
+}
+
+/// The card in a photo flattened to `out_w` x `out_h` RGBA8 pixels at
+/// `px_per_mm` (#56): a new buffer of `out_w * out_h * 4` bytes that the
+/// caller frees with `deallocate`, or null on bad input.
+#[no_mangle]
+pub extern "C" fn rectify_card(
+    ptr: *const u8,
+    width: usize,
+    height: usize,
+    matrix: *const f64,
+    out_w: usize,
+    out_h: usize,
+    px_per_mm: f64,
+) -> *mut u8 {
+    if ptr.is_null()
+        || matrix.is_null()
+        || width < 2
+        || height < 2
+        || out_w == 0
+        || out_h == 0
+        || !(px_per_mm > 0.0)
+    {
+        return std::ptr::null_mut();
+    }
+    let pixels = unsafe { std::slice::from_raw_parts(ptr, width * height * 4) };
+    let m = read_matrix(matrix);
+    let mut out = card_photo::rectify(pixels, width, height, &m, out_w, out_h, px_per_mm);
+    out.shrink_to_fit();
+    let p = out.as_mut_ptr();
+    std::mem::forget(out);
+    p
 }

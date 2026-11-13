@@ -1,6 +1,7 @@
 import React from 'react';
 import { ChevronLeft, ChevronRight, PanelRightClose, PanelRightOpen } from 'lucide-react';
 import { useUIStore, currentStep } from '../../store/uiStore';
+import { useDocumentStore } from '../../store/documentStore';
 import { FLOWS, STEPS, nextStep, previousStep, type StepId } from '../../lib/workflows';
 import { AdjustmentsPanel } from '../panels/AdjustmentsPanel';
 import { DitheringPanel } from '../panels/DitheringPanel';
@@ -116,10 +117,13 @@ export const StepSheet: React.FC = () => {
   const step = useUIStore(currentStep);
   const open = useUIStore((s) => s.isSheetOpen);
   const setSheetOpen = useUIStore((s) => s.setSheetOpen);
+  // Before an image is open the panels are short notes, and the canvas holds
+  // the drop zone: the sheet takes only the room its content needs.
+  const hasDoc = useDocumentStore((s) => s.doc !== null);
   const Panel = STEP_PANELS[step];
 
   return (
-    <BottomSheet title={`${STEPS[step].label} controls`} open={open} onOpenChange={setSheetOpen}>
+    <BottomSheet title={`${STEPS[step].label} controls`} open={open} onOpenChange={setSheetOpen} fit={!hasDoc}>
       <p className={styles.sheetHint}>{STEPS[step].hint}</p>
       <div className={styles.sheetBody}>
         <Panel />

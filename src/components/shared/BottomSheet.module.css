@@ -1,8 +1,12 @@
 /*
  * Bottom sheet (#55), for the phone layout (#54). It is the last item of a
  * column, not fixed over the page: opening it shrinks what is above it, so
- * the canvas stays whole and refits instead of being covered. Open, it takes
- * at most half the screen, so the image can be seen while it is adjusted.
+ * the canvas stays whole and refits instead of being covered.
+ *
+ * Open, it has a fixed height of a little under half the screen, so the
+ * canvas does not jump as steps change and the image stays in view while it
+ * is adjusted. Closed, only the handle is left: a full-width bar in the
+ * inverted selection colour, which reads as a button to tap.
  */
 
 .sheet {
@@ -11,35 +15,70 @@
   z-index: 40;
   display: flex;
   flex-direction: column;
-  max-height: 50dvh;
   background: var(--surface);
-  border-top: 1px solid var(--border);
-  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
-  box-shadow: var(--shadow-md);
+  border-top: 2px solid var(--control-border);
+  box-shadow: var(--shadow-lg);
+}
+
+.open {
+  height: 44vh;
+  height: 44dvh;
+}
+
+.openFit {
+  max-height: 44vh;
+  max-height: 44dvh;
 }
 
 .handle {
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: stretch;
   gap: var(--space-1);
   width: 100%;
-  min-height: var(--touch-target);
-  padding: var(--space-2) var(--space-4);
+  min-height: 56px;
+  padding: var(--space-2) var(--space-4) var(--space-2);
   touch-action: none;
+  color: var(--text);
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+}
+
+.sheet:not(.open):not(.openFit) .handle {
+  background: var(--sel-bg);
+  color: var(--on-sel);
+  border-bottom: none;
 }
 
 .grip {
-  width: 36px;
-  height: 4px;
+  align-self: center;
+  width: 48px;
+  height: 5px;
   border-radius: var(--radius-full);
-  background: var(--control-border);
+  background: currentColor;
+  opacity: 0.7;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
 }
 
 .title {
+  font-size: var(--text-xl);
+  font-weight: var(--weight-strong);
+  text-align: left;
+}
+
+.toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
   font-size: var(--text-md);
   font-weight: var(--weight-medium);
-  color: var(--text);
 }
 
 .content {

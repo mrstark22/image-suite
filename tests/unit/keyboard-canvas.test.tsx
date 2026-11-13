@@ -326,19 +326,19 @@ describe('orbiting the 3D view from the keyboard (#81)', () => {
     const view = mounted!.container.querySelector<HTMLElement>('[role="region"][aria-label="3D relief view"]')!;
     expect(view.tabIndex).toBe(0);
     act(() => view.focus());
-    expect(readout()).toBe('Camera 45° around, 35° above the surface, distance 2.60');
+    expect(readout()).toBe('Camera 45° around, 35° above the surface, zoom 100%');
 
     // Down to the lowest tilt, and round to 90°: looking along the surface from its side.
     for (let i = 0; i < 4; i++) press('ArrowDown');
     for (let i = 0; i < 3; i++) press('ArrowRight');
-    expect(readout()).toBe(`Camera 90° around, ${MIN_ELEVATION}° above the surface, distance 2.60`);
+    expect(readout()).toBe(`Camera 90° around, ${MIN_ELEVATION}° above the surface, zoom 100%`);
 
     press('+');
     expect(readout()).toBe(
-      `Camera 90° around, ${MIN_ELEVATION}° above the surface, distance ${(2.6 / DOLLY_KEY_FACTOR).toFixed(2)}`,
+      `Camera 90° around, ${MIN_ELEVATION}° above the surface, zoom ${Math.round(100 * DOLLY_KEY_FACTOR)}%`,
     );
     press('-');
-    expect(readout()).toMatch(/distance 2\.60$/);
+    expect(readout()).toMatch(/zoom 100%$/);
   });
 
   it("keys on the view's own buttons are the buttons'", () => {
@@ -352,13 +352,15 @@ describe('orbiting the 3D view from the keyboard (#81)', () => {
 
 describe('the zoom bar and the 3D orbit view (#82)', () => {
   /** Opens an image in the relief job with the depth view mode `viewMode`, and mounts the app. */
-  function reliefApp(viewMode: '3d-interactive' | 'grayscale', width: number): HTMLElement {
+  function reliefApp(viewMode: '3d' | 'heightmap', width: number): HTMLElement {
     fakeViewport(width);
     useUIStore.setState({ job: 'relief', stepByJob: firstSteps() });
     openCanvas();
     mounted?.unmount();
     const doc = useDocumentStore.getState().doc!;
     useDocumentStore.setState({ doc: { ...doc, depth: { ...doc.depth, viewMode } } });
+    // A heightmap to show: the orbit view waits for one.
+    useRenderStore.setState({ depthHeightMap: new ArrayBuffer(8) });
     mounted = mount(<App />);
     return mounted.container;
   }
@@ -368,23 +370,35 @@ describe('the zoom bar and the 3D orbit view (#82)', () => {
 
   for (const width of [1440, 390]) {
     it(`at ${width} px: no zoom bar over the orbit view, which has its own zoom keys`, () => {
-      const root = reliefApp('3d-interactive', width);
+      const root = reliefApp('3d', width);
       expect(root.querySelector('[aria-label="3D relief view"]')).not.toBeNull();
       expect(zoomButtons(root)).toEqual([]);
     });
 
-    it(`at ${width} px: the zoom bar is back, and zooms, on the flat relief`, () => {
-      const root = reliefApp('grayscale', width);
-      expect(root.querySelector('[aria-label="3D relief view"]')).toBeNull();
-      expect(zoomButtons(root)).toHaveLength(4);
-      const before = useViewStore.getState().zoom;
-      click(zoomButtons(root).find((b) => b.title.startsWith('Zoom In'))!);
-      expect(useViewStore.getState().zoom).toBeGreaterThan(before);
-    });
   }
 
+  it('at 1440 px: the zoom bar is back, and zooms, on the flat relief', () => {
+    const root = reliefApp('heightmap', 1440);
+    expect(root.querySelector('[aria-label="3D relief view"]')).toBeNull();
+    expect(zoomButtons(root)).toHaveLength(4);
+    const before = useViewStore.getState().zoom;
+    click(zoomButtons(root).find((b) => b.title.startsWith('Zoom In'))!);
+    expect(useViewStore.getState().zoom).toBeGreaterThan(before);
+  });
+
+  it('at 390 px: on the flat relief, one pill switches between 100% and fit (pinch does the rest)', () => {
+    const root = reliefApp('heightmap', 390);
+    expect(root.querySelector('[aria-label="3D relief view"]')).toBeNull();
+    act(() => useViewStore.setState({ zoom: 0.3, fitted: true }));
+    expect(zoomButtons(root)).toHaveLength(1);
+    expect(zoomButtons(root)[0].textContent).toBe('30%');
+    click(zoomButtons(root)[0]);
+    expect(useViewStore.getState().zoom).toBe(1);
+    expect(zoomButtons(root)[0].title).toMatch(/^Fit to Screen/);
+  });
+
   it('the crop tool shows the flat relief, so the zoom bar is shown with it', () => {
-    const root = reliefApp('3d-interactive', 1440);
+    const root = reliefApp('3d', 1440);
     act(() => useViewStore.setState({ canvasTool: 'crop' }));
     expect(root.querySelector('[aria-label="3D relief view"]')).toBeNull();
     expect(zoomButtons(root)).toHaveLength(4);

@@ -9,6 +9,8 @@ import path from 'path';
 import { traceImageAt, type TraceExports } from '../../src/lib/trace-call';
 import { DEFAULT_VECTOR } from '../../src/lib/document';
 import type { VectorConfig, VectorResult } from '../../src/types/vector';
+import type { DepthConfig } from '../../src/types/depth';
+import { RustWasmEngine, type DepthEstimate, type WasmExports as BridgeExports } from '../../src/wasm/wasm-bridge';
 
 const WASM_PATH = path.resolve(__dirname, '../../src/wasm/pkg/image_suite_wasm.wasm');
 
@@ -21,6 +23,7 @@ export const DITHER = {
   bayer2: 4,
   bayer4: 5,
   bayer8: 6,
+  blueNoise: 7,
 } as const;
 
 export interface PipelineOptions {
@@ -46,10 +49,10 @@ export interface PipelineOptions {
   adaptive?: { block: number; c: number };
   sharpen?: { amount: number; radius: number };
   dither?: number;
-  ditherThreshold?: number;
   serpentine?: boolean;
   ditherScale?: number;
-  invertedBurn?: boolean;
+  /** Calibration tone response before the dither: darkness at levels from white to black. */
+  toneCurve?: number[];
 }
 
 // SAFETY: the WebAssembly export object is untyped; this interface lists the
@@ -62,10 +65,12 @@ interface WasmExports {
   prepare_source(...args: number[]): number;
   rotate_quarter_turns(src: number, width: number, height: number, turns: number): number;
   process_pipeline(...args: number[]): void;
+  simulate_burn(...args: number[]): void;
   process_trace: TraceExports['process_trace'];
   get_trace_json_len(): number;
   process_depth(...args: number[]): number;
   get_depth_buf_len(): number;
+  get_depth_resolved_source(): number;
 }
 
 export interface Wasm {
@@ -131,7 +136,14 @@ export function runPipeline(
   const e = wasm.exports;
   const size = width * height * 4;
   const ptr = e.allocate(size);
+  const curve = o.toneCurve ?? null;
+  const curvePtr = curve ? e.allocate(curve.length * 4) : 0;
   try {
+    if (curve) {
+      // DataView: `allocate` does not promise 4-byte alignment.
+      const view = new DataView(e.memory.buffer, curvePtr, curve.length * 4);
+      curve.forEach((v, i) => view.setFloat32(i * 4, v, true));
+    }
     new Uint8Array(e.memory.buffer, ptr, size).set(rgba);
     e.process_pipeline(
       ptr,
@@ -164,15 +176,16 @@ export function runPipeline(
       o.sharpen?.amount ?? 0,
       o.sharpen?.radius ?? 1.5,
       o.dither ?? DITHER.none,
-      o.ditherThreshold ?? 128,
       o.serpentine ? 1 : 0,
       o.ditherScale ?? 1,
-      o.invertedBurn ? 1 : 0
+      curvePtr,
+      curve ? curve.length : 0
     );
     // Re-read the view: memory may have grown and detached the old buffer.
     return new Uint8Array(e.memory.buffer, ptr, size).slice();
   } finally {
     e.deallocate(ptr, size);
+    if (curvePtr) e.deallocate(curvePtr, curve!.length * 4);
   }
 }
 
@@ -280,5 +293,32 @@ export function prepareSource(
     }
   } finally {
     e.deallocate(src, size);
+  }
+}
+
+/**
+ * The relief heightmap of `rgba` through the bridge's `depthAt`, the call the
+ * worker makes (so `process_depth`'s argument order is tested where it is
+ * written, in `wasm-bridge.ts`). Lengths in `config` are in mm at `pxPerMm`.
+ */
+export function depthMap(
+  wasm: Wasm,
+  rgba: Uint8Array,
+  width: number,
+  height: number,
+  config: DepthConfig,
+  pxPerMm = 1,
+  estimate: DepthEstimate | null = null
+): { heights: Uint16Array; source: string } {
+  const e = wasm.exports;
+  const core = RustWasmEngine.fromExports(e as unknown as BridgeExports);
+  const size = width * height * 4;
+  const ptr = e.allocate(size);
+  try {
+    new Uint8Array(e.memory.buffer, ptr, size).set(rgba);
+    const result = core.depthAt(ptr, width, height, config, pxPerMm, estimate);
+    return { heights: new Uint16Array(result.heightMapBuffer), source: result.source };
+  } finally {
+    e.deallocate(ptr, size);
   }
 }

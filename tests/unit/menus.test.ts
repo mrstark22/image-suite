@@ -2,6 +2,7 @@
  * The menus (#53) contain only actions that work: every item, run where it
  * is enabled, changes something; items that would do nothing are disabled.
  */
+import { useProfilesStore } from '../../src/store/profilesStore';
 import { usePreferencesStore } from '../../src/store/preferencesStore';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { MENUS, itemShortcut, type MenuItem } from '../../src/lib/menus';
@@ -39,7 +40,7 @@ const effects: Record<string, { setup?: () => void; changed: () => boolean }> = 
   open: { changed: () => vi.mocked(openImagePicker).mock.calls.length === 1 },
   size: { changed: () => ui().isSizeDialogOpen },
   export: { changed: () => currentStep(ui()) === 'export' },
-  'test-card': { changed: () => ui().isTestGridDialogOpen },
+  calibrate: { changed: () => useProfilesStore.getState().calibrateOpen },
   close: { changed: () => docs().doc === null },
   undo: {
     setup: () => docs().edit(setTonal({ contrast: 30 })),
@@ -82,6 +83,7 @@ const effects: Record<string, { setup?: () => void; changed: () => boolean }> = 
   theme: { changed: () => ui().theme === 'light' },
   'keep-settings': { changed: () => usePreferencesStore.getState().keepSettingsOnOpen },
   shortcuts: { changed: () => ui().isShortcutsDialogOpen },
+  profiles: { changed: () => useProfilesStore.getState().managerOpen },
 };
 
 describe('menus', () => {
@@ -98,9 +100,9 @@ describe('menus', () => {
       showVectorOverlay: true,
       theme: 'dark',
       isSizeDialogOpen: false,
-      isTestGridDialogOpen: false,
       isShortcutsDialogOpen: false,
     });
+    useProfilesStore.getState().closeManager();
     vi.mocked(openImagePicker).mockClear();
   });
 
@@ -137,7 +139,7 @@ describe('menus', () => {
 
   it('with no image open, only the items that need none are enabled', () => {
     const enabled = items.filter((i) => i.enabled()).map((i) => i.id).sort();
-    expect(enabled).toEqual(['keep-settings', 'open', 'shortcuts', 'test-card', 'theme']);
+    expect(enabled).toEqual(['calibrate', 'keep-settings', 'open', 'profiles', 'shortcuts', 'theme']);
   });
 
   it('Split View works in the vector job, whose canvas shows the adjusted image the trace reads (#23)', () => {
@@ -153,8 +155,11 @@ describe('menus', () => {
   });
 
   it('the rounded rectangle guide is disabled until the size is set: its corners are in mm', () => {
-    docs().open(decodedImage(900, 600));
+    docs().open(decodedImage(900, 600), null);
     expect(items.find((i) => i.id === 'guide-rounded')!.enabled()).toBe(false);
+    // An assumed size is a size: the guide works with it.
+    docs().open(decodedImage(900, 600));
+    expect(items.find((i) => i.id === 'guide-rounded')!.enabled()).toBe(true);
   });
 
   it('toggles show their state', () => {
@@ -175,8 +180,9 @@ describe('menus', () => {
     useRenderStore.setState({ vectorResult: TRACE });
     ui().setJob('relief');
     const flat = () => items.filter((i) => FLAT_ONLY.includes(i.id) && i.enabled()).map((i) => i.id).sort();
+    docs().edit(setDepth({ viewMode: 'heightmap' }));
     expect(flat()).toEqual([...FLAT_ONLY].sort());
-    docs().edit(setDepth({ viewMode: '3d-interactive' }));
+    docs().edit(setDepth({ viewMode: '3d' }));
     expect(flat()).toEqual([]);
     expect(runCommand('toggleRulers')).toBe(false);
     expect(runCommand('zoomIn')).toBe(false);
@@ -189,7 +195,7 @@ describe('menus', () => {
   it('with the crop tool on, the orbit view gives way to the flat relief, and the view items work again', () => {
     docs().open(decodedImage(900, 600));
     ui().setJob('relief');
-    docs().edit(setDepth({ viewMode: '3d-interactive' }));
+    docs().edit(setDepth({ viewMode: '3d' }));
     view().setCanvasTool('crop');
     expect(items.find((i) => i.id === 'rulers')!.enabled()).toBe(true);
     view().setCanvasTool('pan');

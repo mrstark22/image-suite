@@ -283,14 +283,9 @@ describe('output format', () => {
     });
   }
 
-  it('inverted burn is the exact complement of the normal output', () => {
-    const img = noiseImage(32, 32);
-    const normal = runPipeline(wasm, img, 32, 32, { dither: DITHER.floydSteinberg, serpentine: true });
-    const inverted = runPipeline(wasm, img, 32, 32, {
-      dither: DITHER.floydSteinberg,
-      serpentine: true,
-      invertedBurn: true,
-    });
-    for (let i = 0; i < normal.length; i += 4) expect(inverted[i]).toBe(255 - normal[i]);
+  it("the Adjust step's Invert is the one inversion: it turns pure white into a fully burned area (#37)", () => {
+    const white = grayImage(16, 16, () => 255);
+    const out = runPipeline(wasm, white, 16, 16, { dither: DITHER.jarvis, serpentine: true, invert: true });
+    expect(whiteFraction(out)).toBe(0);
   });
 });

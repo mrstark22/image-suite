@@ -8,6 +8,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { useDocumentStore, HISTORY_LIMIT, hasUnsavedEdits, setGestureEndTarget } from '../../src/store/documentStore';
 import {
   applyRecipe,
+  DEFAULT_DITHER,
   resetAll,
   setColor,
   setCrop,
@@ -64,7 +65,7 @@ const EDITS: Array<[string, DocumentUpdate]> = [
   ['crop', setCrop({ x: 4, y: 3, width: 20, height: 10 })],
   ['scale', setScale(0.1)],
   ['tracing', setVector({ shapes: 'centerline', threshold: 90 })],
-  ['relief', setDepth({ depthScale: 5 })],
+  ['relief', setDepth({ bevelWidthMm: 5 })],
   ['reset all', (d) => resetAll(setTonal({ brightness: 10 })(d))],
   [
     'recipe',
@@ -73,7 +74,7 @@ const EDITS: Array<[string, DocumentUpdate]> = [
       name: 'r',
       createdAt: 0,
       updatedAt: 0,
-      steps: [{ id: '1', type: 'dither', enabled: true, timestamp: 0, params: { algorithm: 'jarvis', threshold: 100, serpentine: true, matrixScale: 1, invertedBurn: false } }],
+      steps: [{ id: '1', type: 'dither', enabled: true, timestamp: 0, params: { ...DEFAULT_DITHER, algorithm: 'floyd-steinberg' } }],
     }),
   ],
 ];
@@ -255,7 +256,7 @@ describe('interrupted gestures', () => {
     store().updateGesture(token, setTonal({ brightness: 30 }));
     const afterGesture = snapshot(currentDoc());
 
-    store().edit(setDither({ algorithm: 'jarvis' }));
+    store().edit(setDither({ algorithm: 'atkinson' }));
 
     expect(store().gesture).toBeNull();
     expect(store().past.length).toBe(2);
@@ -330,11 +331,12 @@ describe('interrupted gestures', () => {
 });
 
 describe('loading', () => {
-  it('starts the size as not set, with default steps and no history', async () => {
+  it("starts at the file's resolution, with default steps and no history", async () => {
     store().edit(setScale(0.1));
     await store().load(new File([], 'b.png'), async () => decodedImage(10, 10, 96, 'b.png'));
     const doc = currentDoc();
-    expect(doc.mmPerPx).toBeNull();
+    expect(doc.mmPerPx).toBeCloseTo(25.4 / 96, 12);
+    expect(doc.sizeOrigin).toBe('file');
     expect(doc.source.fileDpi).toBe(96);
     expect(doc.steps.crop).toBeNull();
     expect(store().past.length).toBe(0);

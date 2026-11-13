@@ -91,13 +91,3 @@ export interface EditRecipe {
   updatedAt: number;
   steps: EditStep[];
 }
-
-export interface MaterialPreset {
-  id: string;
-  name: string;
-  category: 'Hardwood' | 'Softwood' | 'Plywood' | 'Slate/Stone' | 'Acrylic' | 'Leather' | 'Anodized Metal' | 'Glass';
-  description: string;
-  recommendedDpi: number;
-  recommendedDither: DitherConfig['algorithm'];
-  recipe: EditRecipe;
-}
