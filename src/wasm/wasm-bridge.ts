@@ -59,6 +59,30 @@ export interface WasmExports {
   deallocate: (ptr: number, size: number) => void;
   /** Turns an RGBA8 image clockwise by quarter turns into a new buffer, or returns 0. */
   rotate_quarter_turns: (src: number, width: number, height: number, turns: number) => number;
+  /**
+   * Composites an opaque RGBA8 render onto white with the coverage of an
+   * 8-bit probability map, in place (src/wasm/src/matte.rs). Returns 1, or 0.
+   */
+  apply_background_matte: (
+    img: number,
+    width: number,
+    height: number,
+    mask: number,
+    maskW: number,
+    maskH: number,
+    cutoff: number,
+    softness: number
+  ) => number;
+  /** The coverage of a probability map at `width` x `height`, one byte per pixel, as a new buffer or 0. */
+  background_matte_alpha: (
+    mask: number,
+    maskW: number,
+    maskH: number,
+    width: number,
+    height: number,
+    cutoff: number,
+    softness: number
+  ) => number;
   /** Crop, flatten onto white and resample in linear light; returns a new buffer or 0. */
   prepare_source: (
     src: number,

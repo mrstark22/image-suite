@@ -137,14 +137,6 @@ describe('raster export at full resolution', () => {
     expect(png.phys!.x).toBe(10000);
   });
 
-  it('refuses while background removal (preview-sized) is applied, rather than leave it out', async () => {
-    await openLabelled(200, 100);
-    const source = render().source!;
-    expect(render().replaceSourcePixels(source.buffer.slice(0), source)).toBe(true);
-    await expect(exportRaster(currentDoc(), 'png')).rejects.toThrow(/Background removal/);
-    render().restoreSource();
-    await expect(exportRaster(currentDoc(), 'png')).resolves.not.toBeNull();
-  });
 });
 
 describe('export progress, pausing the preview, and cancelling', () => {

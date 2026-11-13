@@ -18,14 +18,6 @@ import { withDrawnColours } from '../lib/trace-palette';
  * traced (colours, merges and removals, the cutline) is in the document's
  * tracing settings, so it is undoable (#32).
  */
-/** Background removal's result: replaces the `source`-stage render it was computed from. */
-interface BackgroundRemoval {
-  key: string;
-  pixels: ArrayBuffer;
-  /** The `source`-stage pixels before removal, for Restore. */
-  original: ArrayBuffer;
-}
-
 interface RenderState {
   /**
    * The `source`-stage render (cropped, flattened, resampled, unadjusted) at
@@ -35,8 +27,6 @@ interface RenderState {
   source: PreviewSource | null;
   /** The latest committed preview, the same size as `source`. */
   processed: ArrayBuffer | null;
-  /** Background removal applied to the current `source`, if any. Not part of the document. */
-  backgroundRemoval: BackgroundRemoval | null;
   /** Increases on every commit to `processed`, so the canvas redraws. */
   previewVersion: number;
   depthHeightMap: ArrayBuffer | null;
@@ -51,12 +41,6 @@ interface RenderState {
    * the tracing settings (#23, review of #84).
    */
   tracedInputs: TraceInputs | null;
-  /**
-   * The background-removed pixels the trace shown read, or null if it read the
-   * image as opened. Removal is not in the document, so it is recorded beside
-   * `tracedInputs` (review of #84).
-   */
-  tracedRemoval: ArrayBuffer | null;
   /**
    * The layers hidden on screen, by `layerKey`, kept across traces so a
    * re-trace does not show them again. A colour layer is known by its
@@ -91,15 +75,6 @@ interface RenderState {
    */
   commitRender: (render: { key: string; sourceStage: SourceStage | null; pixels: ArrayBuffer; durationMs: number }) => boolean;
   setDepthHeightMap: (buffer: ArrayBuffer | null) => void;
-  /**
-   * Replaces the `source`-stage pixels (background removal) with `buffer`,
-   * computed from `from`. Does nothing and returns false unless the current
-   * source is still that render. The pixels are not part of the document: a
-   * new crop or image discards them.
-   */
-  replaceSourcePixels: (buffer: ArrayBuffer, from: PreviewSource) => boolean;
-  /** Undoes background removal. */
-  restoreSource: () => void;
   setVectorResult: (result: VectorResult | null) => void;
   setAutoTrace: (autoTrace: boolean) => void;
   /** Turns auto-trace on and traces now. */
@@ -127,11 +102,11 @@ interface RenderState {
  * screen. False while a newer trace is due or the settings changed.
  */
 export function traceIsCurrent(): boolean {
-  const { vectorResult, tracedInputs, tracedRemoval, backgroundRemoval } = useRenderStore.getState();
+  const { vectorResult, tracedInputs } = useRenderStore.getState();
   const doc = useDocumentStore.getState().doc;
   if (!vectorResult || !doc) return false;
   if (tracedInputs === null) return true;
-  return sameValue(tracedInputs, traceInputsOf(doc)) && tracedRemoval === (backgroundRemoval?.pixels ?? null);
+  return sameValue(tracedInputs, traceInputsOf(doc));
 }
 
 /**
@@ -159,25 +134,14 @@ function summed(layers: VectorLayer[]): Pick<VectorResult, 'totalPaths' | 'total
   };
 }
 
-/**
- * True when changing background removal leaves the trace on screen out of
- * date: a trace is shown and none will replace it, as auto-trace is off. With
- * auto-trace on, the scheduler traces again (review of #84).
- */
-function removalOutdatesTrace(s: Pick<RenderState, 'vectorResult' | 'tracedInputs' | 'autoTrace'>): boolean {
-  return s.vectorResult !== null && s.tracedInputs !== null && !s.autoTrace;
-}
-
 const EMPTY_RESULTS = {
   source: null,
   processed: null,
-  backgroundRemoval: null,
   depthHeightMap: null,
   vectorResult: null,
   autoTrace: true,
   isVectorStale: false,
   tracedInputs: null,
-  tracedRemoval: null,
   hiddenLayers: [] as string[],
   isProcessing: false,
   processingDurationMs: 0,
@@ -207,11 +171,8 @@ export const useRenderStore = create<RenderState>((set, get) => ({
             height: sourceStage.height,
           }
         : s.source;
-      // Background removal belongs to the render it was computed from.
-      const removal = s.backgroundRemoval?.key === source?.key ? s.backgroundRemoval : null;
       return {
-        source: removal && source ? { ...source, buffer: removal.pixels } : source,
-        backgroundRemoval: removal,
+        source,
         processed: pixels,
         previewVersion: s.previewVersion + 1,
         processingDurationMs: durationMs,
@@ -221,32 +182,6 @@ export const useRenderStore = create<RenderState>((set, get) => ({
   },
 
   setDepthHeightMap: (depthHeightMap) => set({ depthHeightMap }),
-
-  replaceSourcePixels: (buffer, from) => {
-    const current = get().source;
-    const same = current !== null && current.key === from.key && buffer.byteLength === current.width * current.height * 4;
-    if (!same) return false;
-    const original = get().backgroundRemoval?.original ?? current.buffer;
-    set((s) => ({
-      source: { ...current, buffer },
-      backgroundRemoval: { key: current.key, pixels: buffer, original },
-      isVectorStale: s.isVectorStale || removalOutdatesTrace(s),
-    }));
-    return true;
-  },
-
-  restoreSource: () => {
-    const { source, backgroundRemoval } = get();
-    if (!source || !backgroundRemoval || backgroundRemoval.key !== source.key) {
-      set({ backgroundRemoval: null });
-      return;
-    }
-    set((s) => ({
-      source: { ...source, buffer: backgroundRemoval.original },
-      backgroundRemoval: null,
-      isVectorStale: s.isVectorStale || removalOutdatesTrace(s),
-    }));
-  },
 
   // Called with a trace's result only while nothing it read has changed, so the
   // document's tracing settings are the ones it was traced with.
@@ -265,7 +200,6 @@ export const useRenderStore = create<RenderState>((set, get) => ({
       },
       isVectorStale: false,
       tracedInputs: doc ? traceInputsOf(doc) : null,
-      tracedRemoval: get().backgroundRemoval?.pixels ?? null,
     });
   },
 
@@ -280,7 +214,7 @@ export const useRenderStore = create<RenderState>((set, get) => ({
       const changed =
         s.vectorResult !== null &&
         s.tracedInputs !== null &&
-        (!doc || !sameValue(traceInputsOf(doc), s.tracedInputs) || s.tracedRemoval !== (s.backgroundRemoval?.pixels ?? null));
+        (!doc || !sameValue(traceInputsOf(doc), s.tracedInputs));
       return { autoTrace: false, traceRequest: s.traceRequest + 1, isTracing: false, isVectorStale: s.isVectorStale || changed };
     }),
 
@@ -293,7 +227,6 @@ export const useRenderStore = create<RenderState>((set, get) => ({
     set({
       // Not a trace, so not traced with any settings.
       tracedInputs: null,
-      tracedRemoval: null,
       // Nor can it be out of date: a flag left by an earlier change would block its export.
       isVectorStale: false,
       autoTrace: false,
@@ -308,7 +241,7 @@ export const useRenderStore = create<RenderState>((set, get) => ({
   },
 
   clearVectors: () =>
-    set({ vectorResult: null, autoTrace: false, isVectorStale: false, tracedInputs: null, tracedRemoval: null, hiddenLayers: [] }),
+    set({ vectorResult: null, autoTrace: false, isVectorStale: false, tracedInputs: null, hiddenLayers: [] }),
 
   toggleVectorLayer: (layerId) => {
     const vr = get().vectorResult;

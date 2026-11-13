@@ -3,6 +3,7 @@ import type { DitherConfig } from '../types/dither';
 import type { VectorConfig } from '../types/vector';
 import type { DepthConfig } from '../types/depth';
 import type {
+  BackgroundSettings,
   DetailSettings,
   DocumentUpdate,
   EditSteps,
@@ -46,6 +47,13 @@ export const DEFAULT_COLOR: ColorAdjustments = {
   vibrance: 0,
   temperature: 0,
   tint: 0,
+};
+
+/** Off; the cutoff and softness were tuned on ISNet's output (docs/background-removal.md). */
+export const DEFAULT_BACKGROUND: BackgroundSettings = {
+  enabled: false,
+  cutoff: 50,
+  softness: 60,
 };
 
 /**
@@ -123,6 +131,7 @@ export function defaultSteps(): EditSteps {
   return {
     rotation: 0,
     crop: null,
+    background: { ...DEFAULT_BACKGROUND },
     tonal: { ...DEFAULT_TONAL },
     color: { ...DEFAULT_COLOR },
     detail: { ...DEFAULT_DETAIL },
@@ -168,6 +177,11 @@ export function sameValue(a: unknown, b: unknown): boolean {
 
 function withSteps(doc: ImageDocument, steps: Partial<EditSteps>): ImageDocument {
   return { ...doc, steps: { ...doc.steps, ...steps } };
+}
+
+/** Changes background removal's settings (#50). */
+export function setBackground(partial: Partial<BackgroundSettings>): DocumentUpdate {
+  return (d) => withSteps(d, { background: { ...d.steps.background, ...partial } });
 }
 
 /** Changes some tonal adjustments. */

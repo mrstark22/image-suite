@@ -4,7 +4,7 @@
  */
 import type { ImageDocument } from '../../src/types/document';
 import type { VectorResult } from '../../src/types/vector';
-import { vectorExportRequest, type VectorExportSource } from '../../src/lib/vector-file-export';
+import { vectorExportRequest } from '../../src/lib/vector-file-export';
 import type { PipelineWorkerApi } from '../../src/workers/pipeline-api';
 
 export interface ExportedSvg {
@@ -20,11 +20,9 @@ export interface ExportedSvg {
 export async function exportedSvg(
   api: PipelineWorkerApi,
   doc: ImageDocument,
-  shown: VectorResult,
-  source: Exclude<VectorExportSource, 'as-shown'> = 'full-resolution',
-  removal: { key: string; pixels: ArrayBuffer } | null = null
+  shown: VectorResult
 ): Promise<ExportedSvg> {
-  const { text, mimeType } = await api.exportVectorFile(vectorExportRequest(doc, shown, source, removal, 'svg'));
+  const { text, mimeType } = await api.exportVectorFile(vectorExportRequest(doc, shown, 'svg'));
   if (mimeType !== 'image/svg+xml') throw new Error(`Expected an SVG, got ${mimeType}`);
   const size = /<svg[^>]* width="([\d.]+)mm" height="([\d.]+)mm"/.exec(text);
   if (!size) throw new Error('The SVG has no size in millimetres');

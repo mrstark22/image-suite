@@ -183,54 +183,6 @@ describe('results in renderStore', () => {
     expect(previewMismatches(2, 2, 6, 4)).toBe(0);
   });
 
-  it('background removal replaces the source pixels the preview is rendered from, until the crop changes', async () => {
-    // Black where the "background" was removed, so the replaced pixels are visible in the result.
-    const replaced = new Uint8Array(20 * 10 * 4).fill(0);
-    for (let i = 3; i < replaced.length; i += 4) replaced[i] = 255;
-    expect(render().replaceSourcePixels(replaced.buffer, render().source!)).toBe(true);
-    expect(render().source?.buffer).toBe(replaced.buffer);
-    await pipeline.settled();
-    // The preview is computed from the replaced pixels (no adjustments: it equals them).
-    expect(new Uint8Array(render().processed!)).toEqual(replaced);
-    store().edit(setCrop({ x: 1, y: 1, width: 5, height: 5 }));
-    await pipeline.settled();
-    expect(render().backgroundRemoval).toBeNull();
-    expect(previewMismatches(1, 1, 5, 5)).toBe(0);
-  });
-
-  it('Restore brings back the original pixels, and the preview follows', async () => {
-    const replaced = new Uint8Array(20 * 10 * 4).fill(255).buffer;
-    render().replaceSourcePixels(replaced, render().source!);
-    await pipeline.settled();
-    render().restoreSource();
-    await pipeline.settled();
-    expect(previewMismatches(0, 0, 20, 10)).toBe(0);
-    expect(new Uint8Array(render().processed!)).toEqual(new Uint8Array(labelledImage(20, 10)));
-  });
-
-  it('a removal result for another image of the same size is discarded (review finding 1)', async () => {
-    const from = render().source!;
-    await openLabelled(20, 10, 'other.png');
-    const result = new Uint8Array(20 * 10 * 4).fill(255).buffer;
-    expect(render().replaceSourcePixels(result, from)).toBe(false);
-    expect(previewMismatches(0, 0, 20, 10)).toBe(0);
-  });
-
-  it('a removal result for a different crop of the same size is discarded, and applies again once that crop is back', async () => {
-    store().edit(setCrop({ x: 0, y: 0, width: 10, height: 10 }));
-    await pipeline.settled();
-    const from = render().source!;
-    store().edit(setCrop({ x: 10, y: 0, width: 10, height: 10 }));
-    await pipeline.settled();
-    const result = new Uint8Array(10 * 10 * 4).fill(255).buffer;
-    expect(render().replaceSourcePixels(result, from)).toBe(false);
-    expect(previewMismatches(10, 0, 10, 10)).toBe(0);
-    // Undo returns to the crop the removal was computed for, so it is valid there.
-    store().undo();
-    await pipeline.settled();
-    expect(render().replaceSourcePixels(result, from)).toBe(true);
-  });
-
   it('Reset All or a recipe that leaves what the trace reads equal does not mark the trace stale (review finding 8)', () => {
     render().setAutoTrace(false);
     store().edit(resetAll);

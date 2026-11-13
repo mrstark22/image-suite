@@ -14,7 +14,9 @@ export type Pipeline = Pick<
   | 'exportRaster'
   | 'cancelExport'
   | 'processDepth'
-  | 'processBgRemoval'
+  | 'backgroundPreview'
+  | 'hasBackgroundMask'
+  | 'setModelProgressListener'
 >;
 
 let pipeline: Pipeline | null = null;

@@ -11,6 +11,7 @@
 mod clahe;
 mod depth;
 mod dither;
+mod matte;
 mod resample;
 mod rotate;
 mod sharpen;

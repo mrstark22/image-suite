@@ -12,6 +12,7 @@ export interface TraceInputs {
   mmPerPx: ImageDocument['mmPerPx'];
   rotation: ImageDocument['steps']['rotation'];
   crop: ImageDocument['steps']['crop'];
+  background: ImageDocument['steps']['background'];
   tonal: ImageDocument['steps']['tonal'];
   color: ImageDocument['steps']['color'];
   detail: ImageDocument['steps']['detail'];
@@ -36,8 +37,8 @@ export function tracedVector(vector: VectorConfig): VectorConfig {
 }
 
 export function traceInputsOf(doc: ImageDocument): TraceInputs {
-  const { rotation, crop, tonal, color, detail } = doc.steps;
-  return { source: doc.source, mmPerPx: doc.mmPerPx, rotation, crop, tonal, color, detail, vector: tracedVector(doc.vector) };
+  const { rotation, crop, background, tonal, color, detail } = doc.steps;
+  return { source: doc.source, mmPerPx: doc.mmPerPx, rotation, crop, background, tonal, color, detail, vector: tracedVector(doc.vector) };
 }
 
 /** The parts of `traceInputsOf(doc)`, for a comparison by reference. */

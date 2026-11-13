@@ -5,8 +5,7 @@ import type {
   LoadedSourceInfo,
   PreviewRenderResult,
   ProcessDepthPayload,
-  ProcessBgRemovalPayload,
-  ProcessBgRemovalResult,
+  BackgroundPreview,
   RasterExport,
   RasterFormat,
   ReliefRenderResult,
@@ -16,7 +15,7 @@ import type {
 } from '../types/worker-messages';
 import type { VectorResult } from '../types/vector';
 import type { DepthResult } from '../types/depth';
-import { removeBackground } from '../lib/bg-removal';
+import { maskKey, withBackgroundEnabled, type BackgroundMask, type MaskModel, type ModelProgress } from '../lib/background';
 import { PipelineEngine, TooLargeError } from '../lib/pipeline-engine';
 import type { PixelSize } from '../lib/reduced-open';
 import { exportPlan, previewTarget, sameTarget, sourceStageKey } from '../lib/render-target';
@@ -121,6 +120,13 @@ export class PipelineWorkerApi {
   private exportIdle: Promise<unknown> = Promise.resolve();
   /** Set by `cancelExport`; the running export stops at its next boundary. */
   private cancelRequested = false;
+  /** The segmentation model background removal runs (#50); none until set. */
+  private maskModel: MaskModel | null = null;
+  /** Background masks by `maskKey`, newest last. Derived data, held outside WASM memory so a restart keeps them. */
+  private masks = new Map<string, BackgroundMask>();
+  /** Masks being computed, so one crop never runs the model twice at once. */
+  private pendingMasks = new Map<string, Promise<BackgroundMask>>();
+  private modelProgressListener: ((p: ModelProgress) => void) | null = null;
 
   constructor(
     private readonly loadCore: () => Promise<RustWasmEngine>,
@@ -298,14 +304,15 @@ export class PipelineWorkerApi {
   /** Renders the preview: the `final` stage at the request's target. */
   public async renderPreview(req: DocumentRenderRequest): Promise<PreviewRenderResult> {
     await this.exportIdle;
+    const mask = await this.maskFor(req.doc);
     return this.guarded(({ engine }) => {
       const start = performance.now();
-      const options = { cache: true, sourceStagePixels: req.sourceStagePixels };
+      const options = { cache: true, mask };
       const final = engine.render(req.doc, req.target, req.stage ?? 'final', options);
       const result: PreviewRenderResult = {
         key: sourceStageKey(req.doc, req.target),
         final,
-        sourceStage: this.sourceStageFor(engine, req),
+        sourceStage: this.sourceStageFor(engine, req, mask),
         durationMs: performance.now() - start,
       };
       return Comlink.transfer(result, transferables(final.pixels, result.sourceStage));
@@ -316,9 +323,10 @@ export class PipelineWorkerApi {
   public async renderRelief(req: DocumentRenderRequest): Promise<ReliefRenderResult> {
     await this.exportIdle;
     const start = performance.now();
+    const mask = await this.maskFor(req.doc);
     const { source, sourceStage } = await this.guarded(({ engine }) => ({
-      source: engine.render(req.doc, req.target, 'source', { cache: true, sourceStagePixels: req.sourceStagePixels }),
-      sourceStage: this.sourceStageFor(engine, req),
+      source: engine.render(req.doc, req.target, 'source', { cache: true, mask }),
+      sourceStage: this.sourceStageFor(engine, req, mask),
     }));
     const depth = await this.processDepth({
       buffer: source.pixels,
@@ -348,7 +356,7 @@ export class PipelineWorkerApi {
     // export trace renders its own and frees it, leaving the cache alone.
     const options = {
       cache: sameTarget(req.target, previewTarget(req.doc)),
-      sourceStagePixels: req.sourceStagePixels,
+      mask: await this.maskFor(req.doc),
     };
     return this.guarded(({ engine, core }) =>
       engine.renderWith(req.doc, req.target, 'prepared', options, (ptr, pxPerMm) => {
@@ -364,7 +372,7 @@ export class PipelineWorkerApi {
    * writing run here, off the main thread (architecture rule 2).
    */
   public async exportVectorFile(req: VectorExportRequest): Promise<{ text: string; mimeType: string }> {
-    const result = await this.traceDocument({ doc: req.doc, target: req.target, sourceStagePixels: req.sourceStagePixels });
+    const result = await this.traceDocument({ doc: req.doc, target: req.target });
     return vectorFile(withView(result, req.view), req.format);
   }
 
@@ -385,8 +393,9 @@ export class PipelineWorkerApi {
   ): Promise<RasterExport> {
     const plan = exportPlan(doc);
     this.cancelRequested = false;
-    const run = this.queued(() =>
-      this.guarded(async ({ engine }) => {
+    const run = this.queued(async () => {
+      const mask = await this.maskFor(doc);
+      return this.guarded(async ({ engine }) => {
         const boundary = async (progress: ExportProgress) => {
           await onProgress?.(progress);
           if (this.cancelRequested) throw new ExportCancelledError();
@@ -399,11 +408,12 @@ export class PipelineWorkerApi {
             encodeRaster(format, pixels, plan.target.widthPx, plan.target.heightPx, plan.pxPerMm, (fraction) =>
               boundary({ stage: 'encoding', fraction })
             ),
-          (stage) => boundary({ stage, fraction: 0 })
+          (stage) => boundary({ stage, fraction: 0 }),
+          mask
         );
         return Comlink.transfer(file, [file.bytes]);
-      })
-    );
+      });
+    });
     this.exportIdle = run.catch(() => undefined);
     return run;
   }
@@ -414,12 +424,10 @@ export class PipelineWorkerApi {
   }
 
   /** The `source`-stage pixels, when the main thread does not already have them. */
-  private sourceStageFor(engine: PipelineEngine, req: DocumentRenderRequest): SourceStage | null {
+  private sourceStageFor(engine: PipelineEngine, req: DocumentRenderRequest, mask: BackgroundMask | undefined): SourceStage | null {
     const key = sourceStageKey(req.doc, req.target);
     if (req.haveSourceKey === key) return null;
-    const pixels = req.sourceStagePixels
-      ? req.sourceStagePixels.slice(0)
-      : engine.render(req.doc, req.target, 'source', { cache: true }).pixels;
+    const pixels = engine.render(req.doc, req.target, 'source', { cache: true, mask }).pixels;
     return { key, crop: cropRectOf(req.doc), pixels, width: req.target.widthPx, height: req.target.heightPx };
   }
 
@@ -502,35 +510,89 @@ export class PipelineWorkerApi {
     return Comlink.transfer(wasmResult, [wasmResult.heightMapBuffer]);
   }
 
+  /** Sets the segmentation model background removal runs (#50). The browser worker sets ISNet. */
+  public setMaskModel(model: MaskModel | null): void {
+    this.maskModel = model;
+    this.masks.clear();
+    this.pendingMasks.clear();
+  }
+
+  /** `listener` hears the model's progress (download bytes, running) whenever a mask is computed. */
+  public setModelProgressListener(listener: ((p: ModelProgress) => void) | null): void {
+    this.modelProgressListener = listener;
+  }
+
+  /** True when the mask `doc` needs (on or off) is already computed, so showing it is instant. */
+  public hasBackgroundMask(doc: ImageDocument): boolean {
+    return this.masks.has(maskKey(doc));
+  }
+
   /**
-   * Processes intelligent client-side background removal and alpha matting
+   * What removing `doc`'s background would do, before it is applied (#50):
+   * the image without removal and the coverage removal gives it (one byte per
+   * pixel, 0 removed), at `target`. Computes the mask if needed, so it throws
+   * when the model cannot be loaded or run.
    */
-  public async processBgRemoval(payload: ProcessBgRemovalPayload): Promise<ProcessBgRemovalResult> {
-    const startTime = performance.now();
-    const { buffer, width, height, tolerance, featherRadius, mode, customColor } = payload;
-    const pixels = new Uint8ClampedArray(buffer);
+  public async backgroundPreview(doc: ImageDocument, target: { widthPx: number; heightPx: number }): Promise<BackgroundPreview> {
+    await this.exportIdle;
+    const on = withBackgroundEnabled(doc, true);
+    const mask = await this.maskFor(on);
+    const result = await this.guarded(({ engine }) => ({
+      original: engine.render(withBackgroundEnabled(doc, false), target, 'source').pixels,
+      alpha: mask ? engine.matteAlpha(on, target, mask) : new ArrayBuffer(0),
+      widthPx: target.widthPx,
+      heightPx: target.heightPx,
+    }));
+    return Comlink.transfer(result, [result.original, result.alpha]);
+  }
 
-    const { removedPixelCount } = removeBackground(pixels, width, height, {
-      tolerance,
-      featherRadius,
-      mode,
-      customColor,
-    });
+  /**
+   * The mask `doc` needs, or undefined while its background removal is off.
+   * Cached by `maskKey`: the image as turned and cropped. The model runs on
+   * that image at the model's input size, without removal.
+   */
+  private async maskFor(doc: ImageDocument): Promise<BackgroundMask | undefined> {
+    if (!doc.steps.background.enabled) return undefined;
+    const key = maskKey(doc);
+    const held = this.masks.get(key);
+    if (held) {
+      this.masks.delete(key);
+      this.masks.set(key, held);
+      return held;
+    }
+    let pending = this.pendingMasks.get(key);
+    if (!pending) {
+      pending = this.computeMask(doc, key);
+      this.pendingMasks.set(key, pending);
+      void pending.then(
+        () => this.pendingMasks.delete(key),
+        () => this.pendingMasks.delete(key)
+      );
+    }
+    return pending;
+  }
 
-    const durationMs = performance.now() - startTime;
-
-    return Comlink.transfer(
-      {
-        buffer: pixels.buffer,
-        width,
-        height,
-        removedPixelCount,
-        durationMs,
-      },
-      [pixels.buffer]
+  private async computeMask(doc: ImageDocument, key: string): Promise<BackgroundMask> {
+    const model = this.maskModel;
+    if (!model) throw new Error('Background removal is not available: no segmentation model is installed.');
+    const input = await this.guarded(({ engine }) =>
+      engine.render(withBackgroundEnabled(doc, false), model.inputSize, 'source').pixels
     );
+    const data = await model.predict(new Uint8Array(input), (p) => this.modelProgressListener?.(p));
+    const { widthPx: width, heightPx: height } = model.inputSize;
+    if (data.length !== width * height) {
+      throw new Error(`The background removal model returned ${data.length} values, not ${width} × ${height}.`);
+    }
+    const mask: BackgroundMask = { key, data, width, height };
+    this.masks.set(key, mask);
+    // A mask is 1 MB; a few are kept so undo and redo of a crop are instant.
+    while (this.masks.size > MASKS_KEPT) this.masks.delete(this.masks.keys().next().value as string);
+    return mask;
   }
 }
+
+/** How many background masks the worker keeps. */
+const MASKS_KEPT = 8;
 
 function transferables(main: ArrayBuffer, stage: SourceStage | null): ArrayBuffer[] {
   return stage ? [main, stage.pixels] : [main];

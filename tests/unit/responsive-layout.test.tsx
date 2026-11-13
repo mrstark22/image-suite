@@ -11,6 +11,7 @@
  *   path: two fingers pinch about their midpoint, one finger pans with the pan
  *   tool, and lifting one finger of a pinch carries on panning without a jump.
  */
+import { setPipeline, type Pipeline } from '../../src/lib/pipeline-client';
 import React, { act } from 'react';
 import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
@@ -45,11 +46,14 @@ beforeEach(() => {
   useUIStore.setState({ job: 'photo', stepByJob: firstSteps(), isPanelCollapsed: false, isSheetOpen: true });
   useViewStore.setState({ canvasTool: 'pan', zoom: 1, pan: { x: 0, y: 0 }, fitted: false });
   useRenderStore.setState({ source: null, processed: null });
+  // The Background step listens for model progress from the worker as soon as it is shown; there is no worker here.
+  setPipeline({ setModelProgressListener: () => undefined } as unknown as Pipeline);
 });
 
 afterEach(() => {
   mounted?.unmount();
   mounted = null;
+  setPipeline(null);
 });
 
 describe('breakpoints (#54)', () => {

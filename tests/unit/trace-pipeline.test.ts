@@ -94,7 +94,7 @@ describe('export traces at full resolution (#23)', () => {
     const shown = render().vectorResult!;
     expect(pathCount(shown)).toBe(0);
 
-    const source = vectorExportSource(shown, render().tracedInputs !== null, false);
+    const source = vectorExportSource(shown, render().tracedInputs !== null);
     expect(source).toBe('full-resolution');
     const file = await exportedSvg(pipeline.api, store().doc!, shown);
     expect(file.paths).toBe(1);

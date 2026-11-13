@@ -38,7 +38,7 @@ import { useDocumentStore } from '../../src/store/documentStore';
 import { useRenderStore } from '../../src/store/renderStore';
 import { useUIStore } from '../../src/store/uiStore';
 import { usePreferencesStore } from '../../src/store/preferencesStore';
-import { setDepth, setDetail, setDither, setVector } from '../../src/lib/document';
+import { setBackground, setDepth, setDetail, setDither, setVector } from '../../src/lib/document';
 import type { DitherAlgorithm } from '../../src/types/dither';
 import type { TraceColorMode, TraceShapes, VectorResult } from '../../src/types/vector';
 import type { DepthSource, DepthViewMode } from '../../src/types/depth';
@@ -78,15 +78,12 @@ function openWithPreview(): void {
   useRenderStore.setState({ source: previewSource(), processed: new ArrayBuffer(4 * 4 * 4) });
 }
 
-const realReplace = useRenderStore.getState().replaceSourcePixels;
-
 beforeEach(() => {
   resetStores();
   useRenderStore.setState({
     source: null,
     processed: null,
     exportProgress: null,
-    backgroundRemoval: null,
     vectorResult: null,
     isTracing: false,
   });
@@ -98,48 +95,9 @@ afterEach(() => {
   mounted?.unmount();
   mounted = null;
   setPipeline(null);
-  useRenderStore.setState({ replaceSourcePixels: realReplace });
   vi.restoreAllMocks();
 });
 
-describe('Background step: messages carry the tone of what happened', () => {
-  function removeWith(processBgRemoval: Pipeline['processBgRemoval']) {
-    setPipeline({ processBgRemoval } as unknown as Pipeline);
-    openWithPreview();
-    const { container } = render(<AIPanel />);
-    return { container, run: () => settle(() => button(container, /Remove Background/).click()) };
-  }
-
-  it('a failure is shown as an error alert, with the reason, not in the success style', async () => {
-    vi.spyOn(console, 'error').mockImplementation(() => undefined);
-    const { container, run } = removeWith(() => Promise.reject(new Error('engine failed to load')));
-    await run();
-    const alert = one(container, '[role=alert]');
-    expect(alert.getAttribute('data-tone')).toBe('error');
-    expect(alert.textContent).toContain('engine failed to load');
-    expect(container.querySelector('[data-tone=success]')).toBeNull();
-  });
-
-  it('a success is shown as a success status', async () => {
-    useRenderStore.setState({ replaceSourcePixels: () => true });
-    const { container, run } = removeWith(() =>
-      Promise.resolve({ buffer: new ArrayBuffer(64), width: 4, height: 4, removedPixelCount: 3, durationMs: 1 }),
-    );
-    await run();
-    const status = one(container, '[role=status]');
-    expect(status.getAttribute('data-tone')).toBe('success');
-    expect(container.querySelector('[role=alert]')).toBeNull();
-  });
-
-  it('a result discarded because the image changed is a warning, not a success', async () => {
-    useRenderStore.setState({ replaceSourcePixels: () => false });
-    const { container, run } = removeWith(() =>
-      Promise.resolve({ buffer: new ArrayBuffer(64), width: 4, height: 4, removedPixelCount: 3, durationMs: 1 }),
-    );
-    await run();
-    expect(one(container, '[role=status]').getAttribute('data-tone')).toBe('warning');
-  });
-});
 
 describe('Export step: progress and cancel', () => {
   it('encoding shows its percentage on a progress bar, and Cancel asks the worker to stop', () => {
@@ -202,10 +160,13 @@ function inaccessibleControls(root: HTMLElement): string[] {
 }
 
 describe('every control in the migrated panels is reachable and named', () => {
-  it('Background', () => {
+  it('Background, with removal applied', () => {
+    setPipeline({ setModelProgressListener: () => undefined, backgroundPreview: () => new Promise(() => undefined) } as unknown as Pipeline);
     openWithPreview();
+    useDocumentStore.getState().edit(setBackground({ enabled: true }));
     const { container } = render(<AIPanel />);
-    expect(container.querySelectorAll('button, input, select').length).toBeGreaterThan(4);
+    // Restore, and the two sliders with their number fields.
+    expect(container.querySelectorAll('button, input, select').length).toBe(5);
     expect(inaccessibleControls(container)).toEqual([]);
   });
 
