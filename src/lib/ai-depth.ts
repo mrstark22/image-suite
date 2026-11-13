@@ -30,7 +30,7 @@ export const DEPTH_MODEL = {
 } as const;
 
 /** Name the backend actually in use, for the UI. */
-export const DEPTH_BACKEND_LABEL = 'on this computer’s CPU (WebAssembly)';
+export const DEPTH_BACKEND_LABEL = 'on this device’s processor (WebAssembly)';
 
 /** The model's input is a multiple of this patch size on each side. */
 const PATCH = 14;
