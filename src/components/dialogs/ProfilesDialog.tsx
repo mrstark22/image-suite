@@ -13,6 +13,7 @@ import {
   addMaterial,
   addThickness,
   categoriesSorted,
+  cardsFor,
   copyCalibration,
   deleteCalibration,
   deleteCategory,
@@ -39,6 +40,7 @@ import {
   type MachineFields,
   type MaterialFields,
 } from '../../lib/profiles';
+import { CARD_TITLE } from '../../lib/calibration-cards';
 import type { Calibration, CalibrationKind, LaserSource, ProfileData } from '../../types/profiles';
 import styles from './ProfilesDialog.module.css';
 
@@ -397,14 +399,47 @@ const CalibrationList: React.FC<{ data: ProfileData; materialId: string; onEdit:
                       {c ? <span className={styles.calSummary}>{calibrationSummary(c)}</span> : null}
                     </div>
                     {calibrationBadge(c)}
+                    <Button
+                      compact
+                      variant="link"
+                      className={styles.calAction}
+                      onClick={() => {
+                        useProfilesStore.getState().closeManager();
+                        useProfilesStore.getState().openCalibrate({ kind: key.kind, machineId: machine.id, materialId, thicknessId: key.thicknessId });
+                      }}
+                      aria-label={`Calibrate ${label.toLowerCase()} on ${machine.name} with a test card`}
+                    >
+                      Calibrate
+                    </Button>
                     <Button compact variant="link" className={styles.calAction} onClick={() => onEdit(key)} aria-label={`${c ? 'Edit' : 'Enter'} ${label.toLowerCase()} calibration on ${machine.name}`}>
-                      {c ? 'Edit' : 'Enter'}
+                      {c ? 'Edit' : 'By hand'}
                     </Button>
                   </li>
                 );
               })}
               {thicknesses.length === 0 && <li className={`${styles.calRow} ${styles.muted}`}>Add a thickness to record cutting settings.</li>}
             </ul>
+            {cardsFor(data, machine.id, materialId)
+              .filter((card) => card.readAt === null)
+              .map((card) => (
+                <div key={card.id} className={styles.calRow}>
+                  <div className={styles.calMain}>
+                    <span className={styles.calKind}>Card #{card.spec.shortId}</span>
+                    <span className={styles.calSummary}>{CARD_TITLE[card.spec.kind]}, waiting for results</span>
+                  </div>
+                  <Button
+                    compact
+                    variant="link"
+                    className={styles.calAction}
+                    onClick={() => {
+                      useProfilesStore.getState().closeManager();
+                      useProfilesStore.getState().openCalibrate({ cardId: card.id });
+                    }}
+                  >
+                    Enter results
+                  </Button>
+                </div>
+              ))}
           </div>
         );
       })}

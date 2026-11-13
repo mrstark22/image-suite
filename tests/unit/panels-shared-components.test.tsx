@@ -28,7 +28,6 @@ import { VectorizationPanel } from '../../src/components/panels/VectorizationPan
 import { DepthMapPanel } from '../../src/components/panels/DepthMapPanel';
 import { CropStepPanel, ImageStepPanel, NeedsImage, SizeStepPanel } from '../../src/components/panels/PrepSteps';
 import { SizeDialog } from '../../src/components/dialogs/SizeDialog';
-import { MaterialTestGridDialog } from '../../src/components/dialogs/MaterialTestGridDialog';
 import { DropZone } from '../../src/components/shared/DropZone';
 import { connectSchedulers, createSchedulers } from '../../src/lib/schedulers';
 import { CanvasRulers } from '../../src/components/canvas/CanvasRulers';
@@ -45,17 +44,6 @@ import type { DepthSource, DepthViewMode } from '../../src/types/depth';
 import type { PreviewSource } from '../../src/lib/crop';
 import { decodedImage, resetStores } from '../helpers/documents';
 import { accessibleName, button, click, mount, one, press, setInputValue, settle, type Mounted } from '../helpers/dom';
-
-// The test grid dialog opens its grid through this module; a test makes it fail.
-const testGridDocument = vi.hoisted(() => ({ failWith: null as Error | null }));
-vi.mock('../../src/lib/test-grid-document', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../src/lib/test-grid-document')>();
-  return {
-    ...actual,
-    openTestGridRaster: (...args: Parameters<typeof actual.openTestGridRaster>) =>
-      testGridDocument.failWith ? Promise.reject(testGridDocument.failWith) : actual.openTestGridRaster(...args),
-  };
-});
 
 let mounted: Mounted | null = null;
 const render = (el: React.ReactElement) => (mounted = mount(el));
@@ -88,7 +76,6 @@ beforeEach(() => {
     isTracing: false,
   });
   useUIStore.setState({ job: 'photo' });
-  testGridDocument.failWith = null;
 });
 
 afterEach(() => {
@@ -348,20 +335,6 @@ describe('every control in the migrated panels is reachable and named', () => {
     expect(inaccessibleControls(container)).toEqual([]);
   });
 
-  it('the test grid dialog, for a raster and a vector grid', () => {
-    openWithPreview();
-    const { container } = render(<MaterialTestGridDialog isOpen onClose={() => {}} />);
-    expect(container.querySelectorAll('input[type=number]')).toHaveLength(5);
-    expect(inaccessibleControls(container)).toEqual([]);
-    const output = [...container.querySelectorAll('select')].find((el) => accessibleName(el) === 'Output Format')!;
-    act(() => {
-      output.value = 'vector';
-      output.dispatchEvent(new Event('change', { bubbles: true }));
-    });
-    expect(container.querySelectorAll('input[type=number]')).toHaveLength(4);
-    expect(inaccessibleControls(container)).toEqual([]);
-  });
-
   it('the drop zone', () => {
     const { container } = render(<DropZone />);
     expect(inaccessibleControls(container)).toEqual([]);
@@ -491,17 +464,6 @@ describe('dialogs on the shared Dialog', () => {
     useDocumentStore.getState().open(decodedImage(50, 50));
     expect(useDocumentStore.getState().doc!.sizeOrigin).toBe('assumed');
     expect(useDocumentStore.getState().doc!.mmPerPx).toBeCloseTo(0.2, 12);
-  });
-
-  it('a test grid that fails to open is shown as an error alert with the reason, and the dialog stays open', async () => {
-    testGridDocument.failWith = new Error('the grid is larger than the largest image allowed');
-    const onClose = vi.fn();
-    const { container } = render(<MaterialTestGridDialog isOpen onClose={onClose} />);
-    await settle(() => button(container, /Generate Calibration Grid/).click());
-    const alert = one(container, '[role=alert]');
-    expect(alert.getAttribute('data-tone')).toBe('error');
-    expect(alert.textContent).toContain('larger than the largest image allowed');
-    expect(onClose).not.toHaveBeenCalled();
   });
 });
 
@@ -694,10 +656,14 @@ const RUN_TIME_STYLES: Record<string, RegExp[]> = {
   ],
   // The crop box, and the four dimmed areas around it, follow the crop being drawn.
   'src/components/canvas/CanvasCropOverlay.tsx': [CROP_GEOMETRY],
+  // A calibration card is drawn in its own proportions, or at its size in mm (#40).
+  'src/components/dialogs/CardPicture.tsx': [/^style=\{\{ aspectRatio: `\$\{layout\.widthMm\} \/ \$\{layout\.heightMm\}`, \.\.\.\(realSize \? \{ width: `\$\{layout\.widthMm\}mm` \} : \{\}\) \}\}$/],
+  // The controls over a card's cells sit where the cells are; a layer's swatch is its LightBurn colour.
+  'src/components/dialogs/CalibrateDialog.tsx': [/^style=\{placeAt\(layout, /, /^style=\{\{ background: r\.colour \}\}$/],
 };
 
 /** Inline style attributes across src: exactly the run-time values allowed above. */
-const INLINE_STYLE_COUNT = 11;
+const INLINE_STYLE_COUNT = 17;
 
 describe('inline styles (#55)', () => {
   it('no component has one, apart from values computed at run time', () => {

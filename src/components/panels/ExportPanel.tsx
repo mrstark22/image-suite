@@ -69,7 +69,7 @@ export const ExportPanel: React.FC = () => {
   const calibration = activeCalibration(JOB_CALIBRATION[job], profiles);
   const openManager = profiles.openManager;
   const setSizeDialogOpen = useUIStore((s) => s.setSizeDialogOpen);
-  const setTestGridDialogOpen = useUIStore((s) => s.setTestGridDialogOpen);
+  const openCalibrate = useProfilesStore((s) => s.openCalibrate);
 
   const [format, setFormat] = useState<RasterFormat>('png');
   const [isDone, setIsDone] = useState(false);
@@ -343,8 +343,8 @@ export const ExportPanel: React.FC = () => {
         <Button variant="link" onClick={() => openManager({ tab: 'materials', id: material?.id ?? null })}>
           Machines &amp; materials…
         </Button>
-        <Button variant="link" onClick={() => setTestGridDialogOpen(true)}>
-          Make a calibration test card…
+        <Button variant="link" onClick={() => openCalibrate()}>
+          Calibrate with a test card…
         </Button>
       </Section>
 

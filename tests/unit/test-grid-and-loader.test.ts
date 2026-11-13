@@ -1,76 +1,18 @@
 /**
- * The raster test grid (review finding 5 on #68), the image loader (finding
- * 10) and decoding in strips (#16, design section 5).
+ * The image loader (finding 10 on #68) and decoding in strips (#16, design
+ * section 5). The raster test grid it also covered was replaced by the
+ * calibration cards (#40), tested in calibration-cards.test.ts.
  */
-import { describe, it, expect, beforeEach, beforeAll, afterAll, afterEach, vi } from 'vitest';
-import { openTestGridRaster, MAX_TEST_GRID_PIXELS } from '../../src/lib/test-grid-document';
-import { testGridSizePx, type TestGridOptions } from '../../src/lib/test-grid-generator';
+import { describe, it, expect, beforeAll, afterEach, vi } from 'vitest';
 import { decodeImageFile, DPI_HEADER_BYTES } from '../../src/lib/image-loader';
 import type { Pipeline } from '../../src/lib/pipeline-client';
 import { PipelineEngine, TooLargeError } from '../../src/lib/pipeline-engine';
 import { decodeInStrips } from '../../src/workers/decode';
 import { RustWasmEngine, type WasmExports } from '../../src/wasm/wasm-bridge';
-import { useDocumentStore } from '../../src/store/documentStore';
-import { useRenderStore } from '../../src/store/renderStore';
-import { createDocument, setScale } from '../../src/lib/document';
-import { dpiOf } from '../../src/lib/document-size';
+import { createDocument } from '../../src/lib/document';
 import { nativeTarget } from '../../src/lib/render-target';
-import { currentDoc, labelOf, labelledImage, openPhoto, resetStores } from '../helpers/documents';
-import { startTestPipeline, type TestPipeline } from '../helpers/pipeline';
+import { labelOf, labelledImage } from '../helpers/documents';
 import { loadWasm } from '../helpers/wasm';
-
-const store = () => useDocumentStore.getState();
-
-const GRID: TestGridOptions = { rows: 5, cols: 5, boxSizeMm: 20, gapMm: 2, dpi: 300, type: 'power-matrix' };
-
-describe('raster test grid', () => {
-  let pipeline: TestPipeline;
-  beforeAll(async () => {
-    pipeline = await startTestPipeline();
-  });
-  afterAll(() => pipeline.stop());
-
-  beforeEach(() => {
-    resetStores();
-    // The reviewer's case: a 6000 px photo sized to 100 mm, so 1524 DPI.
-    openPhoto();
-    store().edit(setScale(100 / 6000));
-    expect(dpiOf(currentDoc())).toBeCloseTo(1524, 6);
-  });
-
-  it("is generated at its own DPI, not the open image's, and opens with its size set to match", async () => {
-    await openTestGridRaster(GRID, 'grid.png', pipeline.api as unknown as Pipeline);
-    const expected = testGridSizePx(GRID);
-    expect([currentDoc().source.widthPx, currentDoc().source.heightPx]).toEqual([expected.width, expected.height]);
-    expect(dpiOf(currentDoc())).toBeCloseTo(300, 9);
-    // 5 boxes of 20 mm, 4 gaps of 2 mm and 5 mm margins: 118 mm.
-    expect((expected.width / 300) * 25.4).toBeCloseTo(118, 0);
-  });
-
-  it('is held at full size by the pipeline, and previewed within 2048 px like any other image', async () => {
-    const options = { ...GRID, dpi: 1200 };
-    await openTestGridRaster(options, 'grid.png', pipeline.api as unknown as Pipeline);
-    await pipeline.settled();
-    const size = testGridSizePx(options);
-    expect(Math.max(size.width, size.height)).toBeGreaterThan(2048);
-    expect([currentDoc().source.widthPx, currentDoc().source.heightPx]).toEqual([size.width, size.height]);
-    const source = useRenderStore.getState().source!;
-    expect(Math.max(source.width, source.height)).toBe(2048);
-    expect(useRenderStore.getState().processed?.byteLength).toBe(source.width * source.height * 4);
-  });
-
-  it('refuses a grid over the pixel limit before allocating it, and keeps the open image', async () => {
-    const huge: TestGridOptions = { rows: 15, cols: 15, boxSizeMm: 50, gapMm: 20, dpi: 300, type: 'power-matrix' };
-    const size = testGridSizePx(huge);
-    expect(size.width * size.height).toBeGreaterThan(MAX_TEST_GRID_PIXELS);
-    const before = currentDoc();
-    const putSource = vi.fn();
-
-    await expect(openTestGridRaster(huge, 'grid.png', { putSource } as unknown as Pipeline)).rejects.toThrow(/megapixels/);
-    expect(putSource).not.toHaveBeenCalled();
-    expect(store().doc).toBe(before);
-  });
-});
 
 describe('image loader', () => {
   it('reads only the header of the file for its DPI, and hands the file to the worker to decode', async () => {

@@ -42,7 +42,6 @@ describe('shortcuts', () => {
       isInvertedView: false,
       showRulers: true,
       isShortcutsDialogOpen: false,
-      isTestGridDialogOpen: false,
     });
     vi.mocked(openImagePicker).mockClear();
   });

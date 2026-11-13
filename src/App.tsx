@@ -6,7 +6,7 @@ import { PreviewCanvas } from './components/canvas/PreviewCanvas';
 import { ZoomControls } from './components/canvas/ZoomControls';
 import { SizeDialog } from './components/dialogs/SizeDialog';
 import { ReducedOpenDialog } from './components/dialogs/ReducedOpenDialog';
-import { MaterialTestGridDialog } from './components/dialogs/MaterialTestGridDialog';
+import { CalibrateDialog } from './components/dialogs/CalibrateDialog';
 import { ShortcutsDialog } from './components/dialogs/ShortcutsDialog';
 import { ProfilesDialog } from './components/dialogs/ProfilesDialog';
 import { loadProfiles } from './store/profilesStore';
@@ -28,8 +28,6 @@ import styles from './App.module.css';
  * step's controls are in a bottom sheet below it.
  */
 export const App: React.FC = () => {
-  const isTestGridDialogOpen = useUIStore((s) => s.isTestGridDialogOpen);
-  const setTestGridDialogOpen = useUIStore((s) => s.setTestGridDialogOpen);
   const isShortcutsDialogOpen = useUIStore((s) => s.isShortcutsDialogOpen);
   const setShortcutsDialogOpen = useUIStore((s) => s.setShortcutsDialogOpen);
 
@@ -61,9 +59,9 @@ export const App: React.FC = () => {
       </div>
       <SizeDialog />
       <ReducedOpenDialog />
-      <MaterialTestGridDialog isOpen={isTestGridDialogOpen} onClose={() => setTestGridDialogOpen(false)} />
       <ShortcutsDialog isOpen={isShortcutsDialogOpen} onClose={() => setShortcutsDialogOpen(false)} />
       <ProfilesDialog />
+      <CalibrateDialog />
     </div>
   );
 };

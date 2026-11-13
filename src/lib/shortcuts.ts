@@ -204,7 +204,7 @@ export function isAvailable(command: ShortcutCommand): boolean {
       return canvasIsFlat();
     // Escape in the crop tool is handled by the crop overlay.
     case 'closeDialog':
-      return ui.isShortcutsDialogOpen || ui.isSizeDialogOpen || ui.isTestGridDialogOpen;
+      return ui.isShortcutsDialogOpen || ui.isSizeDialogOpen;
     default:
       return true;
   }
@@ -261,7 +261,6 @@ export function runCommand(command: ShortcutCommand): boolean {
     case 'closeDialog':
       ui.setShortcutsDialogOpen(false);
       ui.setSizeDialogOpen(false);
-      ui.setTestGridDialogOpen(false);
       break;
   }
   return true;

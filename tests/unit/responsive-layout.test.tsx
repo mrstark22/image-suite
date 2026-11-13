@@ -288,7 +288,7 @@ describe('touch targets (#54)', () => {
     ['src/components/panels/Panels.module.css', '.presetChip', /min-height: var\(--touch-target\)/],
     ['src/components/panels/Panels.module.css', '.materialButton', /min-height: var\(--touch-target\)/],
     ['src/components/dialogs/SizeDialog.module.css', '.input', /min-height: var\(--touch-target\)/],
-    ['src/components/dialogs/MaterialTestGridDialog.module.css', '.input', /min-height: var\(--touch-target\)/],
+    ['src/components/dialogs/CalibrateDialog.module.css', '.input', /min-height: var\(--touch-target\)/],
   ];
 
   for (const [file, selector, rule] of CONTROLS) {
