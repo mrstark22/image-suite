@@ -1,5 +1,5 @@
 import React from 'react';
-import { Plus } from 'lucide-react';
+import { ChevronDown, Plus } from 'lucide-react';
 import { useUIStore } from '../../store/uiStore';
 import { activeCalibration, activeProfiles, activeThicknesses, useProfilesStore } from '../../store/profilesStore';
 import { JOB_CALIBRATION, KIND_LABEL, formatMm, live, materialGroups, noCalibrationText } from '../../lib/profiles';
@@ -112,5 +112,38 @@ export const ProfileSelectors: React.FC = () => {
         <span className={styles.calText}>{status}</span>
       </button>
     </>
+  );
+};
+
+/**
+ * The phone's stand-in for the selectors (#54): one chip naming the machine
+ * and material, with the calibration's state as its dot. It opens the
+ * selectors themselves; it changes nothing on its own.
+ */
+export const SetupChip: React.FC<{ expanded: boolean; onClick: (e: React.MouseEvent) => void }> = ({ expanded, onClick }) => {
+  const job = useUIStore((s) => s.job);
+  const profiles = useProfilesStore();
+  const { machine, material, thickness } = activeProfiles(profiles);
+  const kind = JOB_CALIBRATION[job];
+  const calibration = activeCalibration(kind, profiles);
+  const tone = calibration ? (calibration.status === 'verified' ? styles.calOk : styles.calWarn) : styles.calNone;
+  const materialText = material ? `${material.name}${thickness ? ` ${formatMm(thickness.mm)}` : ''}` : 'No material';
+  const status = calibration ? `${KIND_LABEL[kind]} calibration in use` : noCalibrationText(kind, machine, material, thickness);
+  return (
+    <button
+      type="button"
+      className={`${styles.setupChip} ${tone}`}
+      aria-haspopup="true"
+      aria-expanded={expanded}
+      aria-label={`Machine ${machine?.name ?? 'none'}, material ${materialText}. ${status} Change machine or material.`}
+      onClick={onClick}
+    >
+      <span className={styles.calDot} aria-hidden="true" />
+      <span className={styles.setupChipText}>
+        <span className={styles.setupChipMachine}>{machine?.name ?? 'No machine'}</span>
+        <span className={styles.setupChipMaterial}>{materialText}</span>
+      </span>
+      <ChevronDown size={14} aria-hidden="true" className={styles.setupChipChevron} />
+    </button>
   );
 };
