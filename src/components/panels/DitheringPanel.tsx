@@ -53,8 +53,7 @@ export const DitheringPanel: React.FC = () => {
 
   return (
     <div className={styles.panel}>
-      <div className={styles.panelHeader}>
-        <span className={styles.panelTitle}>Dithering</span>
+      <div className={styles.panelActions}>
         <Button variant="link" onClick={() => edit(resetDither)}>
           Reset
         </Button>

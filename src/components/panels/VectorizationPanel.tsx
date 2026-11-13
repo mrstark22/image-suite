@@ -97,8 +97,7 @@ export const VectorizationPanel: React.FC = () => {
 
   return (
     <div className={panelStyles.panel}>
-      <div className={panelStyles.panelHeader}>
-        <span className={panelStyles.panelTitle}>Trace</span>
+      <div className={panelStyles.panelActions}>
         <div className={styles.headerActions}>
           {vectorResult && (
             <Button variant="link" icon={<Trash2 size={12} />} onClick={clearVectors} title="Clear the traced paths">
