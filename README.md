@@ -11,7 +11,7 @@ It is built around three jobs:
 Also:
 
 - **Machines & Materials** (File menu): machine, material, thickness and calibration profiles, stored in this browser. Move them to another computer by exporting a file and importing it there. There is no sign-in or sync.
-- **Calibrate** (File menu): photo, cut and depth calibration cards, exported as a LightBurn project or plain files; the results are saved as calibrations.
+- **Calibrate** (File menu): photo, cut and depth calibration cards, exported as a LightBurn project or plain files; photo cards can be read from a photo or scan of the burn, cut cards by eye, depth cards from measured depths or a 3D scan; the results are saved as calibrations.
 - **Background removal**: an undoable step run by the ISNet model on this device.
 - Images open with a physical size: the file's DPI, or an assumed DPI (the last one you applied, else 300) that the Size step marks as assumed.
 - The two models (`public/models/`) and the ONNX Runtime WebAssembly are served by the app itself, pinned by SHA-256, downloaded on first use and cached in the browser.
@@ -20,7 +20,7 @@ The plan, with what was kept, what was removed and the state of each phase, is i
 
 ## Status
 
-Phases 0 to 5 and the UI redesign are built and tested. Accounts and sync (phase 6) are not being built. Not yet confirmed on the owner's machines: the LightBurn project format, whether Grayscale mode uses more than 8 bits, and a calibration card read back from a real burn. See "Open questions" in the plan.
+Phases 0 to 5 and the UI redesign are built and tested. Accounts and sync (phase 6) are not being built. Not yet confirmed on the owner's machines: the LightBurn project format, whether Grayscale mode uses more than 8 bits, and a calibration card read back from a photo of a real burn (photo card reading is built and tested on synthetic photos). See "Open questions" in the plan.
 
 ## Requirements
 

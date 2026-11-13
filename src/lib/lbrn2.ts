@@ -31,9 +31,13 @@
  * their layers run in Pass-Through, so LightBurn burns those dots without
  * resampling or dithering again (#40, #56).
  *
+ * Pass-Through is written as `<passThrough Value="1"/>`, the child the
+ * #40 notes report from the LightBurn forum, with `ditherMode` set to
+ * `threshold` (a value the samples use), so a LightBurn that ignores the
+ * child still burns the 1-bit dots unchanged.
+ *
  * Not yet confirmed against a file from the owner's LightBurn: the
- * Pass-Through mode name (`passthrough`, LightBurn's name for the mode in
- * its settings; no sample file has it), the Grayscale mode name,
+ * `passThrough` child, the Grayscale mode name,
  * CO2-specific fields, and the Rect element. Each card can also be
  * downloaded as plain files with a table of settings (`card-files.ts`).
  */
@@ -83,7 +87,12 @@ function imageLayer(index: number, name: string, c: { speedMmS: number; powerPct
       ['bidir', 1],
       ['overscan', 1],
       ['overscanPercent', 2.5],
-      ['ditherMode', mode],
+      // Pass-Through: the issue #40 notes record it as a `passThrough` child
+      // (reported on the LightBurn forum); `ditherMode` keeps a value the
+      // sample files do use. Threshold on a 1-bit image at one pixel per
+      // scan line burns the same dots, so if `passThrough` is not read the
+      // card still burns as dithered here.
+      ...(mode === 'passthrough' ? ([['ditherMode', 'threshold'], ['passThrough', 1]] as [string, number | string][]) : ([['ditherMode', mode]] as [string, string][])),
     ]),
     '    </CutSetting_Img>',
   ].join('\n');

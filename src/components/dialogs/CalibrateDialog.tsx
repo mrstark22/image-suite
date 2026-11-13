@@ -574,11 +574,14 @@ const CardStep: React.FC<{ spec: CardSpec; realSize: boolean; setRealSize: (v: b
         <div className={styles.downloadText}>
           <h3 className={styles.blockTitle}>1. LightBurn project (recommended)</h3>
           <p className={styles.muted}>Open it in LightBurn: every cell is already on its own layer with its speed, power and passes filled in. Check the layers, focus, frame and press Start.</p>
+          <p className={styles.muted}>
+            <strong>This project file has not yet been tested in LightBurn:</strong> if it does not open, or a layer looks wrong, use the plain file below and set each layer from the settings table.
+          </p>
           {(spec.kind === 'engrave-grid' || spec.kind === 'engrave-tone') && (
-            <p className={styles.muted}>
-              The cells are dithered by Image Suite, as a photo is, and their layers are set to Pass-Through so LightBurn burns those dots as they are. Pass-Through in a project file is not yet checked against LightBurn: if a cell layer opens in another image mode, set it to Pass-Through, or use the plain file below.
-            </p>
+            <p className={styles.muted}>The cells are dithered by Image Suite, as a photo is, and their layers are set to Pass-Through so LightBurn burns those dots as they are. If a cell layer opens in another image mode, set it to Pass-Through.</p>
           )}
+          {spec.kind === 'cut' && <p className={styles.muted}>A cut card has no photo markers: after the burn you read it by eye, ticking the squares that dropped out cleanly.</p>}
+          {spec.kind === 'relief' && <p className={styles.muted}>A depth card has no photo markers: after the burn you measure the steps with calipers or a depth gauge, or read them from a 3D scan.</p>}
         </div>
         <Button compact variant="secondary" icon={<Download size={14} />} disabled={busy} onClick={() => void run(async () => download(`${stem}.lbrn2`, [await cardProject(spec, cardDither())], 'application/xml'))}>
           Download .lbrn2
