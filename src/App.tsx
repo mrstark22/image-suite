@@ -14,6 +14,7 @@ import { ErrorBanner } from './components/shared/ErrorBanner';
 import { useLayout } from './components/shared/breakpoints';
 import { useUIStore } from './store/uiStore';
 import { startSchedulers } from './lib/schedulers';
+import { connectProfileSync } from './lib/profile-sync';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import styles from './App.module.css';
 
@@ -41,6 +42,8 @@ export const App: React.FC = () => {
   useEffect(() => {
     void loadProfiles();
   }, []);
+  // The photo's dot pitch and tone curve follow the machine and calibration in use (#34, #39).
+  useEffect(() => connectProfileSync(), []);
   useKeyboardShortcuts();
   const layout = useLayout();
 

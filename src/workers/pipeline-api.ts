@@ -308,7 +308,17 @@ export class PipelineWorkerApi {
     return this.guarded(({ engine }) => {
       const start = performance.now();
       const options = { cache: true, mask };
-      const final = engine.render(req.doc, req.target, req.stage ?? 'final', options);
+      const stage = req.stage ?? 'final';
+      const sim = stage === 'final' ? req.simulation : undefined;
+      const final = sim
+        ? // The final stage is a working buffer of this render, not the cache, so it may be overwritten.
+          engine.renderWith(req.doc, req.target, stage, options, (ptr, pxPerMm) => {
+            const { widthPx, heightPx } = req.target;
+            engine.core.simulateBurnAt(ptr, widthPx, heightPx, sim.spotPx, sim.base, sim.burn);
+            const pixels = new Uint8Array(engine.core.wasm.memory.buffer, ptr, widthPx * heightPx * 4).slice().buffer;
+            return { format: 'rgba8' as const, pixels, widthPx, heightPx, pxPerMm };
+          })
+        : engine.render(req.doc, req.target, stage, options);
       const result: PreviewRenderResult = {
         key: sourceStageKey(req.doc, req.target),
         final,
@@ -405,8 +415,15 @@ export class PipelineWorkerApi {
           plan.target,
           'final',
           (pixels) =>
-            encodeRaster(format, pixels, plan.target.widthPx, plan.target.heightPx, plan.pxPerMm, (fraction) =>
-              boundary({ stage: 'encoding', fraction })
+            encodeRaster(
+              format,
+              pixels,
+              plan.target.widthPx,
+              plan.target.heightPx,
+              plan.pxPerMm,
+              (fraction) => boundary({ stage: 'encoding', fraction }),
+              // A dithered image is written 1-bit, for Pass-Through (#39).
+              doc.steps.dither.algorithm !== 'none'
             ),
           (stage) => boundary({ stage, fraction: 0 }),
           mask

@@ -58,9 +58,8 @@ export function toRunParams(
     sharpenAmount: sized ? detail.unsharpStrength / 100 : 0,
     sharpenRadius: sized ? detail.unsharpRadiusMm * pxPerMm : 0,
     ditherAlgorithm: stage === 'final' ? dither.algorithm : 'none',
-    ditherThreshold: dither.threshold,
     ditherSerpentine: dither.serpentine,
     ditherScale: dither.matrixScale,
-    ditherInverted: dither.invertedBurn || false,
+    toneCurve: dither.toneCurve,
   };
 }

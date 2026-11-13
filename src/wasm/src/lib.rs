@@ -8,6 +8,7 @@
 // each function instead.
 #![allow(clippy::not_unsafe_ptr_arg_deref)]
 
+mod burn_sim;
 mod clahe;
 mod depth;
 mod dither;
@@ -24,7 +25,7 @@ mod tests;
 
 use clahe::apply_clahe;
 use depth::{generate_depth_map_wasm, DepthParams};
-use dither::{apply_dithering, DitherAlgo, DitherParams};
+use dither::{apply_dithering, tone_response_lut, DitherAlgo, DitherParams};
 use resample::{prepare, Crop};
 use sharpen::apply_unsharp_mask;
 use threshold::apply_adaptive_threshold;
@@ -174,10 +175,12 @@ pub extern "C" fn process_pipeline(
     sharpen_radius: f32,
     // Dither
     dither_algo_code: u32,
-    dither_thresh: u32,
     dither_serpentine: u32,
     dither_scale: usize,
-    dither_inverted: u32,
+    // Material tone response applied before the dither (#39): `tone_curve_len`
+    // f32 values at `tone_curve_ptr`, or 0 for none.
+    tone_curve_ptr: *const f32,
+    tone_curve_len: usize,
 ) {
     if ptr.is_null() || width == 0 || height == 0 {
         return;
@@ -234,19 +237,62 @@ pub extern "C" fn process_pipeline(
         4 => DitherAlgo::Bayer2,
         5 => DitherAlgo::Bayer4,
         6 => DitherAlgo::Bayer8,
+        7 => DitherAlgo::BlueNoise,
         _ => DitherAlgo::None,
     };
 
     if !matches!(algo, DitherAlgo::None) {
         let dither_params = DitherParams {
             algorithm: algo,
-            threshold: dither_thresh as u8,
             serpentine: dither_serpentine != 0,
             matrix_scale: dither_scale,
-            inverted_burn: dither_inverted != 0,
         };
-        apply_dithering(pixels, width, height, &dither_params);
+        let lut = if tone_curve_ptr.is_null() || tone_curve_len == 0 {
+            None
+        } else {
+            // Read as bytes: `allocate` does not promise 4-byte alignment.
+            let bytes = unsafe {
+                std::slice::from_raw_parts(tone_curve_ptr as *const u8, tone_curve_len * 4)
+            };
+            let curve: Vec<f32> = bytes
+                .chunks_exact(4)
+                .map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+                .collect();
+            tone_response_lut(&curve)
+        };
+        apply_dithering(pixels, width, height, &dither_params, lut.as_ref());
     }
+}
+
+/// Burn simulation preview (#41): replaces the dithered RGBA8 image at `ptr`
+/// in place with how it should look burned, each black pixel a round spot of
+/// diameter `spot_px` pixels coloured `burn_*` over the material colour
+/// `base_*`. A view only; exports never call it.
+#[no_mangle]
+pub extern "C" fn simulate_burn(
+    ptr: *mut u8,
+    width: usize,
+    height: usize,
+    spot_px: f32,
+    base_r: u32,
+    base_g: u32,
+    base_b: u32,
+    burn_r: u32,
+    burn_g: u32,
+    burn_b: u32,
+) {
+    if ptr.is_null() || width == 0 || height == 0 {
+        return;
+    }
+    let pixels = unsafe { std::slice::from_raw_parts_mut(ptr, width * height * 4) };
+    burn_sim::simulate_burn(
+        pixels,
+        width,
+        height,
+        spot_px,
+        [base_r as u8, base_g as u8, base_b as u8],
+        [burn_r as u8, burn_g as u8, burn_b as u8],
+    );
 }
 
 /// Traces the RGBA8 image at `ptr` (`width` x `height`) to vector paths and

@@ -120,7 +120,7 @@ describe('Export step: progress and cancel', () => {
     URL.createObjectURL = createObjectURL;
     openWithPreview();
     const { container } = render(<ExportPanel />);
-    await settle(() => button(container, /Export Prepared Image/).click());
+    await settle(() => button(container, /Export (Prepared Image|for Pass-Through)/).click());
     expect(exportRaster).toHaveBeenCalledTimes(1);
     const alert = one(container, '[role=alert]');
     expect(alert.getAttribute('data-tone')).toBe('error');
@@ -241,7 +241,8 @@ describe('every control in the migrated panels is reachable and named', () => {
       const { container, unmount } = mount(<AdjustmentsPanel />);
       for (const toggle of container.querySelectorAll<HTMLButtonElement>('h3 button[aria-expanded=false]')) click(toggle);
       expect(container.querySelectorAll('h3 button[aria-expanded=true]')).toHaveLength(5);
-      expect(container.querySelectorAll('input[type=range]').length).toBeGreaterThan(20);
+      // 20 in the photo job, which hides saturation and vibrance (they barely change the greys burned).
+      expect(container.querySelectorAll('input[type=range]').length).toBeGreaterThanOrEqual(20);
       expect(inaccessibleControls(container), `size ${mmPerPx}`).toEqual([]);
       unmount();
     }

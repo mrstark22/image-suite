@@ -23,9 +23,15 @@ import { Select, type SelectOption } from '../shared/Select';
 import { StatusMessage } from '../shared/StatusMessage';
 import styles from './Panels.module.css';
 
-const FORMAT_OPTIONS: SelectOption<RasterFormat>[] = [
-  { value: 'png', label: 'PNG (Lossless 8-bit)' },
-  { value: 'bmp', label: 'BMP (Windows Bitmap CNC/Laser)' },
+const GREY_FORMATS: SelectOption<RasterFormat>[] = [
+  { value: 'png', label: 'PNG, 8-bit greyscale' },
+  { value: 'bmp', label: 'BMP, 24-bit' },
+];
+
+/** A dithered image is written 1-bit, for LightBurn's Pass-Through mode (#39). Lossy formats are never offered. */
+const DOT_FORMATS: SelectOption<RasterFormat>[] = [
+  { value: 'png', label: 'PNG, 1-bit black and white' },
+  { value: 'bmp', label: 'BMP, 1-bit black and white' },
 ];
 
 const STAGE_LABEL: Record<ExportProgress['stage'], string> = {
@@ -86,6 +92,7 @@ export const ExportPanel: React.FC = () => {
   }
 
   const baseName = doc.source.name.replace(/\.[^/.]+$/, '');
+  const dithered = doc.steps.dither.algorithm !== 'none';
   const size = physicalSize(doc);
   // What a raster export writes; null while the size is not set.
   const plan = doc.mmPerPx === null ? null : exportPlan(doc);
@@ -213,7 +220,20 @@ export const ExportPanel: React.FC = () => {
 
       {job === 'photo' && (
         <Section title="Image File">
-          <Select label="Image file format" labelHidden value={format} options={FORMAT_OPTIONS} onChange={setFormat} />
+          <Select
+            label="Image file format"
+            labelHidden
+            value={format}
+            options={dithered ? DOT_FORMATS : GREY_FORMATS}
+            onChange={setFormat}
+          />
+          {dithered && plan && (
+            <div className={`${styles.controlNote} ${styles.stackGap}`}>
+              One pixel per laser dot: {plan.target.widthPx} × {plan.target.heightPx} at {plan.dpi.toFixed(1)} DPI (
+              {plan.widthMm.toFixed(1)} × {plan.heightMm.toFixed(1)} mm). In LightBurn, use Pass-Through and do not
+              resize the image, so it burns dot for dot.
+            </div>
+          )}
           <Button
             variant="primary"
             className={styles.stackGap}
@@ -221,7 +241,7 @@ export const ExportPanel: React.FC = () => {
             onClick={() => void handleRasterExport()}
             disabled={!canExport}
           >
-            {isDone ? 'Export Complete' : 'Export Prepared Image'}
+            {isDone ? 'Export Complete' : dithered ? 'Export for Pass-Through' : 'Export Prepared Image'}
           </Button>
           {progress && (
             <Progress

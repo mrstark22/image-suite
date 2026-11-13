@@ -1,6 +1,7 @@
 import * as Comlink from 'comlink';
 import { generateTestGridRaster, testGridSizePx, type TestGridOptions } from './test-grid-generator';
 import { mmPerPxFromDpi } from './document-size';
+import { setDither } from './document';
 import { newSourceId, useDocumentStore } from '../store/documentStore';
 import { getPipeline, type Pipeline } from './pipeline-client';
 
@@ -38,4 +39,6 @@ export async function openTestGridRaster(
     // A calibration card is burned exactly as generated: it never takes the previous image's settings.
     'defaults'
   );
+  // Not dithered either: a new photo is (#34), but the card is burned as generated.
+  useDocumentStore.getState().syncAll(setDither({ algorithm: 'none' }));
 }

@@ -21,6 +21,7 @@ export const DITHER = {
   bayer2: 4,
   bayer4: 5,
   bayer8: 6,
+  blueNoise: 7,
 } as const;
 
 export interface PipelineOptions {
@@ -46,10 +47,10 @@ export interface PipelineOptions {
   adaptive?: { block: number; c: number };
   sharpen?: { amount: number; radius: number };
   dither?: number;
-  ditherThreshold?: number;
   serpentine?: boolean;
   ditherScale?: number;
-  invertedBurn?: boolean;
+  /** Calibration tone response before the dither: darkness at levels from white to black. */
+  toneCurve?: number[];
 }
 
 // SAFETY: the WebAssembly export object is untyped; this interface lists the
@@ -62,6 +63,7 @@ interface WasmExports {
   prepare_source(...args: number[]): number;
   rotate_quarter_turns(src: number, width: number, height: number, turns: number): number;
   process_pipeline(...args: number[]): void;
+  simulate_burn(...args: number[]): void;
   process_trace: TraceExports['process_trace'];
   get_trace_json_len(): number;
   process_depth(...args: number[]): number;
@@ -131,7 +133,14 @@ export function runPipeline(
   const e = wasm.exports;
   const size = width * height * 4;
   const ptr = e.allocate(size);
+  const curve = o.toneCurve ?? null;
+  const curvePtr = curve ? e.allocate(curve.length * 4) : 0;
   try {
+    if (curve) {
+      // DataView: `allocate` does not promise 4-byte alignment.
+      const view = new DataView(e.memory.buffer, curvePtr, curve.length * 4);
+      curve.forEach((v, i) => view.setFloat32(i * 4, v, true));
+    }
     new Uint8Array(e.memory.buffer, ptr, size).set(rgba);
     e.process_pipeline(
       ptr,
@@ -164,15 +173,16 @@ export function runPipeline(
       o.sharpen?.amount ?? 0,
       o.sharpen?.radius ?? 1.5,
       o.dither ?? DITHER.none,
-      o.ditherThreshold ?? 128,
       o.serpentine ? 1 : 0,
       o.ditherScale ?? 1,
-      o.invertedBurn ? 1 : 0
+      curvePtr,
+      curve ? curve.length : 0
     );
     // Re-read the view: memory may have grown and detached the old buffer.
     return new Uint8Array(e.memory.buffer, ptr, size).slice();
   } finally {
     e.deallocate(ptr, size);
+    if (curvePtr) e.deallocate(curvePtr, curve!.length * 4);
   }
 }
 

@@ -92,9 +92,11 @@ pub fn compute_tonal_lut(params: &TonalParams) -> [u8; 256] {
             norm += w_factor * white_weight * 0.25;
         }
 
-        // Step F: Clarity (Midtone local contrast)
+        // Step F: Clarity, a midtone contrast curve. Positive values steepen
+        // the midtones: the sine is positive below mid-grey, so it is
+        // subtracted to push darks down and lights up (#35).
         if clarity_factor != 0.0 {
-            norm += clarity_factor * (2.0 * std::f32::consts::PI * norm).sin() * 0.12;
+            norm -= clarity_factor * (2.0 * std::f32::consts::PI * norm).sin() * 0.12;
         }
 
         // Step G: Centered Contrast & Brightness
@@ -157,48 +159,43 @@ pub fn apply_tonal_and_color(
         let mut g = lut[pixels[idx + 1] as usize] as f32;
         let mut b = lut[pixels[idx + 2] as usize] as f32;
 
-        if has_color_adjust {
-            if tonal.grayscale_mode != 0 {
-                let gray = match tonal.grayscale_mode {
-                    1 => 0.2126 * r + 0.7152 * g + 0.0722 * b, // Rec.709 Photometric
-                    2 => (r + g + b) / 3.0,                    // Average
-                    3 => (r.max(g).max(b) + r.min(g).min(b)) / 2.0, // Desaturate
-                    4 => r.max(g).max(b),                      // Max
-                    5 => 255.0 - (0.2126 * r + 0.7152 * g + 0.0722 * b), // Inverted
-                    _ => 0.2126 * r + 0.7152 * g + 0.0722 * b,
-                };
-                r = gray;
-                g = gray;
-                b = gray;
+        // White balance and saturation first, then the grey conversion, so
+        // they act as a colour filter on the greys instead of being ignored
+        // when a grey mode is chosen (#37 review of the Adjust controls).
+        if temp_k != 0.0 {
+            r = (r + temp_k * 50.0).clamp(0.0, 255.0);
+            b = (b - temp_k * 50.0).clamp(0.0, 255.0);
+        }
+        if tint_k != 0.0 {
+            g = (g + tint_k * 40.0).clamp(0.0, 255.0);
+        }
+        if sat_factor != 1.0 || vibrance_factor != 0.0 {
+            let luma = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+            let max_c = r.max(g).max(b);
+            let min_c = r.min(g).min(b);
+            let current_sat = if max_c == 0.0 {
+                0.0
             } else {
-                // White Balance
-                if temp_k != 0.0 {
-                    r = (r + temp_k * 50.0).clamp(0.0, 255.0);
-                    b = (b - temp_k * 50.0).clamp(0.0, 255.0);
-                }
-                if tint_k != 0.0 {
-                    g = (g + tint_k * 40.0).clamp(0.0, 255.0);
-                }
-
-                // Saturation & Vibrance
-                if sat_factor != 1.0 || vibrance_factor != 0.0 {
-                    let luma = 0.2126 * r + 0.7152 * g + 0.0722 * b;
-                    let max_c = r.max(g).max(b);
-                    let min_c = r.min(g).min(b);
-                    let current_sat = if max_c == 0.0 {
-                        0.0
-                    } else {
-                        (max_c - min_c) / max_c
-                    };
-
-                    let vib_boost = vibrance_factor * (1.0 - current_sat) * 1.5;
-                    let total_sat = (sat_factor + vib_boost).max(0.0);
-
-                    r = (luma + (r - luma) * total_sat).clamp(0.0, 255.0);
-                    g = (luma + (g - luma) * total_sat).clamp(0.0, 255.0);
-                    b = (luma + (b - luma) * total_sat).clamp(0.0, 255.0);
-                }
-            }
+                (max_c - min_c) / max_c
+            };
+            let vib_boost = vibrance_factor * (1.0 - current_sat) * 1.5;
+            let total_sat = (sat_factor + vib_boost).max(0.0);
+            r = (luma + (r - luma) * total_sat).clamp(0.0, 255.0);
+            g = (luma + (g - luma) * total_sat).clamp(0.0, 255.0);
+            b = (luma + (b - luma) * total_sat).clamp(0.0, 255.0);
+        }
+        if tonal.grayscale_mode != 0 {
+            let gray = match tonal.grayscale_mode {
+                1 => 0.2126 * r + 0.7152 * g + 0.0722 * b, // Rec.709 Photometric
+                2 => (r + g + b) / 3.0,                    // Average
+                3 => (r.max(g).max(b) + r.min(g).min(b)) / 2.0, // Desaturate
+                4 => r.max(g).max(b),                      // Max
+                5 => 255.0 - (0.2126 * r + 0.7152 * g + 0.0722 * b), // Inverted
+                _ => 0.2126 * r + 0.7152 * g + 0.0722 * b,
+            };
+            r = gray;
+            g = gray;
+            b = gray;
         }
 
         pixels[idx] = r as u8;

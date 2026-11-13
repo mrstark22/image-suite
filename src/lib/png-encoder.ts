@@ -45,7 +45,7 @@ export function pixelsPerMetre(pxPerMm: number): number {
 interface PngLayout {
   width: number;
   height: number;
-  bitDepth: 8 | 16;
+  bitDepth: 1 | 8 | 16;
   colourType: number;
   /** Bytes in one row, without its filter byte. */
   rowBytes: number;
@@ -193,6 +193,38 @@ export async function encodePng8(
   };
   return encodePng(
     { width, height, bitDepth: 8, colourType: COLOUR_TYPE[colour], rowBytes: width * channels, pxPerMm: options.pxPerMm },
+    writeRow,
+    options.onProgress
+  );
+}
+
+/**
+ * Encodes a 1-bit black-and-white PNG (greyscale, bit depth 1; 1 is white)
+ * from RGBA8 rows whose red channel is 0 or 255: a dithered image for
+ * LightBurn's Pass-Through mode (#39). `readRgba` is as for `encodePng8`.
+ * Throws if any pixel is neither black nor white, rather than guess.
+ */
+export async function encodePng1(
+  readRgba: () => Uint8Array | Uint8ClampedArray,
+  width: number,
+  height: number,
+  options: { pxPerMm?: number; onProgress?: EncodeProgress } = {}
+): Promise<Uint8Array> {
+  if (readRgba().length < width * height * 4) {
+    throw new Error(`The pixels are fewer than ${width} × ${height} RGBA.`);
+  }
+  const writeRow: RowWriter = (y, out) => {
+    const rgba = readRgba();
+    out.fill(0);
+    let s = y * width * 4;
+    for (let x = 0; x < width; x++, s += 4) {
+      const v = rgba[s];
+      if (v === 255) out[x >> 3] |= 0x80 >> (x & 7);
+      else if (v !== 0) throw new Error(`Pixel ${x}, ${y} is grey (${v}), not black or white: the image is not dithered.`);
+    }
+  };
+  return encodePng(
+    { width, height, bitDepth: 1, colourType: 0, rowBytes: Math.ceil(width / 8), pxPerMm: options.pxPerMm },
     writeRow,
     options.onProgress
   );

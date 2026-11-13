@@ -141,7 +141,8 @@ describe('preview', () => {
     expect(commits).toEqual([]);
     await pending('preview')[1].release();
     expect(commits).toHaveLength(1);
-    expect(commits[0]).toMatchObject({ width: 12, height: 9 });
+    // At the assumed 300 DPI, 12 x 9 px is 1.0 x 0.76 mm: 10 x 8 dots at the 0.1 mm line interval (#34).
+    expect(commits[0]).toMatchObject({ width: 10, height: 8 });
   });
 
   it('a change the preview does not read starts no render and keeps the one in flight', async () => {

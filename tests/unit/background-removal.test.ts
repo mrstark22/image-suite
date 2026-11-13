@@ -13,7 +13,7 @@ import { exportRaster } from '../../src/lib/raster-export';
 import { nativeTarget } from '../../src/lib/render-target';
 import { loadPinnedModel, sha256Hex } from '../../src/lib/model-file';
 import { isnetInput, probabilityBytes } from '../../src/lib/bg-model';
-import { resetStores } from '../helpers/documents';
+import { resetStores, greyscale } from '../helpers/documents';
 import { loadPixels, startTestPipeline, type TestPipeline } from '../helpers/pipeline';
 import { decodePng } from '../helpers/png-decode';
 
@@ -67,6 +67,7 @@ beforeEach(() => {
 
 async function open(): Promise<void> {
   store().open(await loadPixels(pipeline.api, picture(), W, H), 0.1);
+  greyscale();
   await pipeline.settled();
 }
 
@@ -197,6 +198,7 @@ describe('the mask makes exactly the masked pixels white', () => {
     }
     pipeline.api.setMaskModel(blueModel({ widthPx: bw, heightPx: bh }));
     store().open(await loadPixels(pipeline.api, big.buffer, bw, bh), 0.05);
+    greyscale();
     store().edit(setBackground({ enabled: true, softness: 0 }));
     await pipeline.settled();
     const file = await exportRaster(store().doc!, 'png');

@@ -20,8 +20,10 @@ describe('Image Suite Adjustments & Recipes', () => {
   });
 
   it('has proper default dither settings', () => {
-    expect(DEFAULT_DITHER.algorithm).toBe('none');
-    expect(DEFAULT_DITHER.threshold).toBe(128);
+    // A new photo is dithered from the start, at a real dot pitch.
+    expect(DEFAULT_DITHER.algorithm).toBe('jarvis');
     expect(DEFAULT_DITHER.serpentine).toBe(true);
+    expect(DEFAULT_DITHER.dotPitchMm).toBe(0.1);
+    expect('threshold' in DEFAULT_DITHER).toBe(false);
   });
 });

@@ -68,7 +68,7 @@ export function buildTonalLUT(tonal: TonalAdjustments): Uint8Array {
 
     // Step F: Clarity
     if (clarityFactor !== 0) {
-      norm += clarityFactor * Math.sin(2.0 * Math.PI * Math.max(0.0, Math.min(1.0, norm))) * 0.12;
+      norm -= clarityFactor * Math.sin(2.0 * Math.PI * Math.max(0.0, Math.min(1.0, norm))) * 0.12;
     }
 
     // Step G: Clamp norm before contrast and brightness

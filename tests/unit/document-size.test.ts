@@ -24,7 +24,7 @@ import { cropRectOf, describePhysicalSize, dpiOf, exportResolution, mmPerPxForLe
 import { previewBoxToSource, type PreviewSource } from '../../src/lib/crop';
 import { exportPlan, previewTarget, pxPerMmOf } from '../../src/lib/render-target';
 import { nearestOddAtLeast3, toRunParams } from '../../src/lib/run-params';
-import { currentDoc, labelledImage, openPhoto, PHOTO, previewMismatches, resetStores } from '../helpers/documents';
+import { currentDoc, greyscale, labelledImage, openPhoto, PHOTO, previewMismatches, resetStores } from '../helpers/documents';
 import { loadPixels, startTestPipeline, type TestPipeline } from '../helpers/pipeline';
 import { loadWasm, runPipeline, grayImage } from '../helpers/wasm';
 
@@ -160,6 +160,7 @@ describe('crop followed by other edits (#15), rendered', () => {
   async function openLabelled(width: number, height: number) {
     resetStores();
     store().open(await loadPixels(pipeline.api, labelledImage(width, height), width, height));
+    greyscale();
     await pipeline.settled();
   }
 
@@ -194,7 +195,8 @@ describe('crop followed by other edits (#15), rendered', () => {
     store().edit(setDetail({ unsharpStrength: 50, adaptiveThreshold: true }));
     await check(200 / 600);
 
-    store().edit(setDither({ ...DEFAULT_DITHER, algorithm: 'floyd-steinberg' }));
+    // Greyscale, so the preview stays at the crop's own pixels (a dithered one is on the dot grid, #34).
+    store().edit(setDither({ ...DEFAULT_DITHER, algorithm: 'none', serpentine: false }));
     store().edit(setVector({ threshold: 90 }));
     await check(200 / 600);
   });
@@ -228,6 +230,7 @@ describe('crop followed by other edits (#15), rendered', () => {
   it('a 6000x4000 photo renders a 2048x1365 preview from the full source, and a crop of it at up to 2048 px', async () => {
     resetStores();
     store().open(await loadPixels(pipeline.api, labelledImage(6000, 4000), 6000, 4000));
+    greyscale();
     await pipeline.settled();
     expect([useRenderStore.getState().source?.width, useRenderStore.getState().source?.height]).toEqual([2048, 1365]);
     // A 3000x4000 half is rendered from the source at 1536x2048, not cut from the whole-image preview at 1024x1365.
