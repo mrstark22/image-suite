@@ -8,7 +8,6 @@ import { useRenderStore } from '../../src/store/renderStore';
 import { useUIStore } from '../../src/store/uiStore';
 import { setScale, setTonal, setVector } from '../../src/lib/document';
 import { previewTarget } from '../../src/lib/render-target';
-import { vectorExportSource } from '../../src/lib/vector-file-export';
 import { exportedSvg } from '../helpers/exported';
 import { loadPixels, startTestPipeline, type TestPipeline } from '../helpers/pipeline';
 import { resetStores } from '../helpers/documents';
@@ -94,8 +93,6 @@ describe('export traces at full resolution (#23)', () => {
     const shown = render().vectorResult!;
     expect(pathCount(shown)).toBe(0);
 
-    const source = vectorExportSource(shown, render().tracedInputs !== null);
-    expect(source).toBe('full-resolution');
     const file = await exportedSvg(pipeline.api, store().doc!, shown);
     expect(file.paths).toBe(1);
     // 4000 px at 0.05 mm per px: the file is 200 mm wide.

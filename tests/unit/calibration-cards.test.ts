@@ -32,10 +32,8 @@ import {
   cardKey,
   cutFromCell,
   depthCurveFrom,
-  depthForGrey,
   engraveFromCell,
   engraveWithTone,
-  greyForDepth,
   kerfFrom,
   minPowerFrom,
   monotonicDepths,
@@ -48,6 +46,7 @@ import {
 import { addCard, addMaterial, addThickness, cardOf, findCalibration, machineOf, parseProfileFile, profileFileText, seedProfiles } from '../../src/lib/profiles';
 import { activeCalibration, loadProfiles, memoryProfileStorage, setProfileStorage, useProfilesStore } from '../../src/store/profilesStore';
 import { decodePng } from '../helpers/png-decode';
+import { applyDepthCurveInverse, depthAtGrey } from '../../src/lib/depth-curve';
 import type { CardSpec } from '../../src/types/calibration-card';
 import type { ProfileData } from '../../src/types/profiles';
 
@@ -412,12 +411,14 @@ describe('results', () => {
     expect(depthCurve).toEqual(measured);
     expect(maxDepthMm).toBe(1.5);
     expect(adjusted).toEqual([]);
-    // #47: a linear ramp of wanted depths, through the inverse and then the
-    // measured response, comes out evenly spaced.
-    for (let k = 0; k <= 10; k++) {
-      const want = (k / 10) * maxDepthMm;
-      expect(depthForGrey(depthCurve, greyForDepth(depthCurve, want))).toBeCloseTo(want, 9);
-    }
+    // #47: a linear ramp of heights, through the export's inverse (the only
+    // one, depth-curve.ts) and then the measured response, burns evenly
+    // spaced depths down to the card's maximum depth.
+    const { entry } = reliefFromDepths(buildCard(request('relief')), measured);
+    expect(entry.maxDepthMm).toBe(1.5);
+    const heights = Uint16Array.from({ length: 11 }, (_, k) => Math.round(((10 - k) / 10) * 65535));
+    const grey = applyDepthCurveInverse(heights, entry.depthCurve!, entry.maxDepthMm!);
+    grey.forEach((g, k) => expect(depthAtGrey(entry.depthCurve!, 1 - g / 65535)).toBeCloseTo((k / 10) * entry.maxDepthMm!, 3));
     expect(() => depthCurveFrom([0, 0.1, null])).toThrow(/step 3/);
     expect(() => depthCurveFrom([0.3, 0.2, 0.1])).toThrow(/deeper/);
   });

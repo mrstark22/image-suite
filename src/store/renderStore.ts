@@ -2,9 +2,8 @@ import type { ResolvedDepthSource } from '../types/depth';
 import type { DepthModelProgress } from '../lib/ai-depth';
 import { create } from 'zustand';
 import type { ImageDocument } from '../types/document';
-import type { VectorLayer, VectorResult } from '../types/vector';
+import type { VectorResult } from '../types/vector';
 import type { PreviewSource } from '../lib/crop';
-import { MM_PER_INCH } from '../lib/document-size';
 import { sameValue } from '../lib/document';
 import type { ExportProgress, SourceStage } from '../types/worker-messages';
 import { useDocumentStore } from './documentStore';
@@ -41,7 +40,7 @@ interface RenderState {
   isVectorStale: boolean;
   /**
    * Everything in the document that `vectorResult` was traced from, or null
-   * when it was not traced (a test grid overlay). The trace is stale when any
+   * when there is no trace. The trace is stale when any
    * of it changes: the trace reads the adjustments and the size as well as
    * the tracing settings (#23, review of #84).
    */
@@ -92,8 +91,6 @@ interface RenderState {
    */
   cancelTrace: () => void;
   setIsTracing: (tracing: boolean) => void;
-  /** Shows `layer` (a test grid's cut paths) as the vector result, in place of any trace. */
-  addVectorLayer: (layer: VectorLayer) => void;
   clearVectors: () => void;
   toggleVectorLayer: (layerId: string) => void;
   setIsProcessing: (processing: boolean) => void;
@@ -103,15 +100,14 @@ interface RenderState {
 
 
 /**
- * True when the trace shown was made from the document as it is now (or is
- * not a trace at all, like a test grid), so exporting it writes what is on
- * screen. False while a newer trace is due or the settings changed.
+ * True when the trace shown was made from the document as it is now, so
+ * exporting it writes what is on screen. False while a newer trace is due or the settings changed.
  */
 export function traceIsCurrent(): boolean {
   const { vectorResult, tracedInputs } = useRenderStore.getState();
   const doc = useDocumentStore.getState().doc;
   if (!vectorResult || !doc) return false;
-  if (tracedInputs === null) return true;
+  if (tracedInputs === null) return false;
   return sameValue(tracedInputs, traceInputsOf(doc));
 }
 
@@ -122,22 +118,6 @@ export function traceIsCurrent(): boolean {
  */
 export function pxPerMmOfSource(doc: ImageDocument, source: Pick<PreviewSource, 'width' | 'crop'>): number | null {
   return doc.mmPerPx === null ? null : source.width / (source.crop.width * doc.mmPerPx);
-}
-
-/** Preview pixels per inch of the open document, or `null` while its size is not set. */
-export function previewDpi(): number | null {
-  const doc = useDocumentStore.getState().doc;
-  const source = useRenderStore.getState().source;
-  if (!doc || !source) return null;
-  const pxPerMm = pxPerMmOfSource(doc, source);
-  return pxPerMm === null ? null : pxPerMm * MM_PER_INCH;
-}
-
-function summed(layers: VectorLayer[]): Pick<VectorResult, 'totalPaths' | 'totalNodes'> {
-  return {
-    totalPaths: layers.reduce((acc, l) => acc + l.paths.length, 0),
-    totalNodes: layers.reduce((acc, l) => acc + l.paths.reduce((n, p) => n + (p.nodeCount || 0), 0), 0),
-  };
 }
 
 /** What the relief panel shows about the last relief render. */
@@ -240,26 +220,6 @@ export const useRenderStore = create<RenderState>((set, get) => ({
 
   setIsTracing: (isTracing) => set({ isTracing }),
 
-  addVectorLayer: (layer) => {
-    const source = get().source;
-    const dpi = previewDpi();
-    const layers = [layer];
-    set({
-      // Not a trace, so not traced with any settings.
-      tracedInputs: null,
-      // Nor can it be out of date: a flag left by an earlier change would block its export.
-      isVectorStale: false,
-      autoTrace: false,
-      vectorResult: {
-        layers,
-        palette: [],
-        ...summed(layers),
-        dimensions: { width: source?.width ?? 1000, height: source?.height ?? 1000 },
-        pxPerMm: dpi === null ? null : dpi / MM_PER_INCH,
-      },
-    });
-  },
-
   clearVectors: () =>
     set({ vectorResult: null, autoTrace: false, isVectorStale: false, tracedInputs: null, hiddenLayers: [] }),
 
@@ -310,15 +270,12 @@ useDocumentStore.subscribe((state, prev) => {
 
   // By value: Reset All and recipes build new objects even when nothing in them changes.
   // Any input of the trace counts: adjustments and the size as well as the tracing settings.
-  // A test grid's paths are not a trace of the image, so nothing makes them
-  // stale and they stay exportable (review of #84).
   const render = useRenderStore.getState();
-  const showsTestGrid = render.vectorResult !== null && render.tracedInputs === null;
   // The colour a layer is drawn in is not traced: it is applied to the result on screen (#91).
-  if (render.vectorResult && !showsTestGrid && !sameValue(doc.vector.palette, before.vector.palette)) {
+  if (render.vectorResult && !sameValue(doc.vector.palette, before.vector.palette)) {
     useRenderStore.setState({ vectorResult: withDrawnColours(render.vectorResult, doc.vector.palette) });
   }
-  if (!render.autoTrace && !showsTestGrid && !sameValue(traceInputsOf(doc), traceInputsOf(before))) {
+  if (!render.autoTrace && !sameValue(traceInputsOf(doc), traceInputsOf(before))) {
     useRenderStore.setState({ isVectorStale: true });
   }
 });
