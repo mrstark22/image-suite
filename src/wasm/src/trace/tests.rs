@@ -638,3 +638,95 @@ fn centreline_mode_outlines_a_large_solid_shape() {
         dot.path.start
     );
 }
+
+/// Worst distance of a nearly level edge's traced points from the true edge,
+/// for a `rgb` shape on white traced in colour (or in black and white).
+fn shallow_edge_error(rgb: [f64; 3], colour: bool) -> f64 {
+    let (w, h) = (160usize, 100usize);
+    // The top edge falls 4 px over 120 px.
+    let top = |x: f64| 40.0 + (x - 20.0) * 4.0 / 120.0;
+    let grey = render(w, h, |x, y| {
+        (20.0..140.0).contains(&x) && y > top(x) && y < 70.0
+    });
+    let mut img = grey.clone();
+    for i in 0..w * h {
+        let a = 1.0 - grey[i * 4] as f64 / 255.0;
+        for c in 0..3 {
+            img[i * 4 + c] = (rgb[c] * a + 255.0 * (1.0 - a)).round() as u8;
+        }
+    }
+    let mut cf = cfg(Shapes::Outline);
+    cf.colour = colour;
+    cf.colour_count = 2;
+    let res = trace(&img, w, h, &cf);
+    let layer = res
+        .layers
+        .iter()
+        .find(|l| l.rgb[1] < 128)
+        .expect("the shape's layer");
+    let norm = (1.0f64 + (4.0f64 / 120.0).powi(2)).sqrt();
+    layer
+        .paths
+        .iter()
+        .flat_map(|p| sample(&p.path))
+        .filter(|q| q.x > 30.0 && q.x < 130.0 && q.y < 50.0)
+        .map(|q| (q.y - top(q.x)).abs() / norm)
+        .fold(0.0, f64::max)
+}
+
+/// A nearly level edge is traced as the sloped line it is, in colour as in
+/// black and white, not as a staircase of level runs a pixel apart.
+#[test]
+fn nearly_level_edge_is_not_a_staircase() {
+    let mono = shallow_edge_error([20.0, 20.0, 20.0], false);
+    assert!(mono < 0.2, "black and white: {mono}");
+    for rgb in [[200.0, 40.0, 30.0], [20.0, 20.0, 20.0], [29.0, 63.0, 143.0]] {
+        let e = shallow_edge_error(rgb, true);
+        assert!(e < 0.2, "colour {rgb:?}: {e}");
+    }
+}
+
+/// Colour and Centreline: the paper the artwork sits on is outlined, not
+/// traced along its middle (a web of lines between the shapes); the drawn
+/// lines still get their centrelines.
+#[test]
+fn centreline_mode_does_not_skeletonise_the_paper() {
+    use super::geom::dist_to_segment;
+    let (w, h) = (160usize, 120usize);
+    let (a, b) = (P::new(30.0, 40.0), P::new(130.0, 80.0));
+    let grey = render(w, h, |x, y| dist_to_segment(P::new(x, y), a, b) < 2.5);
+    let mut img = grey.clone();
+    for i in 0..w * h {
+        let t = 1.0 - grey[i * 4] as f64 / 255.0;
+        for (c, ink) in [200.0, 40.0, 30.0].iter().enumerate() {
+            img[i * 4 + c] = (ink * t + 250.0 * (1.0 - t)).round() as u8;
+        }
+    }
+    let mut cf = cfg(Shapes::Centreline);
+    cf.colour = true;
+    cf.colour_count = 2;
+    let res = trace(&img, w, h, &cf);
+    assert_eq!(res.layers.len(), 2);
+    let paper = res
+        .layers
+        .iter()
+        .find(|l| l.rgb[1] > 128)
+        .expect("the paper");
+    assert!(!paper.paths.is_empty());
+    assert!(
+        paper.paths.iter().all(|p| p.kind == Kind::Fill),
+        "the paper is outlined"
+    );
+    let line = res
+        .layers
+        .iter()
+        .find(|l| l.rgb[1] < 128)
+        .expect("the line");
+    assert_eq!(line.paths.len(), 1);
+    assert_eq!(line.paths[0].kind, Kind::Stroke);
+    let worst = sample(&line.paths[0].path)
+        .iter()
+        .map(|q| dist_to_segment(*q, a, b))
+        .fold(0.0, f64::max);
+    assert!(worst < 0.35, "the line's centre: {worst}");
+}
