@@ -423,6 +423,181 @@
   color: var(--text);
 }
 
+/* Reading a card from a photo (#56) */
+
+.photoRead {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.photoButtons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.fileButton {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 0 14px;
+  border: 1px solid var(--control-border);
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: var(--text-md);
+  cursor: pointer;
+}
+
+.fileButton:hover {
+  border-color: var(--text-3);
+}
+
+.fileButton:focus-within {
+  outline: 2px solid var(--focus, var(--overlay));
+  outline-offset: 1px;
+}
+
+.fileButton[aria-disabled='true'] {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.fileInput {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  width: 100%;
+  cursor: pointer;
+}
+
+.measured {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.measuredPicture {
+  position: relative;
+  width: 100%;
+  max-height: 60vh;
+  margin: 0 auto;
+  box-shadow: var(--image-edge);
+}
+
+.measuredOverlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.olStep,
+.olRef,
+.olCode,
+.olFlag {
+  fill: none;
+  vector-effect: non-scaling-stroke;
+  stroke-width: 1.5;
+}
+
+.olStep {
+  stroke: rgba(31, 209, 107, 0.85);
+  stroke-width: 1;
+}
+
+.olRef {
+  stroke: #3d8bff;
+}
+
+.olCode {
+  stroke: rgba(255, 255, 255, 0.7);
+  stroke-width: 1;
+}
+
+.olFlag {
+  stroke: #ff3b30;
+  stroke-width: 2;
+}
+
+.keyStep,
+.keyRef,
+.keyFlag {
+  font-weight: var(--weight-strong);
+}
+
+.keyStep {
+  color: #12924a;
+}
+
+.keyRef {
+  color: #2a6fd6;
+}
+
+.keyFlag {
+  color: var(--danger);
+}
+
+.linkBtn {
+  padding: 0;
+  color: var(--text);
+  text-decoration: underline;
+  font-size: inherit;
+  min-height: 44px;
+}
+
+/* Choosing a card 1 cell from a grid of 44 px buttons (comfortable on a phone) */
+
+.cellGrid {
+  display: grid;
+  gap: 4px;
+  align-items: center;
+  max-width: 520px;
+}
+
+.cellHead {
+  font-size: var(--text-sm, 12px);
+  color: var(--text-2);
+  text-align: center;
+  padding: 0 4px;
+  font-variant-numeric: tabular-nums;
+}
+
+.cellBtn {
+  min-height: 44px;
+  min-width: 44px;
+  border: 1px solid var(--control-border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 16px;
+}
+
+.cellBtn:hover {
+  border-color: var(--text-3);
+}
+
+.cellBtnOn {
+  background: var(--sel-bg);
+  color: var(--on-sel);
+  border-color: var(--sel-bg);
+}
+
+.cellBtnWarn {
+  background: rgba(230, 150, 20, 0.35);
+}
+
+.cellBtnOn.cellBtnWarn {
+  background: var(--sel-bg);
+}
+
 /* Segmented control */
 
 .segment {

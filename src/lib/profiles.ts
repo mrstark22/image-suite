@@ -513,7 +513,7 @@ export function parseProfileFile(text: string): ProfileData {
 
 // Wording
 
-export const KIND_LABEL: Record<CalibrationKind, string> = { engrave: 'Engraving', relief: '3D relief', cut: 'Cutting' };
+export const KIND_LABEL: Record<CalibrationKind, string> = { engrave: 'Engraving', relief: 'Relief', cut: 'Cutting' };
 
 export const SOURCE_LABEL: Record<Machine['source'], string> = { co2: 'CO2 tube', diode: 'Diode' };
 

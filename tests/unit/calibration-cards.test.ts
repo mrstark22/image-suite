@@ -12,7 +12,13 @@
  * - Results become the right calibration, stored under exactly the card's
  *   machine, material and thickness, across a reload and a profile file.
  */
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, beforeAll } from 'vitest';
+import { RustWasmEngine, type WasmExports } from '../../src/wasm/wasm-bridge';
+import { PipelineWorkerApi } from '../../src/workers/pipeline-api';
+import { cardDither } from '../../src/lib/card-dither';
+import { decodeCardCode, encodeCardCode } from '../../src/lib/card-code';
+import type { CardDither } from '../../src/lib/calibration-cards';
+import { loadWasm } from '../helpers/wasm';
 import {
   MAX_CELLS,
   MAX_LAYERS,
@@ -32,10 +38,8 @@ import {
   cardKey,
   cutFromCell,
   depthCurveFrom,
-  depthForGrey,
   engraveFromCell,
   engraveWithTone,
-  greyForDepth,
   kerfFrom,
   minPowerFrom,
   monotonicDepths,
@@ -48,6 +52,7 @@ import {
 import { addCard, addMaterial, addThickness, cardOf, findCalibration, machineOf, parseProfileFile, profileFileText, seedProfiles } from '../../src/lib/profiles';
 import { activeCalibration, loadProfiles, memoryProfileStorage, setProfileStorage, useProfilesStore } from '../../src/store/profilesStore';
 import { decodePng } from '../helpers/png-decode';
+import { applyDepthCurveInverse, depthAtGrey } from '../../src/lib/depth-curve';
 import type { CardSpec } from '../../src/types/calibration-card';
 import type { ProfileData } from '../../src/types/profiles';
 
@@ -119,6 +124,25 @@ function parseProject(xml: string) {
       };
     });
   return { layers, shapes };
+}
+
+// The core's dither, through the worker's API, as the app makes cards with it.
+let dither: CardDither;
+beforeAll(async () => {
+  const wasm = await loadWasm({ fresh: true });
+  dither = cardDither(new PipelineWorkerApi(async () => RustWasmEngine.fromExports(wasm.exports as unknown as WasmExports)));
+});
+
+/** Share of burned (black) dots in columns x0 to x1 of a 1-bit PNG. */
+function burnedShare(png: { width: number; height: number; samples: Uint16Array }, x0: number, x1: number): number {
+  let n = 0;
+  let black = 0;
+  for (let y = 0; y < png.height; y++)
+    for (let x = x0; x < x1; x++) {
+      n++;
+      if (png.samples[y * png.width + x] === 0) black++;
+    }
+  return black / n;
 }
 
 const pngOf = (b64: string) => decodePng(Uint8Array.from(atob(b64), (c) => c.charCodeAt(0)));
@@ -251,10 +275,10 @@ describe('cells and their settings', () => {
 });
 
 describe('LightBurn project (.lbrn2)', () => {
-  it('photo card 1: one dithered image layer per cell with its speed and power, each holding that cell’s ramp at its place and size', async () => {
+  it('photo card 1: one Pass-Through layer per cell with its speed and power, each holding that cell’s ramp, dithered by the core, at its place and size', async () => {
     const spec = buildCard(request('engrave-grid'));
     const layout = cardLayout(spec);
-    const { layers, shapes } = parseProject(await cardProject(spec));
+    const { layers, shapes } = parseProject(await cardProject(spec, dither));
     expect(layers.length).toBe(spec.cells.length + 1);
     expect(layers.length).toBeLessThanOrEqual(30);
     expect(new Set(layers.map((l) => l.index)).size).toBe(layers.length);
@@ -266,7 +290,7 @@ describe('LightBurn project (.lbrn2)', () => {
       expect(layer.maxPower).toBe(c.powerPct);
       expect(layer.passes).toBe(1);
       expect(layer.interval).toBe(spec.lineIntervalMm);
-      expect(layer.ditherMode).toBe('dithered');
+      expect(layer.ditherMode).toBe('passthrough');
       const own = shapes.filter((s) => s.cutIndex === c.layer);
       expect(own).toHaveLength(1);
       const s = own[0];
@@ -280,21 +304,23 @@ describe('LightBurn project (.lbrn2)', () => {
       const png = pngOf(s.data!);
       expect(png.width).toBe(Math.round(box.w * 10));
       expect(png.phys!.x).toBe(10000); // 10 px/mm
-      // The ramp's steps, light to dark.
-      const row = Math.floor(png.height / 2) * png.width;
-      expect(spec.levels.map((_, i) => png.samples[row + Math.floor((i + 0.5) * 40)])).toEqual(spec.levels.map(greyOf));
+      // 1-bit, one dot per scan line: each step burns its level's share of dots.
+      expect(png.bitDepth).toBe(1);
+      spec.levels.forEach((l, i) => expect(burnedShare(png, i * 40 + 2, i * 40 + 38)).toBeCloseTo(l, 1));
     }
     // The lettering is on the last layer.
     const labels = layers.find((l) => l.index === labelLayer(spec))!;
     expect(labels.name).toBe('Labels');
-    expect(shapes.filter((s) => s.cutIndex === labelLayer(spec)).length).toBe(layout.texts.length);
+    // With the corner markers, the code and the reference outlines.
+    expect(shapes.filter((s) => s.cutIndex === labelLayer(spec)).length).toBe(layout.texts.length + layout.marks.length);
+    expect(layout.marks.filter((m) => m.kind === 'marker')).toHaveLength(4);
   });
 
   it('cut card: one cut layer per square with its speed, power and passes, holding a 10 mm rectangle', async () => {
     const r = request('cut', workshop(), 6);
     const spec = buildCard({ ...r, ranges: { ...r.ranges, passes: 2 } });
     const layout = cardLayout(spec);
-    const { layers, shapes } = parseProject(await cardProject(spec));
+    const { layers, shapes } = parseProject(await cardProject(spec, dither));
     for (const box of layout.cells) {
       const layer = layers.find((l) => l.index === box.cell.layer)!;
       expect(layer.tag).toBe('CutSetting');
@@ -312,7 +338,7 @@ describe('LightBurn project (.lbrn2)', () => {
 
   it('relief card: the ramp runs in Grayscale between its minimum and maximum power; each minimum-power square has its own layer', async () => {
     const spec = buildCard(request('relief'));
-    const { layers } = parseProject(await cardProject(spec));
+    const { layers } = parseProject(await cardProject(spec, dither));
     const ramp = layers.find((l) => l.index === 0)!;
     expect(ramp.ditherMode).toBe('grayscale');
     expect(ramp.minPower).toBe(spec.cells[0].powerMinPct);
@@ -352,16 +378,67 @@ describe('plain files', () => {
 
   it('photo and relief PNGs are their size in mm at the card resolution, which they state', async () => {
     const grid = buildCard(request('engrave-grid'));
-    const one = await cardPng(grid);
+    const one = await cardPng(grid, dither);
     const p = decodePng(one.bytes);
     expect(p.width).toBe(240); // 6 steps x 4 mm at 10 px/mm
     expect(p.height).toBe(80);
     expect(p.phys!.x).toBe(10000);
+    expect(p.bitDepth).toBe(1);
     expect(one.dpi).toBeCloseTo(254);
 
     const tone = buildCard(request('engrave-tone'));
-    const tp = decodePng((await cardPng(tone)).bytes);
+    const tp = decodePng((await cardPng(tone, dither)).bytes);
     expect(tp.width).toBe(Math.round(cardLayout(tone).widthMm * 10));
+    expect(tp.bitDepth).toBe(1);
+    // Card 2's fine ramp: every 5 % step burns its share of dots.
+    const box = cardLayout(tone).cells[0];
+    const sub = { width: tp.width, height: Math.round(box.h * 10), samples: tp.samples.subarray(Math.round(box.y * 10) * tp.width, Math.round((box.y + box.h) * 10) * tp.width) };
+    tone.levels.forEach((l, i) => expect(burnedShare(sub, Math.round((box.x + i * 4) * 10) + 3, Math.round((box.x + i * 4) * 10) + 37)).toBeCloseTo(l, 1));
+
+    const relief = decodePng((await cardPng(buildCard(request('relief')), dither)).bytes);
+    expect(relief.bitDepth).toBe(8);
+  });
+});
+
+describe('card code', () => {
+  it('round-trips every kind and id, and refuses a strip with any single bit wrong, all bare or all burned', () => {
+    for (const kind of ['engrave-grid', 'engrave-tone', 'cut', 'relief'] as const) {
+      for (const id of ['K7Q2', '2222', 'ZZZZ', 'A9HX']) {
+        const bits = encodeCardCode(kind, id);
+        expect(bits).toHaveLength(32);
+        expect(decodeCardCode(bits)).toEqual({ kind, shortId: id });
+        for (let i = 0; i < 32; i++) expect(decodeCardCode(bits.map((b, k) => (k === i ? 1 - b : b)))).toBeNull();
+      }
+    }
+    expect(decodeCardCode(new Array(32).fill(0))).toBeNull();
+    expect(decodeCardCode(new Array(32).fill(1))).toBeNull();
+  });
+
+  it('photo cards burn the code, four corner markers and bare reference patches inside the card, clear of the cells and lettering', () => {
+    for (const kind of ['engrave-grid', 'engrave-tone'] as const) {
+      const spec = buildCard(request(kind));
+      const layout = cardLayout(spec);
+      const read = layout.read!;
+      expect(read.markers).toHaveLength(4);
+      expect(read.references.length).toBeGreaterThanOrEqual(9);
+      const code = layout.marks.find((m) => m.kind === 'code')!;
+      expect(code.rects).toHaveLength(encodeCardCode(kind, 'K7Q2').filter((b) => b).length);
+      const boxes = [
+        ...layout.cells.map((b) => ({ x: b.x - 1.5, y: b.y - 1.5, w: b.w + 3, h: b.h + 3 })),
+        ...layout.texts.map((t) => ({ x: t.x, y: t.y, w: textWidthMm(t.text, t.h), h: t.h })),
+        ...layout.marks.filter((m) => m.kind !== 'reference'),
+      ];
+      const overlap = (a: { x: number; y: number; w: number; h: number }, b: typeof a) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+      for (const r of [...read.references, ...layout.marks]) {
+        expect(r.x).toBeGreaterThanOrEqual(0);
+        expect(r.y).toBeGreaterThanOrEqual(0);
+        expect(r.x + r.w).toBeLessThanOrEqual(layout.widthMm);
+        expect(r.y + r.h).toBeLessThanOrEqual(layout.heightMm);
+      }
+      for (const r of read.references) for (const b of boxes) expect(overlap(r, b)).toBe(false);
+      for (const m of layout.marks.filter((k) => k.kind === 'marker')) for (const t of boxes.slice(0, layout.cells.length + layout.texts.length)) expect(overlap(m, t)).toBe(false);
+    }
+    expect(cardLayout(buildCard(request('relief'))).read).toBeNull();
   });
 });
 
@@ -412,12 +489,14 @@ describe('results', () => {
     expect(depthCurve).toEqual(measured);
     expect(maxDepthMm).toBe(1.5);
     expect(adjusted).toEqual([]);
-    // #47: a linear ramp of wanted depths, through the inverse and then the
-    // measured response, comes out evenly spaced.
-    for (let k = 0; k <= 10; k++) {
-      const want = (k / 10) * maxDepthMm;
-      expect(depthForGrey(depthCurve, greyForDepth(depthCurve, want))).toBeCloseTo(want, 9);
-    }
+    // #47: a linear ramp of heights, through the export's inverse (the only
+    // one, depth-curve.ts) and then the measured response, burns evenly
+    // spaced depths down to the card's maximum depth.
+    const { entry } = reliefFromDepths(buildCard(request('relief')), measured);
+    expect(entry.maxDepthMm).toBe(1.5);
+    const heights = Uint16Array.from({ length: 11 }, (_, k) => Math.round(((10 - k) / 10) * 65535));
+    const grey = applyDepthCurveInverse(heights, entry.depthCurve!, entry.maxDepthMm!);
+    grey.forEach((g, k) => expect(depthAtGrey(entry.depthCurve!, 1 - g / 65535)).toBeCloseTo((k / 10) * entry.maxDepthMm!, 3));
     expect(() => depthCurveFrom([0, 0.1, null])).toThrow(/step 3/);
     expect(() => depthCurveFrom([0.3, 0.2, 0.1])).toThrow(/deeper/);
   });

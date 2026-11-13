@@ -18,6 +18,9 @@ export type Pipeline = Pick<
   | 'setModelProgressListener'
   | 'exportHeightmap'
   | 'cancelModelDownload'
+  | 'ditherArtwork'
+  | 'readCardPhoto'
+  | 'readCardPhotoFile'
 >;
 
 let pipeline: Pipeline | null = null;

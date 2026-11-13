@@ -26,20 +26,26 @@
  * - LightBurn's Y axis points up, so the card's top-down layout is flipped
  *   in position (not in content) to keep its title at the top.
  *
- * Not yet confirmed against a file from the owner's LightBurn: Pass-Through
- * (photo cells use the sample-confirmed "dithered" mode), the Grayscale mode
- * name, CO2-specific fields, and the Rect element. Each card can also be
+ * Photo card cells are dithered by the tool's own dither (the core's, as the
+ * Photo job uses) at one pixel per scan line, written as 1-bit PNGs, and
+ * their layers run in Pass-Through, so LightBurn burns those dots without
+ * resampling or dithering again (#40, #56).
+ *
+ * Not yet confirmed against a file from the owner's LightBurn: the
+ * Pass-Through mode name (`passthrough`, LightBurn's name for the mode in
+ * its settings; no sample file has it), the Grayscale mode name,
+ * CO2-specific fields, and the Rect element. Each card can also be
  * downloaded as plain files with a table of settings (`card-files.ts`).
  */
 import type { CardCell, CardSpec } from '../types/calibration-card';
-import { cardLayout, labelLayer, pxPerMmOf, renderRamp, renderSolid, renderText, type Raster } from './calibration-cards';
-import { encodePng8 } from './png-encoder';
+import { cardLayout, labelLayer, pxPerMmOf, renderMark, renderRamp, renderSolid, renderText, type CardDither, type Raster } from './calibration-cards';
+import { encodePng1, encodePng8 } from './png-encoder';
 
 /** The LightBurn version the written structure follows. */
 export const LBRN_APP_VERSION = '1.4.01';
 
 /** The image mode each image layer runs in, by LightBurn's `ditherMode` name. */
-export type LbrnImageMode = 'dithered' | 'grayscale' | 'threshold';
+export type LbrnImageMode = 'passthrough' | 'grayscale' | 'threshold';
 
 const xmlAttr = (s: string) => s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '&#10;');
 const num = (n: number) => String(Number(n.toFixed(6)));
@@ -57,7 +63,7 @@ export function layerName(cell: CardCell): string {
 /** The image mode of a cell's layer. */
 export function cellImageMode(spec: CardSpec, cell: CardCell): LbrnImageMode {
   if (cell.role === 'min-power') return 'threshold';
-  return spec.kind === 'relief' ? 'grayscale' : 'dithered';
+  return spec.kind === 'relief' ? 'grayscale' : 'passthrough';
 }
 
 function imageLayer(index: number, name: string, c: { speedMmS: number; powerPct: number; powerMinPct: number; passes: number }, intervalMm: number, mode: LbrnImageMode): string {
@@ -110,8 +116,8 @@ function xform(cx: number, cy: number): string {
   return `<XForm>1 0 0 1 ${num(cx)} ${num(cy)}</XForm>`;
 }
 
-async function bitmap(index: number, r: Raster, ppm: number, cx: number, cy: number): Promise<string> {
-  const png = await encodePng8(() => r.rgba, r.width, r.height, 'grey', { pxPerMm: ppm });
+async function bitmap(index: number, r: Raster, ppm: number, cx: number, cy: number, bilevel = false): Promise<string> {
+  const png = bilevel ? await encodePng1(() => r.rgba, r.width, r.height, { pxPerMm: ppm }) : await encodePng8(() => r.rgba, r.width, r.height, 'grey', { pxPerMm: ppm });
   return [
     `    <Shape Type="Bitmap" CutIndex="${index}" W="${num(r.width / ppm)}" H="${num(r.height / ppm)}" Gamma="1" Contrast="0" Brightness="0" EnhanceAmount="0" EnhanceRadius="0" EnhanceDenoise="0" File="" SourceHash="0" Data="${base64(png)}">`,
     `        ${xform(cx, cy)}`,
@@ -131,9 +137,11 @@ export function projectNotes(spec: CardSpec): string {
 
 /**
  * The card as LightBurn project text. One layer per cell, in cell order
- * (layer = `cell.layer`), then one image layer with the lettering.
+ * (layer = `cell.layer`), then one image layer with the lettering and, on a
+ * photo card, the corner markers, code and reference outlines. `dither`
+ * dithers a photo card's ramps (see `CardDither`).
  */
-export async function cardProject(spec: CardSpec): Promise<string> {
+export async function cardProject(spec: CardSpec, dither: CardDither): Promise<string> {
   const layout = cardLayout(spec);
   const ppm = pxPerMmOf(spec);
   const H = layout.heightMm;
@@ -149,9 +157,11 @@ export async function cardProject(spec: CardSpec): Promise<string> {
       layers.push(cutLayer(cell.layer, name, cell));
       shapes.push(`    <Shape Type="Rect" CutIndex="${cell.layer}" W="${num(box.w)}" H="${num(box.h)}" Cr="0">\n        ${xform(cx, cy)}\n    </Shape>`);
     } else {
-      layers.push(imageLayer(cell.layer, name, cell, spec.lineIntervalMm, cellImageMode(spec, cell)));
-      const r = cell.role === 'ramp' ? renderRamp(spec.levels, spec.stepMm, box.h, ppm) : renderSolid(box.w, box.h, ppm);
-      shapes.push(await bitmap(cell.layer, r, ppm, cx, cy));
+      const mode = cellImageMode(spec, cell);
+      layers.push(imageLayer(cell.layer, name, cell, spec.lineIntervalMm, mode));
+      const grey = cell.role === 'ramp' ? renderRamp(spec.levels, spec.stepMm, box.h, ppm) : renderSolid(box.w, box.h, ppm);
+      const r = mode === 'passthrough' ? await dither(grey) : grey;
+      shapes.push(await bitmap(cell.layer, r, ppm, cx, cy, mode === 'passthrough'));
     }
   }
 
@@ -160,6 +170,10 @@ export async function cardProject(spec: CardSpec): Promise<string> {
   for (const t of layout.texts) {
     const r = renderText(t.text, t.h, ppm);
     shapes.push(await bitmap(labels, r, ppm, t.x + r.width / ppm / 2, H - (t.y + r.height / ppm / 2)));
+  }
+  for (const m of layout.marks) {
+    const r = renderMark(m, ppm);
+    shapes.push(await bitmap(labels, r, ppm, m.x + r.width / ppm / 2, H - (m.y + r.height / ppm / 2)));
   }
 
   return [

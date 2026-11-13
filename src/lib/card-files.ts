@@ -10,10 +10,10 @@
  *   resolution, with that resolution written into the file.
  */
 import type { CardCell, CardSpec } from '../types/calibration-card';
-import { cardLayout, dpiOf, labelLayer, pxPerMmOf, renderCard, renderRamp } from './calibration-cards';
+import { cardLayout, dpiOf, labelLayer, pxPerMmOf, renderCard, renderRamp, type CardDither } from './calibration-cards';
 import { textRects } from './card-font';
 import { cellImageMode, layerName } from './lbrn2';
-import { encodePng8 } from './png-encoder';
+import { encodePng1, encodePng8 } from './png-encoder';
 
 /** LightBurn's layer colours 00 to 29, which an imported SVG's colours select. */
 export const LIGHTBURN_LAYER_COLOURS = [
@@ -33,7 +33,7 @@ export interface SettingsRow {
   mode: string;
 }
 
-const MODE_TEXT: Record<string, string> = { dithered: 'Image, Dither', grayscale: 'Image, Grayscale', threshold: 'Image, Threshold', cut: 'Line (cut)' };
+const MODE_TEXT: Record<string, string> = { passthrough: 'Image, Pass-Through', grayscale: 'Image, Grayscale', threshold: 'Image, Threshold', cut: 'Line (cut)' };
 
 function cellWhat(spec: CardSpec, c: CardCell): string {
   if (c.role === 'min-power') return `Minimum-power square ${c.col + 1}`;
@@ -89,16 +89,24 @@ export function cutCardSvg(spec: CardSpec): string {
  * The PNG of a photo or relief card. Card 1 has a different setting in every
  * cell, which one image cannot carry, so its PNG is a single cell's ramp to
  * place once per row of the table. Card 2 and the depth card are one
- * setting: their PNG is the ramp with its lettering.
+ * setting: their PNG is the ramp with its lettering (and card 2's markers,
+ * code and reference outlines). A photo card's PNG is dithered with
+ * `dither` and written 1-bit, for Pass-Through; the depth card's is grey,
+ * for Grayscale mode.
  */
-export async function cardPng(spec: CardSpec): Promise<{ bytes: Uint8Array; width: number; height: number; dpi: number }> {
+export async function cardPng(spec: CardSpec, dither: CardDither): Promise<{ bytes: Uint8Array; width: number; height: number; dpi: number }> {
   if (spec.kind === 'cut') throw new Error('A cut card is downloaded as SVG.');
   const ppm = pxPerMmOf(spec);
-  const r =
+  const grey =
     spec.kind === 'engrave-grid'
       ? renderRamp(spec.levels, spec.stepMm, spec.rampHeightMm, ppm)
       : renderCard({ ...spec, cells: spec.cells.filter((c) => c.role === 'ramp') }, ppm);
-  const bytes = await encodePng8(() => r.rgba, r.width, r.height, 'grey', { pxPerMm: ppm });
+  if (spec.kind === 'relief') {
+    const bytes = await encodePng8(() => grey.rgba, grey.width, grey.height, 'grey', { pxPerMm: ppm });
+    return { bytes, width: grey.width, height: grey.height, dpi: dpiOf(spec) };
+  }
+  const r = await dither(grey);
+  const bytes = await encodePng1(() => r.rgba, r.width, r.height, { pxPerMm: ppm });
   return { bytes, width: r.width, height: r.height, dpi: dpiOf(spec) };
 }
 

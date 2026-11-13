@@ -9,19 +9,6 @@ import type { RenderTarget } from '../types/render';
 
 export type VectorFormat = 'svg' | 'dxf';
 
-/** Where an exported trace comes from. */
-export type VectorExportSource =
-  /** Traced again at the source's full resolution for the crop (#23). */
-  | 'full-resolution'
-  /** Not a trace (a test grid's cut paths): exported as shown. */
-  | 'as-shown';
-
-/** Which trace an export of the current result writes. */
-export function vectorExportSource(shown: VectorResult, tracedWithSettings: boolean): VectorExportSource {
-  if (!tracedWithSettings || shown.pxPerMm === null) return 'as-shown';
-  return 'full-resolution';
-}
-
 /** What the worker needs to trace and write a vector file (see `PipelineWorkerApi.exportVectorFile`). */
 export interface VectorExportRequest {
   doc: ImageDocument;

@@ -349,7 +349,7 @@ fn cutline_scale(w: usize, h: usize) -> usize {
 }
 
 /// 8-connected components of `mask`: a label per pixel (0 for none) and each component's area.
-fn components(mask: &[bool], w: usize, h: usize, eight: bool) -> (Vec<u32>, Vec<usize>) {
+pub(crate) fn components(mask: &[bool], w: usize, h: usize, eight: bool) -> (Vec<u32>, Vec<usize>) {
     let mut labels = vec![0u32; w * h];
     let mut areas = vec![0usize]; // label 0 unused
     let mut stack = Vec::new();

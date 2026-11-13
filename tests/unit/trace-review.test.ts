@@ -267,18 +267,6 @@ it('the exported file of finding 1 is the same physical size as the image', asyn
 });
 
 describe('second review of #84', () => {
-  it('1: a test grid stays exportable when settings change', async () => {
-    store().open(await loadPixels(pipeline.api, colourBlocks(80, 40, [[255, 255, 255], [0, 0, 0]]), 80, 40), 0.1);
-    await pipeline.settled();
-    // Paths added as a layer, not traced from the image.
-    const d = 'M 0 0 L 20 0 L 20 20 L 0 20 Z';
-    render().addVectorLayer({ id: 'grid', name: 'Grid', color: '#ff0000', paletteIndex: null, visible: true, totalNodes: 4, paths: [{ id: 'box', kind: 'cut', isClosed: true, nodeCount: 4, d }] });
-    store().edit(setTonal({ contrast: 30 }));
-    store().edit(setVector({ threshold: 90 }));
-    expect(render().isVectorStale).toBe(false);
-    expect(traceIsCurrent()).toBe(true);
-  });
-
   it('2: a hidden colour stays hidden by colour when a re-trace renumbers the colours', async () => {
     store().open(await loadPixels(pipeline.api, colourBlocks(80, 40, [[255, 255, 255], [0, 0, 0]]), 80, 40), 0.1);
     await pipeline.settled();
@@ -478,17 +466,6 @@ describe('fourth review of #84', () => {
 });
 
 describe('fifth review of #84', () => {
-  it('1: a test grid made while an earlier change was pending can still be exported', async () => {
-    store().open(await loadPixels(pipeline.api, colourBlocks(80, 40, [[255, 255, 255], [0, 0, 0]]), 80, 40), 0.1);
-    await pipeline.settled();
-    render().setAutoTrace(false);
-    store().edit(setTonal({ contrast: 30 }));
-    expect(render().isVectorStale).toBe(true);
-    render().addVectorLayer(render().vectorResult!.layers[0]);
-    expect(render().isVectorStale).toBe(false);
-    expect(traceIsCurrent()).toBe(true);
-  });
-
   it('5: a need too large to count is reported in words, not as a number of megabytes', () => {
     expect(() => parseTrace('{"error":"memory","bytes":18446744073709551615}', 10)).toThrow('This image is too large to trace on this device.');
     expect(() => parseTrace('{"error":"memory","bytes":0}', 10)).toThrow('This image is too large to trace on this device.');

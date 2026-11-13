@@ -664,11 +664,18 @@ const RUN_TIME_STYLES: Record<string, RegExp[]> = {
   // A calibration card is drawn in its own proportions, or at its size in mm (#40).
   'src/components/dialogs/CardPicture.tsx': [/^style=\{\{ aspectRatio: `\$\{layout\.widthMm\} \/ \$\{layout\.heightMm\}`, width: realSize \? `\$\{layout\.widthMm\}mm` : `min\(100%, \$\{fitHeightVh\(layout\)\}vh\)` \}\}$/],
   // The controls over a card's cells sit where the cells are; a layer's swatch is its LightBurn colour.
-  'src/components/dialogs/CalibrateDialog.tsx': [/^style=\{placeAt\(layout, /, /^style=\{\{ background: r\.colour \}\}$/],
+  // Card 1's list of cells has a column per power on the card (#56).
+  'src/components/dialogs/CalibrateDialog.tsx': [
+    /^style=\{placeAt\(layout, /,
+    /^style=\{\{ background: r\.colour \}\}$/,
+    /^style=\{\{ gridTemplateColumns: `auto repeat\(\$\{powers\.length\}, minmax\(44px, 1fr\)\)` \}\}$/,
+  ],
+  // A card read from a photo is shown flattened, in its own proportions (#56).
+  'src/components/dialogs/CardPhotoReader.tsx': [/^style=\{\{ aspectRatio: `\$\{W\} \/ \$\{H\}` \}\}$/],
 };
 
 /** Inline style attributes across src: exactly the run-time values allowed above. */
-const INLINE_STYLE_COUNT = 18;
+const INLINE_STYLE_COUNT = 20;
 
 describe('inline styles (#55)', () => {
   it('no component has one, apart from values computed at run time', () => {

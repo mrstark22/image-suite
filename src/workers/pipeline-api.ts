@@ -31,6 +31,12 @@ import { withView } from '../lib/trace-view';
 import type { ImageDocument } from '../types/document';
 import type { DepthEstimate, RustWasmEngine } from '../wasm/wasm-bridge';
 import type { RenderTarget } from '../types/render';
+import type { CardSpec } from '../types/calibration-card';
+import type { DitherConfig } from '../types/dither';
+import { DEFAULT_DITHER, defaultSteps } from '../lib/document';
+import { toRunParams } from '../lib/run-params';
+import { CardPhotoImage } from '../lib/card-photo-call';
+import { READ_MAX_SIDE, readCardPhoto, type CardReading } from '../lib/card-reader';
 
 /**
  * The image worker's API (design section 5: one worker). It holds the
@@ -283,6 +289,77 @@ export class PipelineWorkerApi {
         return { widthPx: width, heightPx: height, hasAlpha };
       })
     );
+  }
+
+  /**
+   * Dithers grey RGBA8 artwork with the core's dither and no adjustments, at
+   * one pixel per dot: the cells of a photo calibration card (#40, #56), so
+   * the card burns the same dither the Photo job exports. The tone curve is
+   * left out: the card is what measures it.
+   */
+  public ditherArtwork(rgba: ArrayBuffer, width: number, height: number, dither: Pick<DitherConfig, 'algorithm' | 'serpentine' | 'matrixScale'>): Promise<ArrayBuffer> {
+    return this.guarded(({ core }) => {
+      const bytes = width * height * 4;
+      if (rgba.byteLength < bytes) throw new Error('The artwork has fewer pixels than its size says.');
+      if (dither.algorithm === 'none') throw new Error('Choose a dither to make a photo card.');
+      const ptr = core.wasm.allocate(bytes);
+      try {
+        new Uint8Array(core.wasm.memory.buffer, ptr, bytes).set(new Uint8Array(rgba, 0, bytes));
+        const steps = { ...defaultSteps(), dither: { ...DEFAULT_DITHER, ...dither, toneCurve: null } };
+        core.processInPlace(ptr, toRunParams(steps, null, { widthPx: width, heightPx: height }, 'final'));
+        const out = new Uint8Array(core.wasm.memory.buffer, ptr, bytes).slice().buffer;
+        return Comlink.transfer(out, [out]);
+      } finally {
+        core.wasm.deallocate(ptr, bytes);
+      }
+    });
+  }
+
+  /**
+   * Reads a photo or scan of the photo card `expected` (#56,
+   * `card-reader.ts`): RGBA8 pixels, already reduced to about
+   * `READ_MAX_SIDE`. `known` are the other stored cards, so a photo of one
+   * of them is recognised.
+   */
+  public readCardPhoto(rgba: ArrayBuffer, width: number, height: number, expected: CardSpec, known: CardSpec[]): Promise<CardReading> {
+    return this.guarded(({ core }) => {
+      const img = CardPhotoImage.open(core.wasm, new Uint8Array(rgba), width, height);
+      try {
+        const reading = readCardPhoto(img, expected, known);
+        return reading.ok ? Comlink.transfer(reading, [reading.rectified.rgba.buffer]) : reading;
+      } finally {
+        img.free();
+      }
+    });
+  }
+
+  /**
+   * Reads a photo or scan file of the photo card `expected` (#56): decoded
+   * here, upright as the camera held it, reduced to at most `READ_MAX_SIDE`
+   * pixels on its longest side, and read with `readCardPhoto`.
+   */
+  public async readCardPhotoFile(file: Blob, expected: CardSpec, known: CardSpec[]): Promise<CardReading> {
+    let bitmap: ImageBitmap;
+    try {
+      const full = await createImageBitmap(file, { imageOrientation: 'from-image' });
+      const scale = Math.min(1, READ_MAX_SIDE / Math.max(full.width, full.height));
+      if (scale < 1) {
+        const resizeWidth = Math.max(1, Math.round(full.width * scale));
+        const resizeHeight = Math.max(1, Math.round(full.height * scale));
+        full.close();
+        bitmap = await createImageBitmap(file, { imageOrientation: 'from-image', resizeWidth, resizeHeight, resizeQuality: 'high' });
+      } else bitmap = full;
+    } catch (err) {
+      throw new Error('This browser could not open that file as a picture. Use a JPEG or PNG photo or scan.', { cause: err });
+    }
+    const { width, height } = bitmap;
+    const canvas = new OffscreenCanvas(width, height);
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    if (!ctx) throw new Error('This browser provides no 2D canvas in workers, so it cannot read photos here.');
+    ctx.drawImage(bitmap, 0, 0);
+    bitmap.close();
+    const rgba = ctx.getImageData(0, 0, width, height).data;
+    return this.readCardPhoto(rgba.buffer as ArrayBuffer, width, height, expected, known);
   }
 
   /** Frees the source. */

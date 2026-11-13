@@ -3,7 +3,7 @@ import { Download, CheckCircle, FileCode } from 'lucide-react';
 import { useDocumentStore } from '../../store/documentStore';
 import { traceIsCurrent, useRenderStore } from '../../store/renderStore';
 import { useUIStore } from '../../store/uiStore';
-import { vectorExportRequest, vectorExportSource, vectorFile, type VectorFormat } from '../../lib/vector-file-export';
+import { vectorExportRequest, type VectorFormat } from '../../lib/vector-file-export';
 import { traceSizeMm } from '../../lib/vector-export';
 import { getPipeline } from '../../lib/pipeline-client';
 import { recipeFromDocument } from '../../lib/document';
@@ -63,7 +63,6 @@ export const ExportPanel: React.FC = () => {
   const source = useRenderStore((s) => s.source);
   const processedBuffer = useRenderStore((s) => s.processed);
   const vectorResult = useRenderStore((s) => s.vectorResult);
-  const tracedInputs = useRenderStore((s) => s.tracedInputs);
   const isVectorStale = useRenderStore((s) => s.isVectorStale);
   const isTracing = useRenderStore((s) => s.isTracing);
   const progress = useRenderStore((s) => s.exportProgress);
@@ -131,25 +130,16 @@ export const ExportPanel: React.FC = () => {
     setTimeout(() => setIsDone(false), 3000);
   };
 
-  const vectorSource = vectorResult
-    ? vectorExportSource(vectorResult, tracedInputs !== null)
-    : null;
-
   // The file must be what is on screen: no export of a trace older than the document (review of #84).
   const traceCurrent = vectorResult !== null && !isVectorStale && !isTracing && traceIsCurrent();
   const canExportVector = vectorResult !== null && vectorResult.pxPerMm !== null && traceCurrent && vectorBusy === null;
 
   const handleVectorExport = async (fmt: VectorFormat) => {
-    if (!vectorResult || !vectorSource || !canExportVector) return;
+    if (!vectorResult || !canExportVector) return;
     setVectorBusy(fmt);
     setVectorError(null);
     try {
-      const { text, mimeType } =
-        vectorSource === 'as-shown'
-          ? vectorFile(vectorResult, fmt)
-          : await getPipeline().exportVectorFile(
-              vectorExportRequest(doc, vectorResult, fmt)
-            );
+      const { text, mimeType } = await getPipeline().exportVectorFile(vectorExportRequest(doc, vectorResult, fmt));
       download([text], mimeType, `${baseName}-vectors.${fmt}`);
     } catch (err) {
       setVectorError(err instanceof Error ? err.message : String(err));
@@ -294,7 +284,7 @@ export const ExportPanel: React.FC = () => {
           {vectorBusy && (
             <Progress className={styles.stackGap} label="Tracing at full resolution" fraction={null} />
           )}
-          {vectorSource === 'full-resolution' && (
+          {vectorResult && (
             <div className={`${styles.controlNote} ${styles.stackGap}`}>
               The files are traced again from the full-resolution image, so they hold detail the preview cannot: small
               corners and short straight edges can come out crisper than they look on screen.

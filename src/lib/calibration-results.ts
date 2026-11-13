@@ -70,15 +70,30 @@ export function toneCurveFromMarks(levels: readonly number[], lastBlank: number,
 }
 
 /**
- * Adds card 2's tone curve to the engraving calibration burned at the
- * card's setting. The card is made from that calibration, so the setting is
- * the card's own.
+ * Adds card 2's tone curve, from the steps marked by eye, to the engraving
+ * calibration burned at the card's setting. The card is made from that
+ * calibration, so the setting is the card's own.
  */
 export function engraveWithTone(spec: CardSpec, lastBlank: number, firstSolid: number, d: ProfileData): CalibrationEntry {
   if (spec.kind !== 'engrave-tone') throw new Error('Mark the steps on photo card 2.');
+  const toneCurve = toneCurveFromMarks(spec.levels, lastBlank, firstSolid);
+  return withToneCurve(spec, toneCurve, d, `bare up to ${Math.round(spec.levels[lastBlank] * 100)} %, fully black from ${Math.round(spec.levels[firstSolid] * 100)} %`);
+}
+
+/**
+ * Adds card 2's tone curve as measured from a photo (`card-reader.ts`): one
+ * darkness per step, white to black, 0 to 1 and never falling.
+ */
+export function engraveWithMeasuredTone(spec: CardSpec, curve: readonly number[], d: ProfileData): CalibrationEntry {
+  if (spec.kind !== 'engrave-tone') throw new Error('Measure the steps of photo card 2.');
+  if (curve.length !== spec.levels.length) throw new Error(`Card #${spec.shortId} has ${spec.levels.length} steps.`);
+  if (curve.some((v, i) => !(v >= 0 && v <= 1) || (i > 0 && v < curve[i - 1]))) throw new Error('A tone curve runs from 0 to 1 and never falls.');
+  return withToneCurve(spec, [...curve], d, 'measured from a photo');
+}
+
+function withToneCurve(spec: CardSpec, toneCurve: number[], d: ProfileData, how: string): CalibrationEntry {
   const c = spec.cells[0];
   const existing = findCalibration(d, cardKey(spec));
-  const toneCurve = toneCurveFromMarks(spec.levels, lastBlank, firstSolid);
   return {
     ...(existing ? settingsOf(existing) : { depthCurve: null, kerfMm: null, maxDepthMm: null }),
     speedMmS: c.speedMmS,
@@ -88,7 +103,7 @@ export function engraveWithTone(spec: CardSpec, lastBlank: number, firstSolid: n
     lineIntervalMm: spec.lineIntervalMm,
     toneCurve,
     status: 'verified',
-    notes: `${existing?.notes ? `${existing.notes} ` : ''}Tone curve from photo card 2 #${spec.shortId}: bare up to ${Math.round(spec.levels[lastBlank] * 100)} %, fully black from ${Math.round(spec.levels[firstSolid] * 100)} %.`,
+    notes: `${existing?.notes ? `${existing.notes} ` : ''}Tone curve from photo card 2 #${spec.shortId}: ${how}.`,
   };
 }
 
@@ -174,7 +189,10 @@ export interface DepthResult {
   adjusted: number[];
 }
 
-/** The depth curve from the depths entered for each step. */
+/**
+ * The depth curve from the depths entered for each step. Its inverse, which
+ * the relief export applies, is in `depth-curve.ts` (the only one).
+ */
 export function depthCurveFrom(depths: readonly (number | null)[]): DepthResult {
   if (depths.length < 2) throw new Error('Enter a depth for every step.');
   depths.forEach((d, i) => {
@@ -187,31 +205,6 @@ export function depthCurveFrom(depths: readonly (number | null)[]): DepthResult 
   if (!(maxDepthMm > depthCurve[0])) throw new Error('The darkest step must be deeper than the lightest: check the entries.');
   const adjusted = raw.flatMap((d, i) => (Math.abs(d - depthCurve[i]) > 1e-9 ? [i] : []));
   return { depthCurve, maxDepthMm, adjusted };
-}
-
-/**
- * The grey level (darkness 0 to 1) that burns `depthMm`, by linear
- * interpolation through the measured curve: the inverse a relief export
- * applies so equal steps in the heightmap give equal steps in real depth.
- * Where the curve is flat, the lightest grey that reaches the depth is used.
- */
-export function greyForDepth(depthCurve: readonly number[], depthMm: number): number {
-  const n = depthCurve.length;
-  if (depthMm <= depthCurve[0]) return 0;
-  if (depthMm >= depthCurve[n - 1]) return 1;
-  for (let i = 1; i < n; i++) {
-    const a = depthCurve[i - 1];
-    const b = depthCurve[i];
-    if (depthMm <= b && b > a) return (i - 1 + (depthMm - a) / (b - a)) / (n - 1);
-  }
-  return 1;
-}
-
-/** The depth burned at grey level `g` (darkness 0 to 1) through the measured curve. */
-export function depthForGrey(depthCurve: readonly number[], g: number): number {
-  const t = Math.min(1, Math.max(0, g)) * (depthCurve.length - 1);
-  const i = Math.min(depthCurve.length - 2, Math.floor(t));
-  return depthCurve[i] + (depthCurve[i + 1] - depthCurve[i]) * (t - i);
 }
 
 export function reliefFromDepths(spec: CardSpec, depths: readonly (number | null)[]): { entry: CalibrationEntry; result: DepthResult } {
