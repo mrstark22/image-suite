@@ -26,6 +26,8 @@ interface ViewState {
   isPinching: boolean;
   /** True while the view is fitted: a new container or image size fits it again. Zooming or panning clears it. */
   fitted: boolean;
+  /** Screen pixels at the top of the canvas covered by a bar (the crop tool's); a fit keeps the image below them. */
+  topInset: number;
 
   setCanvasTool: (tool: CanvasTool) => void;
   setSubstrateMask: (mask: SubstrateMask, cornerRadius?: number) => void;
@@ -42,6 +44,8 @@ interface ViewState {
   fit: () => void;
   /** Records the container and image sizes; refits if the view is fitted. */
   setFrame: (container: Size, image: Size) => void;
+  /** Sets `topInset` and fits the image again, so the whole image shows clear of the bar. */
+  setTopInset: (px: number) => void;
 }
 
 export const useViewStore = create<ViewState>((set, get) => ({
@@ -54,6 +58,7 @@ export const useViewStore = create<ViewState>((set, get) => ({
   container: null,
   image: null,
   fitted: false,
+  topInset: 0,
   isPinching: false,
 
   setCanvasTool: (canvasTool) => set({ canvasTool }),
@@ -80,7 +85,7 @@ export const useViewStore = create<ViewState>((set, get) => ({
       set({ fitted: true });
       return;
     }
-    set({ ...fitView(container, image), fitted: true });
+    set({ ...fitView(container, image, get().topInset), fitted: true });
   },
 
   setFrame: (container, image) => {
@@ -95,5 +100,11 @@ export const useViewStore = create<ViewState>((set, get) => ({
     }
     set({ container, image });
     if (prev.fitted) get().fit();
+  },
+
+  setTopInset: (px) => {
+    if (get().topInset === px) return;
+    set({ topInset: px });
+    get().fit();
   },
 }));

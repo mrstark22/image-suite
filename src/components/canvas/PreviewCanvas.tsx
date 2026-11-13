@@ -111,6 +111,28 @@ export const PreviewCanvas: React.FC = () => {
     return () => observer.disconnect();
   }, [container, dims, setFrame]);
 
+  // The crop tool's bar covers the top of the canvas; while it shows, the
+  // image is fitted below it so the box's top handles can be reached (#54).
+  const setTopInset = useViewStore((s) => s.setTopInset);
+  useEffect(() => {
+    if (!container || !cropBarHost) return;
+    const report = () => {
+      const bar = cropBarHost.firstElementChild;
+      const inset = bar ? Math.round(bar.getBoundingClientRect().bottom - container.getBoundingClientRect().top) : 0;
+      setTopInset(Math.max(0, inset));
+    };
+    report();
+    const resize = new ResizeObserver(report);
+    resize.observe(cropBarHost);
+    const children = new MutationObserver(report);
+    children.observe(cropBarHost, { childList: true });
+    return () => {
+      resize.disconnect();
+      children.disconnect();
+      setTopInset(0);
+    };
+  }, [container, cropBarHost, setTopInset]);
+
   // Fit each newly opened image to the view.
   const fittedDocRef = useRef<string | null>(null);
   useEffect(() => {
@@ -233,7 +255,7 @@ export const PreviewCanvas: React.FC = () => {
   // Exports never pass through here.
   const display = previewDisplay(zoom, typeof window === 'undefined' ? 1 : window.devicePixelRatio);
   const averagedScale = display.mode === 'averaged' ? display.scale : null;
-  const showsDitherHint = averagedScale !== null && job === 'photo' && ditherAlgorithm !== 'none';
+  const showsDitherHint = averagedScale !== null && job === 'photo' && ditherAlgorithm !== 'none' && canvasTool !== 'crop';
   useEffect(() => {
     const main = canvasRef.current;
     const target = averagedCanvasRef.current;

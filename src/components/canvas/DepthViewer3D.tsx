@@ -5,6 +5,7 @@ import { DEFAULT_DEPTH } from '../../lib/document';
 import { ActivePointers, type PointerPair } from '../../lib/gestures';
 import { DEFAULT_CAMERA, FOV_Y_DEG, cameraForKey, framingDistance, dollyBy, orbitBy, panBy, pinchCamera, type OrbitCamera } from '../../lib/orbit-camera';
 import type { ReliefMaterial } from '../../types/depth';
+import { COARSE_POINTER_QUERY } from '../shared/breakpoints';
 import styles from './DepthViewer3D.module.css';
 
 interface DepthViewer3DProps {
@@ -243,6 +244,14 @@ export const DepthViewer3D: React.FC<DepthViewer3DProps> = ({ depthBuffer, width
   // would flood the reader, so pointer moves are not announced (review of #84).
   const [announcedCamera, setAnnouncedCamera] = useState<OrbitCamera>(DEFAULT_CAMERA);
   const [isFocused, setIsFocused] = useState(false);
+  // A phone has no right button or wheel, so its hint names only touch gestures.
+  const [touchOnly] = useState(
+    () =>
+      typeof window !== 'undefined' &&
+      typeof window.matchMedia === 'function' &&
+      window.matchMedia(COARSE_POINTER_QUERY).matches &&
+      !window.matchMedia('(any-pointer: fine)').matches
+  );
   const keysHintId = useId();
 
   // The pointers down on the view and the gesture they make (#54). Pointer
@@ -473,7 +482,9 @@ export const DepthViewer3D: React.FC<DepthViewer3DProps> = ({ depthBuffer, width
       <div className={styles.hudHint} aria-hidden="true">
         {isFocused
           ? 'Arrows: Orbit • Shift + Arrows: Larger Step • + / −: Zoom'
-          : 'Drag: Orbit • Right-Drag or Two Fingers: Pan • Scroll or Pinch: Zoom'}
+          : touchOnly
+            ? 'Drag: Orbit • Two Fingers: Pan • Pinch: Zoom'
+            : 'Drag: Orbit • Right-Drag or Two Fingers: Pan • Scroll or Pinch: Zoom'}
       </div>
       <div className={styles.visuallyHidden} role="status" aria-live="polite">
         {`Camera ${Math.round(((announcedCamera.azimuth % 360) + 360) % 360)}° around, ${Math.round(announcedCamera.elevation)}° above the surface, zoom ${Math.round(100 / announcedCamera.distance)}%`}

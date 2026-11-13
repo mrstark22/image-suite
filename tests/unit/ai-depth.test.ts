@@ -13,7 +13,7 @@ import { DEPTH_MODEL, loadModelBytes, modelInputSize, type DepthEstimator } from
 import { sha256Hex } from '../../src/lib/model-file';
 import { readFileSync } from 'fs';
 import { join } from 'path';
-import { setDepth } from '../../src/lib/document';
+import { setBackground, setCrop, setDepth, rotate } from '../../src/lib/document';
 import { previewTarget } from '../../src/lib/render-target';
 import { useDocumentStore } from '../../src/store/documentStore';
 import { useRenderStore } from '../../src/store/renderStore';
@@ -87,6 +87,40 @@ describe('AI depth in the worker', () => {
     expect(calls[0].some((v, i) => v !== calls[1][i])).toBe(true);
     await run(b);
     expect(calls).toHaveLength(2);
+  });
+
+  it('with the background removed, AI depth runs on the image without its background, in the view and the export, after a crop and a turn', async () => {
+    const calls: Uint8Array[] = [];
+    const api = await workerWith(synthetic(calls));
+    // Mask model: the subject is the left half of whatever it is given.
+    api.setMaskModel({
+      inputSize: { widthPx: 40, heightPx: 30 },
+      predict: async () => Uint8Array.from({ length: 40 * 30 }, (_, i) => (i % 40 < 20 ? 255 : 0)),
+    });
+    setPipeline(api as unknown as Pipeline);
+    const schedulers = createSchedulers(() => api as unknown as Pipeline);
+    const disconnect = connectSchedulers(schedulers, () => api as unknown as Pipeline);
+    try {
+      const img = grayImage(80, 60, () => 40);
+      store().open(await loadPixels(api, img.buffer as ArrayBuffer, 80, 60), 0.1);
+      store().edit(setBackground({ enabled: true, softness: 0 }));
+      store().edit(setDepth({ source: 'ai-estimation' }));
+      await schedulers.relief.whenIdle();
+      expect(render().relief.error).toBeNull();
+      expect(render().depthHeightMap).not.toBeNull();
+      // The model saw the subject dark on the left and the removed background white on the right.
+      const seen = calls[calls.length - 1];
+      const w = modelInputSize(80, 60).widthPx;
+      expect(seen[4 * 1]).toBe(40);
+      expect(seen[4 * (w - 2)]).toBe(255);
+      store().edit(setCrop({ x: 10, y: 10, width: 60, height: 40 }));
+      store().edit(rotate('cw'));
+      await schedulers.relief.whenIdle();
+      expect(render().relief.error).toBeNull();
+      await expect(api.exportHeightmap(currentDoc(), null)).resolves.toBeTruthy();
+    } finally {
+      disconnect();
+    }
   });
 
   it('the model sees the image at its aspect ratio, sides in multiples of 14', () => {

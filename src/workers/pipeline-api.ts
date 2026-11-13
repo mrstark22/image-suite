@@ -437,7 +437,7 @@ export class PipelineWorkerApi {
     mask: BackgroundMask | undefined,
     onProgress?: (progress: ReliefProgress) => void
   ): Promise<DepthResult> {
-    const estimate = doc.depth.source === 'ai-estimation' ? await this.aiEstimate(doc, onProgress) : null;
+    const estimate = doc.depth.source === 'ai-estimation' ? await this.aiEstimate(doc, mask, onProgress) : null;
     const pxPerMm = reliefPxPerMm(doc, target);
     return this.guarded(({ engine, core }) =>
       engine.renderWith(doc, target, 'source', { cache, mask }, (ptr) =>
@@ -448,13 +448,18 @@ export class PipelineWorkerApi {
 
   /**
    * The AI depth estimate of `doc`'s crop: the `source` stage at the model's
-   * input size, through the estimator. The last one is kept and reused only
+   * input size (with the background removed when it is on), through the
+   * estimator. The last one is kept and reused only
    * for exactly the same input pixels. A failure is thrown, never replaced.
    */
-  private async aiEstimate(doc: ImageDocument, onProgress?: (progress: ReliefProgress) => void): Promise<DepthEstimate> {
+  private async aiEstimate(
+    doc: ImageDocument,
+    mask: BackgroundMask | undefined,
+    onProgress?: (progress: ReliefProgress) => void
+  ): Promise<DepthEstimate> {
     const native = nativeTarget(doc);
     const size = modelInputSize(native.widthPx, native.heightPx);
-    const input = new Uint8Array(await this.guarded(({ engine }) => engine.render(doc, size, 'source').pixels));
+    const input = new Uint8Array(await this.guarded(({ engine }) => engine.render(doc, size, 'source', { mask }).pixels));
     const cached = this.estimateCache;
     if (cached && cached.input.length === input.length && cached.input.every((v, i) => v === input[i])) {
       return cached.estimate;

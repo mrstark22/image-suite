@@ -103,8 +103,9 @@
   }
 
   /* At the top, under the buttons: the canvas's zoom bar has the bottom corner. */
+  /* Below the Undo and Redo pill (top left, 32 to 76 px). */
   .hudHint {
-    top: 72px;
+    top: 84px;
     bottom: auto;
     width: max-content;
     max-width: calc(100% - 24px);
