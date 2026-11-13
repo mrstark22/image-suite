@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, Check, Download, FileDown, Flame, Layers, Mountain, ScanLine, Scissors, Target } from 'lucide-react';
 import type { CardKind, CardSpec } from '../../types/calibration-card';
 import type { Calibration, CalibrationKind, ProfileData } from '../../types/profiles';
@@ -147,6 +147,13 @@ export const CalibrateDialog: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [savedText, setSavedText] = useState<string | null>(null);
   const [realSize, setRealSize] = useState(false);
+  const bodyRef = useRef<HTMLDivElement>(null);
+
+  // Each step starts at its top: the scrolling body would otherwise keep the
+  // previous step's scroll, opening the results halfway down the card.
+  useEffect(() => {
+    if (bodyRef.current) bodyRef.current.scrollTop = 0;
+  }, [step, spec]);
 
   const machine = machineOf(data, machineId);
   const material = materialOf(data, materialId);
@@ -326,8 +333,10 @@ export const CalibrateDialog: React.FC = () => {
     body = (
       <div className={styles.stack}>
         <p className={styles.lead}>
-          {CARD_TITLE[kind]} for <strong>{material?.name}{kind === 'cut' && thickness ? ` ${formatMm(thickness.mm)}` : ''}</strong> on <strong>{machine.name}</strong>. The values start from the machine
-          ({machine.watts} W{machine.minPowerPct !== null ? `, fires from ${machine.minPowerPct}%` : ''}{machine.lineIntervalMm !== null ? `, ${machine.lineIntervalMm} mm interval` : ''}); change any of them.
+          {CARD_TITLE[kind]} for <strong>{material?.name}{kind === 'cut' && thickness ? ` ${formatMm(thickness.mm)}` : ''}</strong> on <strong>{machine.name}</strong>.{' '}
+          {kind === 'engrave-tone' && engraveCal
+            ? `The values are the setting saved from card 1 (${fmt(engraveCal.speedMmS)} mm/s at ${fmt(engraveCal.powerMaxPct)}%); change them only if you chose another cell.`
+            : `The values start from the machine (${machine.watts} W${machine.minPowerPct !== null ? `, fires from ${machine.minPowerPct}%` : ''}${machine.lineIntervalMm !== null ? `, ${machine.lineIntervalMm} mm interval` : ''}); change any of them.`}
         </p>
         {FIELDS[kind].map((group) => (
           <fieldset key={group.title} className={styles.group}>
@@ -444,7 +453,7 @@ export const CalibrateDialog: React.FC = () => {
             </li>
           ))}
         </ol>
-        <div className={styles.body}>{body}</div>
+        <div ref={bodyRef} className={styles.body}>{body}</div>
       </div>
     </Dialog>
   );

@@ -6,7 +6,9 @@
  * Meshes are read as their vertices: the faces only join them, and the
  * measurement works from samples, so a mesh and a point cloud of the same
  * surface give the same result. STL stores each triangle's corners
- * separately, so shared corners appear once per triangle.
+ * separately, so a corner shared by six triangles is written six times; the
+ * copies are merged, or the point count (and the point spacing worked out
+ * from it) would be wrong by that factor.
  */
 
 export type ScanFormat = 'stl-binary' | 'stl-ascii' | 'ply-ascii' | 'ply-binary' | 'obj';
@@ -154,7 +156,7 @@ function parseStl(b: Uint8Array): ScanPoints {
       const o = 84 + t * 50 + 12;
       for (let k = 0; k < 9; k++) xyz[t * 9 + k] = v.getFloat32(o + k * 4, true);
     }
-    return { xyz, count: n * 3, format: 'stl-binary' };
+    return uniquePoints(xyz, 'stl-binary');
   }
   const a = new Ascii(b);
   const g = new Growable();
@@ -170,7 +172,41 @@ function parseStl(b: Uint8Array): ScanPoints {
     a.nextLine();
   }
   if (g.n === 0) throw new Error('This STL file has no triangles.');
-  return g.done('stl-ascii');
+  return uniquePoints(g.data.subarray(0, g.n), 'stl-ascii');
+}
+
+/** The points of `xyz` with exact repeats removed (an STL's shared triangle corners). */
+export function uniquePoints(xyz: Float32Array, format: ScanFormat): ScanPoints {
+  const n = xyz.length / 3;
+  const bits = new Uint32Array(xyz.buffer, xyz.byteOffset, n * 3);
+  // Open addressing on the three coordinates' bit patterns.
+  let size = 1;
+  while (size < n * 2) size <<= 1;
+  const table = new Int32Array(size).fill(-1);
+  const out = new Float32Array(n * 3);
+  const outBits = new Uint32Array(out.buffer);
+  let count = 0;
+  for (let i = 0; i < n; i++) {
+    const a = bits[i * 3];
+    const b = bits[i * 3 + 1];
+    const c = bits[i * 3 + 2];
+    let h = (Math.imul(a, 0x9e3779b1) ^ Math.imul(b, 0x85ebca77) ^ Math.imul(c, 0xc2b2ae3d)) >>> 0;
+    for (;;) {
+      h &= size - 1;
+      const j = table[h];
+      if (j === -1) {
+        table[h] = count;
+        outBits[count * 3] = a;
+        outBits[count * 3 + 1] = b;
+        outBits[count * 3 + 2] = c;
+        count++;
+        break;
+      }
+      if (outBits[j * 3] === a && outBits[j * 3 + 1] === b && outBits[j * 3 + 2] === c) break;
+      h++;
+    }
+  }
+  return { xyz: out.slice(0, count * 3), count, format };
 }
 
 function parseObj(b: Uint8Array): ScanPoints {

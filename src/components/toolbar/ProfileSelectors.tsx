@@ -26,7 +26,7 @@ export const ProfileSelectors: React.FC = () => {
   const thicknesses = activeThicknesses(profiles);
 
   const status = calibration
-    ? `${KIND_LABEL[kind]} calibration in use${calibration.status === 'unverified' ? ' (copied, not yet verified)' : ''}`
+    ? `${KIND_LABEL[kind]} calibration in use${calibration.status === 'unverified' ? ' (copied, not yet verified)' : ''}.`
     : noCalibrationText(kind, machine, material, thickness);
   // Without a calibration, and with what it needs chosen, the chip offers to make one.
   const calibratable = !calibration && !!machine && !!material && (kind !== 'cut' || !!thickness);

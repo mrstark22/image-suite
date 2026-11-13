@@ -61,6 +61,41 @@ describe('scan file formats', () => {
   });
 });
 
+describe('a meshed scan', () => {
+  // A scanner's mesh: a regular grid of corners, two triangles per square, so
+  // each corner is written once per triangle that shares it (up to six times).
+  // The copies must be merged, or the point spacing is misjudged and the
+  // height grid is finer than the points, full of holes, and finds no ramp.
+  function latticeStl(stepMm: number, tilt: number): ArrayBuffer {
+    const layout = cardLayout(spec);
+    const ramp = layout.cells.find((b) => b.cell.role === 'ramp')!;
+    const nx = Math.round(layout.widthMm / stepMm) + 1;
+    const ny = Math.round(layout.heightMm / stepMm) + 1;
+    const corner = (i: number, j: number) => {
+      const x = i * stepMm;
+      const y = j * stepMm;
+      const inside = x > ramp.x && x < ramp.x + ramp.w && y > ramp.y && y < ramp.y + ramp.h;
+      const d = inside ? DEPTHS[Math.min(n - 1, Math.floor((x - ramp.x) / spec.stepMm))] : 0;
+      return [x, -y, -d + x * Math.sin(tilt)];
+    };
+    const tris: number[] = [];
+    for (let j = 0; j < ny - 1; j++)
+      for (let i = 0; i < nx - 1; i++) {
+        const a = corner(i, j), b = corner(i + 1, j), c = corner(i, j + 1), e = corner(i + 1, j + 1);
+        tris.push(...a, ...b, ...e, ...a, ...e, ...c);
+      }
+    return toStlBinary(Float32Array.from(tris));
+  }
+  it('merges shared corners and reads every step', () => {
+    const file = parseScan(latticeStl(0.25, (2 * Math.PI) / 180), 'card.stl');
+    const layout = cardLayout(spec);
+    expect(file.count).toBe((Math.round(layout.widthMm / 0.25) + 1) * (Math.round(layout.heightMm / 0.25) + 1));
+    const { reading } = readScan(file, spec);
+    const got = scanEntries(reading.steps);
+    got.forEach((d, i) => expect(Math.abs((d ?? -1) - DEPTHS[i])).toBeLessThan(TOL));
+  });
+});
+
 describe('plane fit', () => {
   it.each([0, 2.5, 8])('recovers a %s° tilt, despite pockets covering a fifth of the card', (tilt) => {
     const pts = syntheticScan(spec, { depths: DEPTHS, points: 60000, tiltDeg: tilt, tiltAxisDeg: 40, seed: 3 });

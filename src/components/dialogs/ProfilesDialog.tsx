@@ -154,6 +154,8 @@ function calibrationSummary(c: Calibration): string {
   const parts = [`${c.speedMmS} mm/s`, power, `${c.passes} ${c.passes === 1 ? 'pass' : 'passes'}`];
   if (c.lineIntervalMm !== null) parts.push(`${c.lineIntervalMm} mm interval`);
   if (c.kerfMm !== null) parts.push(`kerf ${c.kerfMm} mm`);
+  if (c.kind === 'engrave' && c.toneCurve) parts.push('tone curve');
+  if (c.kind === 'relief' && c.maxDepthMm != null) parts.push(`max depth ${Number(c.maxDepthMm.toFixed(2))} mm`);
   return parts.join(' · ');
 }
 
@@ -771,6 +773,9 @@ export const ProfilesDialog: React.FC = () => {
     try {
       const incoming = parseProfileFile(await file.text());
       await importProfiles(incoming);
+      // The empty "New material" form shown on a first run would hide what was imported.
+      setMaterialSel((sel) => (sel === NEW ? null : sel));
+      setMachineSel((sel) => (sel === NEW ? null : sel));
       setFileStatus({
         tone: 'success',
         text: `Imported ${file.name}: ${plural(live(incoming.machines).length, 'machine')}, ${plural(live(incoming.materials).length, 'material')}, ${plural(live(incoming.calibrations).length, 'calibration')}. Where a record was in both, the most recent change was kept.`,

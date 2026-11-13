@@ -509,7 +509,8 @@
 
 .calRow {
   display: grid;
-  grid-template-columns: 1fr auto auto;
+  /* Name and summary, badge, Calibrate, Edit / By hand: one line each. */
+  grid-template-columns: 1fr auto auto auto;
   align-items: center;
   gap: var(--space-3);
   padding: 7px 10px;
