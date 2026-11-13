@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, Check, Download, FileDown, Flame, Layers, Mountain, Scissors, Target } from 'lucide-react';
+import { ArrowLeft, Check, Download, FileDown, Flame, Layers, Mountain, ScanLine, Scissors, Target } from 'lucide-react';
 import type { CardKind, CardSpec } from '../../types/calibration-card';
 import type { Calibration, CalibrationKind, ProfileData } from '../../types/profiles';
 import {
@@ -33,6 +33,7 @@ import { Button } from '../shared/Button';
 import { Dialog } from '../shared/Dialog';
 import { StatusMessage } from '../shared/StatusMessage';
 import { CardPicture, placeAt } from './CardPicture';
+import { ScanReader } from './ScanReader';
 import styles from './CalibrateDialog.module.css';
 
 type Step = 'choose' | 'settings' | 'card' | 'results' | 'done';
@@ -838,6 +839,8 @@ const CutResults: React.FC<ResultProps> = ({ spec, header, error, submit }) => {
 const ReliefResults: React.FC<ResultProps> = ({ spec, header, error, submit }) => {
   const [depths, setDepths] = useState<string[]>(() => spec.levels.map((_, i) => (i === 0 ? '0' : '')));
   const [firstMark, setFirstMark] = useState<number | null>(null);
+  const [scanning, setScanning] = useState(false);
+  const [fromScan, setFromScan] = useState<string | null>(null);
   const finder = spec.cells.filter((c) => c.role === 'min-power');
   const parsed = depths.map((t) => (t.trim() === '' || !Number.isFinite(Number(t)) ? null : Number(t)));
   let preview: ReturnType<typeof depthCurveFrom> | null = null;
@@ -856,7 +859,27 @@ const ReliefResults: React.FC<ResultProps> = ({ spec, header, error, submit }) =
       };
     })}>
       {header}
-      <p className={styles.instruction}>Measure the depth of each step below the bare surface, with calipers or a depth gauge, and enter it in mm.</p>
+      <p className={styles.instruction}>Measure the depth of each step below the bare surface, with calipers or a depth gauge, and enter it in mm, or read them from a 3D scan of the card.</p>
+      {!scanning && (
+        <div>
+          <Button variant="secondary" compact icon={<ScanLine size={14} />} onClick={() => setScanning(true)}>
+            Read from a 3D scan…
+          </Button>
+        </div>
+      )}
+      {scanning && (
+        <ScanReader
+          spec={spec}
+          onCancel={() => setScanning(false)}
+          onUse={(scanned) => {
+            setDepths((all) => all.map((v, i) => (scanned[i] === null ? v : String(scanned[i]))));
+            const left = scanned.filter((d) => d === null).length;
+            setFromScan(`Depths read from the scan are in the fields below; check them and edit any before saving.${left > 0 ? ` ${left} step${left === 1 ? ' was' : 's were'} not measured: type ${left === 1 ? 'it' : 'them'}.` : ''}`);
+            setScanning(false);
+          }}
+        />
+      )}
+      {fromScan && !scanning && <StatusMessage tone="info">{fromScan}</StatusMessage>}
       <CardPicture spec={spec} label={`Card #${spec.shortId}`}>
         {(layout) =>
           layout.cells

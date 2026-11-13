@@ -1,0 +1,222 @@
+.reader {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+  min-width: 0;
+}
+
+.head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.title {
+  margin: 0;
+  font-size: var(--text-md);
+  font-weight: var(--weight-strong);
+  color: var(--text);
+}
+
+.muted,
+.facts,
+.busy {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--text-2);
+  line-height: 1.45;
+}
+
+.facts {
+  color: var(--text);
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-2);
+}
+
+.file {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.picture {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.frame {
+  position: relative;
+  width: 100%;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: #ece8e2;
+}
+
+.canvas {
+  /* Positioned, so it paints over the hatching drawn before it. */
+  position: relative;
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.noDataFill {
+  fill: #c9c4bd;
+}
+
+.cardEdge {
+  fill: none;
+  stroke: #1f6feb;
+  stroke-width: 0.35;
+}
+
+.textBox,
+.square {
+  fill: none;
+  stroke: #1f6feb;
+  stroke-width: 0.15;
+  stroke-opacity: 0.6;
+}
+
+.step {
+  fill: none;
+  stroke: #1f6feb;
+  stroke-width: 0.3;
+}
+
+.stepMissing {
+  fill: rgba(214, 48, 49, 0.18);
+  stroke: #d63031;
+  stroke-width: 0.45;
+}
+
+.floor {
+  fill: none;
+  stroke: #1f6feb;
+  stroke-width: 0.18;
+  stroke-dasharray: 0.8 0.6;
+}
+
+.depthLabel {
+  font-family: var(--font);
+  font-weight: 700;
+  fill: #fff;
+  stroke: #000;
+  stroke-width: 0.5;
+  paint-order: stroke;
+}
+
+.levelLabel {
+  font-family: var(--font);
+  fill: #0b3d91;
+  stroke: #fff;
+  stroke-width: 0.35;
+  paint-order: stroke;
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--text-2);
+}
+
+.swatches {
+  display: inline-flex;
+  vertical-align: middle;
+  border-radius: 2px;
+  overflow: hidden;
+  box-shadow: var(--image-edge);
+}
+
+.swatches svg {
+  display: block;
+}
+
+.nudge {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.nudgeLabel {
+  font-size: var(--text-sm);
+  color: var(--text-2);
+  margin-right: var(--space-1);
+}
+
+.tableWrap {
+  overflow-x: auto;
+  max-width: 100%;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.caption {
+  caption-side: bottom;
+  text-align: left;
+  padding-top: var(--space-1);
+  font-size: var(--text-xs);
+  color: var(--text-3);
+}
+
+.table th,
+.table td {
+  text-align: right;
+  padding: 3px var(--space-2);
+  border-bottom: var(--border-width) solid var(--border);
+  white-space: nowrap;
+}
+
+.table th:first-child {
+  text-align: left;
+}
+
+.table thead th {
+  font-weight: var(--weight-medium);
+  color: var(--text-2);
+}
+
+.rowMissing td,
+.rowMissing th {
+  color: var(--danger);
+}
+
+.rowMissing td {
+  white-space: normal;
+}
+
+@media (max-width: 599px) {
+  .table th,
+  .table td {
+    padding: 3px var(--space-1);
+  }
+}
