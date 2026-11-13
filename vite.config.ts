@@ -1,4 +1,4 @@
-import { defineConfig } from 'vite';
+import { configDefaults, defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
 import wasm from 'vite-plugin-wasm';
 import topLevelAwait from 'vite-plugin-top-level-await';
@@ -16,6 +16,10 @@ export default defineConfig({
   },
   build: {
     target: 'esnext',
+  },
+  test: {
+    // Agent working copies live under .claude/worktrees: their tests are theirs to run, not this checkout's.
+    exclude: [...configDefaults.exclude, '.claude/**'],
   },
   server: {
     port: 5173,
