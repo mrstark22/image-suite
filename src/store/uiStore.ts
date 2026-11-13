@@ -18,7 +18,11 @@ interface UIState {
   theme: 'dark' | 'light';
   /** Tablet layout: the step panel is folded to a strip, giving the canvas the width (#54). */
   isPanelCollapsed: boolean;
-  /** Phone layout: the bottom sheet holding the step's controls is open (#54). */
+  /**
+   * Phone layout: the bottom sheet holding the step's controls is open (#54).
+   * It opens on every change of step or job, so entering a step always shows
+   * its controls; the user can fold it away afterwards.
+   */
   isSheetOpen: boolean;
 
   // Modal Dialogs
@@ -80,18 +84,18 @@ export const useUIStore = create<UIState>((set, get) => ({
   showVectorOverlay: true,
   theme: 'dark',
   isPanelCollapsed: false,
-  isSheetOpen: false,
+  isSheetOpen: true,
 
   isSizeDialogOpen: false,
   isTestGridDialogOpen: false,
   isShortcutsDialogOpen: false,
   reducedOpenOffer: null,
 
-  setJob: (job) => set({ job }),
+  setJob: (job) => set({ job, isSheetOpen: true, isPanelCollapsed: false }),
   goToStep: (step) => {
     const { job, stepByJob } = get();
     if (!FLOWS[job].includes(step)) return;
-    set({ stepByJob: { ...stepByJob, [job]: step } });
+    set({ stepByJob: { ...stepByJob, [job]: step }, isSheetOpen: true, isPanelCollapsed: false });
   },
   goToNextStep: () => {
     const next = nextStep(get().job, currentStep(get()));

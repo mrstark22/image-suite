@@ -208,10 +208,10 @@
 
 /* Phone (#54): the step's hint and panel inside the bottom sheet. */
 .sheetHint {
-  font-size: var(--text-sm);
+  font-size: var(--text-md);
   color: var(--text-2);
   line-height: 1.4;
-  padding: 0 var(--space-4) var(--space-2);
+  padding: var(--space-3) var(--space-4) var(--space-1);
 }
 
 .sheetBody > * {
