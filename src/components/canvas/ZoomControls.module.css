@@ -59,6 +59,33 @@
   box-shadow: var(--shadow-md);
 }
 
+/* Phone: Undo and Redo, top left below the rulers; each a full touch target. */
+.historyPill {
+  position: absolute;
+  top: calc(24px + var(--space-2));
+  left: calc(24px + var(--space-2));
+  z-index: 20;
+  display: flex;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--control-border);
+  background: color-mix(in srgb, var(--surface) 85%, transparent);
+  box-shadow: var(--shadow-md);
+  overflow: hidden;
+}
+
+.historyButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--touch-target);
+  height: var(--touch-target);
+  color: var(--text);
+}
+
+.historyButton:disabled {
+  color: var(--text-3);
+}
+
 /* Touch (#54) */
 @media (pointer: coarse) {
   .button {
