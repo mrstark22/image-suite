@@ -42,9 +42,35 @@
   image-rendering: pixelated;
 }
 
-/* Below 100%: smooth, so skipped pixels do not turn dither dots into moiré. */
-.smoothCanvas {
+/* Below 100% the dots stay drawn (overlays and the crop measure them) but are not shown. */
+.hiddenCanvas {
+  visibility: hidden;
+}
+
+/* Their area average, laid over them at the same size and enlarged smoothly. */
+.averagedCanvas {
+  position: absolute;
+  top: 0;
+  left: 0;
   image-rendering: auto;
+  pointer-events: none;
+}
+
+/* Below 100% in the photo job: a quiet note that the dots are averaged. */
+.dotsHint {
+  position: absolute;
+  left: 50%;
+  bottom: var(--space-3);
+  transform: translateX(-50%);
+  z-index: 15;
+  padding: 3px 10px;
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--surface) 80%, transparent);
+  border: 1px solid var(--border);
+  color: var(--text-2);
+  font-size: var(--text-sm);
+  white-space: nowrap;
+  pointer-events: none;
 }
 
 .svgOverlay {

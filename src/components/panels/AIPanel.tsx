@@ -214,10 +214,6 @@ export const AIPanel: React.FC = () => {
 
   return (
     <div className={styles.panel}>
-      <div className={styles.panelHeader}>
-        <span className={styles.panelTitle}>Background</span>
-      </div>
-
       <Section title="Remove background">
         <p className={own.intro}>
           A segmentation model finds the subject and the rest becomes white, which does not burn. It runs on this

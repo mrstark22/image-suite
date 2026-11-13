@@ -1,5 +1,15 @@
+import { withPngResolution } from './png-encoder';
+
 /**
- * Generates synthetic manufacturing test patterns as File objects.
+ * The samples' stated resolution: 10 px/mm (254 DPI), so the 1200 × 800 px
+ * patterns open at exactly 120 × 80 mm from the file's own size, not an
+ * assumed one.
+ */
+export const SAMPLE_PX_PER_MM = 10;
+
+/**
+ * Generates synthetic manufacturing test patterns as File objects, each
+ * declaring its physical size in a PNG `pHYs` chunk.
  */
 export function generateTestPattern(type: 'gradient' | 'emblem' | 'grid'): Promise<File> {
   return new Promise((resolve) => {
@@ -98,9 +108,10 @@ export function generateTestPattern(type: 'gradient' | 'emblem' | 'grid'): Promi
       ctx.fillText('IMAGE SUITE CALIBRATION', 80, 120);
     }
 
-    canvas.toBlob((blob) => {
+    canvas.toBlob(async (blob) => {
       if (blob) {
-        resolve(new File([blob], `${type}-test-pattern.png`, { type: 'image/png' }));
+        const png = withPngResolution(new Uint8Array(await blob.arrayBuffer()), SAMPLE_PX_PER_MM);
+        resolve(new File([png as BlobPart], `${type}-test-pattern.png`, { type: 'image/png' }));
       }
     }, 'image/png');
   });

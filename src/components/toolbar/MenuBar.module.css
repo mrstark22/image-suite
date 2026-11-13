@@ -315,6 +315,79 @@
   border-color: var(--warning);
 }
 
+/* The phone's one menu button. */
+.iconBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+}
+
+/* The phone's menu: each menu a titled section. */
+.menuSection + .menuSection {
+  border-top: 1px solid var(--border);
+  margin-top: 4px;
+  padding-top: 4px;
+}
+
+.menuSectionTitle {
+  padding: 6px 12px 2px;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-strong);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-label);
+  color: var(--text-3);
+}
+
+/* The phone's machine and material chip: two short lines, the calibration as its dot. */
+.setupChip {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 6px 2px 8px;
+  border: 1px solid var(--control-border);
+  border-radius: var(--radius-md);
+  background: var(--field);
+  text-align: left;
+  color: var(--text);
+}
+
+.setupChip[aria-expanded='true'] {
+  background: var(--surface-hover);
+}
+
+.setupChipText {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+}
+
+.setupChipMachine,
+.setupChipMaterial {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.setupChipMachine {
+  font-size: var(--text-md);
+  font-weight: var(--weight-medium);
+}
+
+.setupChipMaterial {
+  font-size: var(--text-sm);
+  color: var(--text-2);
+}
+
+.setupChipChevron {
+  flex-shrink: 0;
+  color: var(--text-3);
+}
+
 /*
  * Tablet and phone (#54): the bar wraps to two rows, the menus and the job
  * on the first, the machine and material on the second.
@@ -334,27 +407,26 @@
 }
 
 /*
- * Phone (#54): no brand, the job switch packed beside the menus, the two
- * selects sharing the second row, and the size readout left to the Size
- * step. A menu opens across the width of the screen instead of off its edge.
+ * Phone (#54): one row, so the canvas keeps the height. One menu button holds
+ * the four menus as sections, the job switch takes the middle, and the
+ * machine and material fold into a chip that opens them in a small sheet.
+ * Menus open across the width of the screen instead of off its edge.
  */
 @media (max-width: 599px) {
   .menuBar {
+    flex-wrap: nowrap;
+    gap: var(--space-2);
     padding: var(--space-1) var(--space-2);
-  }
-
-  .brand {
-    display: none;
-  }
-
-  .leftSide {
-    width: 100%;
-    justify-content: space-between;
-    gap: var(--space-1);
   }
 
   .menuItemWrapper {
     position: static;
+  }
+
+  .menuItemWrapper:last-child {
+    flex: 1;
+    min-width: 0;
+    display: flex;
   }
 
   .dropdownMenu {
@@ -363,49 +435,50 @@
     left: var(--space-2);
     right: var(--space-2);
     min-width: 0;
-    max-height: 70dvh;
+    max-height: 75dvh;
     overflow-y: auto;
   }
 
   .jobSwitch {
     margin-left: 0;
+    flex-shrink: 0;
   }
 
   .jobBtn {
-    padding: 4px 8px;
+    padding: 4px 10px;
   }
 
-  .rightSide {
-    width: 100%;
-    flex-wrap: wrap;
-    row-gap: var(--space-1);
-  }
-
-  /* With no material there is nothing to report that the selectors do not show. */
   .calIdle {
     display: none;
   }
 
+  /* Keyboard shortcuts mean little on a phone. */
+  .itemShortcut {
+    display: none;
+  }
+
+  .setupSheet {
+    padding: var(--space-3);
+    gap: var(--space-2);
+  }
+
+  .setupSheet .setupField {
+    display: grid;
+    grid-template-columns: 80px 1fr;
+  }
+
+  .setupSelect {
+    min-width: 0;
+    max-width: none;
+  }
+
   .calChip {
-    order: 10;
-    width: 100%;
     max-width: none;
     border-radius: var(--radius-sm);
   }
 
-  .setupField {
-    flex: 1;
-    min-width: 0;
-  }
-
-  .setupSelect {
-    flex: 1;
-    min-width: 0;
-    max-width: none;
-  }
-
-  .telemetry {
-    display: none;
+  .calText {
+    white-space: normal;
   }
 }
 
@@ -418,6 +491,8 @@
   }
 
   .setupSelect,
+  .setupChip,
+  .iconBtn,
   .addMaterial,
   .calChip,
   .telemetry,

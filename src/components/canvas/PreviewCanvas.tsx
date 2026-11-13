@@ -5,6 +5,7 @@ import { useViewStore } from '../../store/viewStore';
 import { openImageFiles, confirmReplaceInBrowser } from '../../lib/open-image';
 import { DEFAULT_DEPTH } from '../../lib/document';
 import { fitsDimensions } from '../../lib/crop';
+import { areaResample, averagedSize, previewDisplay, type RgbaImage } from '../../lib/preview-display';
 import { fromCentre, panForKey } from '../../lib/viewport';
 import { ActivePointers, pinchView, type PointerPair } from '../../lib/gestures';
 import { isTypingTarget } from '../../lib/shortcuts';
@@ -28,6 +29,11 @@ export const PreviewCanvas: React.FC = () => {
   // The container, as state so the effects below re-run when it mounts.
   const [container, setContainer] = useState<HTMLDivElement | null>(null);
   const offscreenOrigRef = useRef<HTMLCanvasElement | null>(null);
+  // Below 100%: the area-averaged copy shown instead of the dots, and the dots it is made from.
+  const averagedCanvasRef = useRef<HTMLCanvasElement>(null);
+  const drawnPixelsRef = useRef<RgbaImage | null>(null);
+  // Bumped each time the main canvas is redrawn, so the averaged copy follows it.
+  const [drawCount, setDrawCount] = useState(0);
 
   const source = useRenderStore((s) => s.source);
   const previewBuffer = source?.buffer ?? null;
@@ -72,6 +78,7 @@ export const PreviewCanvas: React.FC = () => {
     () => (reliefWidthMm !== null && reliefHeightMm !== null ? { widthMm: reliefWidthMm, heightMm: reliefHeightMm } : null),
     [reliefWidthMm, reliefHeightMm]
   );
+  const ditherAlgorithm = useDocumentStore((s) => s.doc?.steps.dither.algorithm ?? 'none');
 
   // Interaction State
   const [isDraggingSplit, setIsDraggingSplit] = useState(false);
@@ -217,7 +224,41 @@ export const PreviewCanvas: React.FC = () => {
       ctx.drawImage(offscreenOrigRef.current, 0, 0);
       ctx.restore();
     }
+    drawnPixelsRef.current = null;
+    setDrawCount((n) => n + 1);
   }, [processedBuffer, previewVersion, dims, isSplitView, splitPosition, canvasEl]);
+
+  // Below 100% the dots are shown area-averaged at the size they cover on the
+  // screen, not scaled by the browser, which would turn a dither into moiré.
+  // Exports never pass through here.
+  const display = previewDisplay(zoom, typeof window === 'undefined' ? 1 : window.devicePixelRatio);
+  const averagedScale = display.mode === 'averaged' ? display.scale : null;
+  const showsDitherHint = averagedScale !== null && job === 'photo' && ditherAlgorithm !== 'none';
+  useEffect(() => {
+    const main = canvasRef.current;
+    const target = averagedCanvasRef.current;
+    if (averagedScale === null || !main || !target || main.width === 0 || drawCount === 0) return;
+    const draw = () => {
+      let image = drawnPixelsRef.current;
+      if (!image) {
+        const ctx = main.getContext('2d');
+        if (!ctx) return;
+        const { data, width, height } = ctx.getImageData(0, 0, main.width, main.height);
+        image = drawnPixelsRef.current = { data, width, height };
+      }
+      const size = averagedSize(image.width, image.height, averagedScale);
+      const averaged = areaResample(image, size.width, size.height);
+      if (target.width !== size.width || target.height !== size.height) {
+        target.width = size.width;
+        target.height = size.height;
+      }
+      target.getContext('2d')?.putImageData(new ImageData(averaged.data, size.width, size.height), 0, 0);
+    };
+    // While a pinch or a run of zoom steps goes on, the last average is stretched; it is redone once the zoom rests.
+    if (target.width <= 1) return draw();
+    const timer = setTimeout(draw, 120);
+    return () => clearTimeout(timer);
+  }, [averagedScale, drawCount]);
 
   /** A point of a pointer event, from the container's centre. */
   const pointOf = (e: { clientX: number; clientY: number }) =>
@@ -434,6 +475,12 @@ export const PreviewCanvas: React.FC = () => {
 
       <div ref={setCropBarHost} className={styles.cropBarHost} />
 
+      {showsDitherHint && (
+        <div className={styles.dotsHint} role="note">
+          Zoom to 100% to see the dots
+        </div>
+      )}
+
       {isSplitView && (
         <>
           <div className={styles.splitLabelBefore}>Original</div>
@@ -447,8 +494,20 @@ export const PreviewCanvas: React.FC = () => {
         // --view-zoom lets the crop handles keep their screen size at any zoom.
         style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`, '--view-zoom': zoom } as React.CSSProperties}
       >
-        {/* Square pixels once zoomed in; smooth below 100%, where skipping pixels would turn dots into moiré. */}
-        <canvas ref={attachCanvas} className={`${styles.mainCanvas} ${zoom < 1 ? styles.smoothCanvas : ''}`} />
+        {/* The dots, as square pixels, at 100% and above; below it, hidden behind their area average. */}
+        <canvas
+          ref={attachCanvas}
+          className={`${styles.mainCanvas} ${averagedScale !== null ? styles.hiddenCanvas : ''}`}
+          data-display={display.mode}
+        />
+        {averagedScale !== null && (
+          <canvas
+            ref={averagedCanvasRef}
+            className={styles.averagedCanvas}
+            style={{ width: dims.width, height: dims.height }}
+            aria-hidden="true"
+          />
+        )}
 
         {/* Vector Path Overlay */}
         {showVectorOverlay && vectorResult && (

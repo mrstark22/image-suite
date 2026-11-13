@@ -656,6 +656,8 @@ const RUN_TIME_STYLES: Record<string, RegExp[]> = {
   'src/components/canvas/PreviewCanvas.tsx': [
     /^style=\{\{ transform: `translate\(\$\{pan\.x\}px, \$\{pan\.y\}px\) scale\(\$\{zoom\}\)`, '--view-zoom': zoom \} as React\.CSSProperties\}$/,
     /^style=\{\{ left: `\$\{splitPosition \* 100\}%` \}\}$/,
+    // Below 100% the area-averaged copy is drawn smaller and laid over the image at its size.
+    /^style=\{\{ width: dims\.width, height: dims\.height \}\}$/,
   ],
   // The crop box, and the four dimmed areas around it, follow the crop being drawn.
   'src/components/canvas/CanvasCropOverlay.tsx': [CROP_GEOMETRY],
@@ -666,7 +668,7 @@ const RUN_TIME_STYLES: Record<string, RegExp[]> = {
 };
 
 /** Inline style attributes across src: exactly the run-time values allowed above. */
-const INLINE_STYLE_COUNT = 17;
+const INLINE_STYLE_COUNT = 18;
 
 describe('inline styles (#55)', () => {
   it('no component has one, apart from values computed at run time', () => {

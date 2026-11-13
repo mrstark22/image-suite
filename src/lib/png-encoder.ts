@@ -254,3 +254,31 @@ export async function encodePngGrayscale16(
   };
   return encodePng({ width, height, bitDepth: 16, colourType: 0, rowBytes: width * 2, pxPerMm }, writeRow);
 }
+
+/**
+ * `png` (any PNG, such as a canvas's `toBlob` output) with a `pHYs` chunk
+ * declaring `pxPerMm`, inserted straight after IHDR. A PNG that already has
+ * one is returned unchanged: its stated resolution is its own.
+ */
+export function withPngResolution(png: Uint8Array, pxPerMm: number): Uint8Array {
+  const view = new DataView(png.buffer, png.byteOffset, png.byteLength);
+  const ihdrEnd = 8 + 12 + view.getUint32(8, false);
+  for (let pos = 8; pos + 8 <= png.length; pos += 12 + view.getUint32(pos, false)) {
+    const type = String.fromCharCode(png[pos + 4], png[pos + 5], png[pos + 6], png[pos + 7]);
+    if (type === 'pHYs') return png;
+    if (type === 'IDAT') break;
+  }
+  const ppm = pixelsPerMetre(pxPerMm);
+  if (!(ppm >= 1 && ppm <= 0x7fffffff)) throw new Error(`Cannot write a resolution of ${pxPerMm} px/mm.`);
+  const out = new Uint8Array(png.length + 21);
+  out.set(png.subarray(0, ihdrEnd), 0);
+  const o = new DataView(out.buffer);
+  o.setUint32(ihdrEnd, 9, false);
+  out.set([0x70, 0x48, 0x59, 0x73], ihdrEnd + 4); // "pHYs"
+  o.setUint32(ihdrEnd + 8, ppm, false);
+  o.setUint32(ihdrEnd + 12, ppm, false);
+  out[ihdrEnd + 16] = 1; // unit: metre
+  o.setUint32(ihdrEnd + 17, computeCrc32(out, ihdrEnd + 4, 13), false);
+  out.set(png.subarray(ihdrEnd), ihdrEnd + 21);
+  return out;
+}

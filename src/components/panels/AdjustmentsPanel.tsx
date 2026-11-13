@@ -110,9 +110,8 @@ export const AdjustmentsPanel: React.FC = () => {
 
   return (
     <div className={styles.panel}>
-      {/* Header */}
-      <div className={styles.panelHeader}>
-        <span className={styles.panelTitle}>Tonal & Enhancements</span>
+      {/* The step's own header carries its title; this row holds its actions. */}
+      <div className={styles.panelActions}>
         <Button variant="link" onClick={() => edit(resetAdjustments)} title="Reset every tone, color and detail adjustment">
           Reset All
         </Button>
