@@ -378,8 +378,13 @@
 @media (pointer: coarse) {
   .cardButton,
   .materialButton,
-  .presetChip {
+  .presetChip,
+  .segmentedItem {
     min-height: var(--touch-target);
+  }
+
+  .segmentedItem {
+    font-size: 12px;
   }
 }
 
