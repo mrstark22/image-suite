@@ -372,16 +372,27 @@ describe('the zoom bar and the 3D orbit view (#82)', () => {
       expect(root.querySelector('[aria-label="3D relief view"]')).not.toBeNull();
       expect(zoomButtons(root)).toEqual([]);
     });
-
-    it(`at ${width} px: the zoom bar is back, and zooms, on the flat relief`, () => {
-      const root = reliefApp('grayscale', width);
-      expect(root.querySelector('[aria-label="3D relief view"]')).toBeNull();
-      expect(zoomButtons(root)).toHaveLength(4);
-      const before = useViewStore.getState().zoom;
-      click(zoomButtons(root).find((b) => b.title.startsWith('Zoom In'))!);
-      expect(useViewStore.getState().zoom).toBeGreaterThan(before);
-    });
   }
+
+  it('at 1440 px: the zoom bar is back, and zooms, on the flat relief', () => {
+    const root = reliefApp('grayscale', 1440);
+    expect(root.querySelector('[aria-label="3D relief view"]')).toBeNull();
+    expect(zoomButtons(root)).toHaveLength(4);
+    const before = useViewStore.getState().zoom;
+    click(zoomButtons(root).find((b) => b.title.startsWith('Zoom In'))!);
+    expect(useViewStore.getState().zoom).toBeGreaterThan(before);
+  });
+
+  it('at 390 px: on the flat relief, one pill switches between 100% and fit (pinch does the rest)', () => {
+    const root = reliefApp('grayscale', 390);
+    expect(root.querySelector('[aria-label="3D relief view"]')).toBeNull();
+    act(() => useViewStore.setState({ zoom: 0.3, fitted: true }));
+    expect(zoomButtons(root)).toHaveLength(1);
+    expect(zoomButtons(root)[0].textContent).toBe('30%');
+    click(zoomButtons(root)[0]);
+    expect(useViewStore.getState().zoom).toBe(1);
+    expect(zoomButtons(root)[0].title).toMatch(/^Fit to Screen/);
+  });
 
   it('the crop tool shows the flat relief, so the zoom bar is shown with it', () => {
     const root = reliefApp('3d-interactive', 1440);

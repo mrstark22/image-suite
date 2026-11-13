@@ -38,13 +38,25 @@
   padding: 0 4px;
 }
 
-/* Phone (#54): tucked into the corner, clear of the sheet's handle below. */
-@media (max-width: 599px) {
-  .zoomBar {
-    bottom: var(--space-2);
-    right: var(--space-2);
-    padding: 2px 4px;
-  }
+/* Phone: one pill in the top corner, below the ruler; pinch zooms. */
+.zoomPill {
+  position: absolute;
+  top: calc(24px + var(--space-2));
+  right: var(--space-2);
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 32px;
+  padding: 0 10px;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--control-border);
+  background: color-mix(in srgb, var(--surface) 85%, transparent);
+  color: var(--text);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  box-shadow: var(--shadow-md);
 }
 
 /* Touch (#54) */
@@ -52,5 +64,17 @@
   .button {
     width: var(--touch-target);
     height: var(--touch-target);
+  }
+
+  /* The pill looks 32 px tall but takes a 44 px touch. */
+  .zoomPill {
+    min-width: var(--touch-target);
+    justify-content: center;
+  }
+
+  .zoomPill::after {
+    content: '';
+    position: absolute;
+    inset: -6px -2px;
   }
 }
