@@ -7,10 +7,12 @@ import type {
   DocumentUpdate,
   EditSteps,
   ImageDocument,
+  Rotation,
   SourceInfo,
 } from '../types/document';
 import { RECIPE_VERSION, type EditRecipe, type EditStep } from '../types/recipe';
 import { clampCropRect } from './crop';
+import { frameSizeOf } from './document-size';
 import { checkVectorSettings } from './trace-settings';
 
 /**
@@ -104,9 +106,21 @@ export const DEFAULT_DEPTH: DepthConfig = {
   lightElevation: 45,
 };
 
+/**
+ * `next`, a newly opened image, with the settings of `previous`, the image it
+ * replaces: tone, colour, detail, dither, trace and relief (#67). What
+ * belongs to an image is not carried: its crop and its physical size stay as
+ * `next` has them.
+ */
+export function carrySettings(previous: ImageDocument, next: ImageDocument): ImageDocument {
+  const { tonal, color, detail, dither } = previous.steps;
+  return { ...next, steps: { ...next.steps, tonal, color, detail, dither }, vector: previous.vector, depth: previous.depth };
+}
+
 /** The edit steps of a freshly loaded image. */
 export function defaultSteps(): EditSteps {
   return {
+    rotation: 0,
     crop: null,
     tonal: { ...DEFAULT_TONAL },
     color: { ...DEFAULT_COLOR },
@@ -184,21 +198,40 @@ export function setDepth(partial: Partial<DepthConfig>): DocumentUpdate {
 }
 
 /**
- * Sets the crop to `rect`, in pixels of the source, clamped to the source.
+ * Sets the crop to `rect`, in pixels of the image as turned, clamped to it.
  * `null` removes the crop. A rectangle entirely outside the source changes
  * nothing. The scale is kept, so the physical size follows the crop.
  */
 export function setCrop(rect: CropRect | null): DocumentUpdate {
   return (d) => {
     if (rect === null) return withSteps(d, { crop: null });
-    const clamped = clampCropRect(rect, d.source.widthPx, d.source.heightPx);
+    const frame = frameSizeOf(d);
+    const clamped = clampCropRect(rect, frame.widthPx, frame.heightPx);
     if (!clamped) return d;
     const whole =
-      clamped.x === 0 &&
-      clamped.y === 0 &&
-      clamped.width === d.source.widthPx &&
-      clamped.height === d.source.heightPx;
+      clamped.x === 0 && clamped.y === 0 && clamped.width === frame.widthPx && clamped.height === frame.heightPx;
     return withSteps(d, { crop: whole ? null : clamped });
+  };
+}
+
+/**
+ * Turns the image a quarter turn clockwise (`'cw'`) or anticlockwise
+ * (`'ccw'`) from where it is (#65). The crop turns with it, so the same part
+ * of the picture stays cropped. The scale is kept: width and height in
+ * millimetres swap.
+ */
+export function rotate(direction: 'cw' | 'ccw'): DocumentUpdate {
+  return (d) => {
+    const frame = frameSizeOf(d);
+    const rotation = ((d.steps.rotation + (direction === 'cw' ? 90 : 270)) % 360) as Rotation;
+    const c = d.steps.crop;
+    const crop =
+      c === null
+        ? null
+        : direction === 'cw'
+          ? { x: frame.heightPx - c.y - c.height, y: c.x, width: c.height, height: c.width }
+          : { x: c.y, y: frame.widthPx - c.x - c.width, width: c.height, height: c.width };
+    return withSteps(d, { rotation, crop });
   };
 }
 

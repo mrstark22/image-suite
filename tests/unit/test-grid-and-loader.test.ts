@@ -85,7 +85,8 @@ describe('image loader', () => {
 
     const loaded = await decodeImageFile(file, 'source-x', { decodeFile } as unknown as Pipeline);
 
-    expect(decodeFile).toHaveBeenCalledWith('source-x', file);
+    // At the file's own size: no reduction is asked for.
+    expect(decodeFile).toHaveBeenCalledWith('source-x', file, null);
     expect(sliceSpy).toHaveBeenCalledWith(0, DPI_HEADER_BYTES);
     expect(wholeSpy).not.toHaveBeenCalled();
     expect(loaded).toMatchObject({ sourceId: 'source-x', name: 'big.png', widthPx: 6000, heightPx: 4000, hasAlpha: true });

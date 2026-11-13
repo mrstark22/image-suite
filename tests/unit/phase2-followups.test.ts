@@ -9,6 +9,7 @@ import {
   applyRecipe,
   createDocument,
   recipeFromDocument,
+  rotate,
   setColor,
   setCrop,
   setDetail,
@@ -113,6 +114,7 @@ describe('#89: one list of what a trace reads', () => {
     // An edit that changes each part of the document the trace reads (the source is a new document).
     const edits: Record<string, DocumentUpdate> = {
       mmPerPx: setScale(0.2),
+      rotation: rotate('cw'),
       crop: setCrop({ x: 10, y: 10, width: 100, height: 60 }),
       tonal: setTonal({ contrast: 20 }),
       color: setColor({ saturation: 10 }),

@@ -1,6 +1,7 @@
 /**
  * Helpers for tests that open images in the document store without a browser.
  */
+import { DEFAULT_PREFERENCES, usePreferencesStore } from '../../src/store/preferencesStore';
 import type { LoadedSource } from '../../src/lib/image-loader';
 import { newSourceId, setOpenDefaults } from '../../src/store/documentStore';
 import { useDocumentStore } from '../../src/store/documentStore';
@@ -52,6 +53,7 @@ export function resetStores(): void {
   setOpenDefaults(null);
   useRenderStore.setState({ errorMessage: null });
   useUIStore.setState({ isSizeDialogOpen: false });
+  usePreferencesStore.setState({ ...DEFAULT_PREFERENCES });
 }
 
 /** The open document; fails the test if there is none. */

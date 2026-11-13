@@ -12,6 +12,7 @@ mod clahe;
 mod depth;
 mod dither;
 mod resample;
+mod rotate;
 mod sharpen;
 mod threshold;
 mod tonal;
@@ -100,6 +101,26 @@ pub extern "C" fn prepare_source(
         height: crop_h,
     };
     prepare(source, src_w, crop, dst_w, dst_h, out);
+    out_ptr
+}
+
+/// Rotates the RGBA8 image at `src` (`w` x `h`) clockwise by `turns` quarter
+/// turns into a new buffer, which the caller frees with `deallocate`: `h` x `w`
+/// for an odd number of turns, `w` x `h` otherwise (#65). Returns null when
+/// the memory cannot be had.
+#[no_mangle]
+pub extern "C" fn rotate_quarter_turns(src: *const u8, w: usize, h: usize, turns: u32) -> *mut u8 {
+    if src.is_null() || w == 0 || h == 0 {
+        return std::ptr::null_mut();
+    }
+    let len = w * h * 4;
+    let out_ptr = try_allocate(len);
+    if out_ptr.is_null() {
+        return out_ptr;
+    }
+    let source = unsafe { std::slice::from_raw_parts(src, len) };
+    let out = unsafe { std::slice::from_raw_parts_mut(out_ptr, len) };
+    rotate::rotate_quarter_turns(source, w, h, turns, out);
     out_ptr
 }
 

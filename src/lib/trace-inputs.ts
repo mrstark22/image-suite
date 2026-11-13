@@ -10,6 +10,7 @@ import { sameValue } from './document';
 export interface TraceInputs {
   source: ImageDocument['source'];
   mmPerPx: ImageDocument['mmPerPx'];
+  rotation: ImageDocument['steps']['rotation'];
   crop: ImageDocument['steps']['crop'];
   tonal: ImageDocument['steps']['tonal'];
   color: ImageDocument['steps']['color'];
@@ -35,8 +36,8 @@ export function tracedVector(vector: VectorConfig): VectorConfig {
 }
 
 export function traceInputsOf(doc: ImageDocument): TraceInputs {
-  const { crop, tonal, color, detail } = doc.steps;
-  return { source: doc.source, mmPerPx: doc.mmPerPx, crop, tonal, color, detail, vector: tracedVector(doc.vector) };
+  const { rotation, crop, tonal, color, detail } = doc.steps;
+  return { source: doc.source, mmPerPx: doc.mmPerPx, rotation, crop, tonal, color, detail, vector: tracedVector(doc.vector) };
 }
 
 /** The parts of `traceInputsOf(doc)`, for a comparison by reference. */

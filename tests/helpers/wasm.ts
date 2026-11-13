@@ -60,6 +60,7 @@ interface WasmExports {
   try_allocate(size: number): number;
   deallocate(ptr: number, size: number): void;
   prepare_source(...args: number[]): number;
+  rotate_quarter_turns(src: number, width: number, height: number, turns: number): number;
   process_pipeline(...args: number[]): void;
   process_trace: TraceExports['process_trace'];
   get_trace_json_len(): number;

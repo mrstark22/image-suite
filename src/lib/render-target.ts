@@ -58,8 +58,8 @@ export function sameTarget(a: RenderTarget, b: RenderTarget): boolean {
   return a.widthPx === b.widthPx && a.heightPx === b.heightPx;
 }
 
-/** Identifies a `source`-stage render: the source, the crop and the target size. */
+/** Identifies a `source`-stage render: the source, how it is turned, the crop and the target size. */
 export function sourceStageKey(doc: ImageDocument, target: RenderTarget): string {
   const c = cropRectOf(doc);
-  return `${doc.source.sourceId}|${c.x},${c.y},${c.width},${c.height}|${target.widthPx}x${target.heightPx}`;
+  return `${doc.source.sourceId}|r${doc.steps.rotation}|${c.x},${c.y},${c.width},${c.height}|${target.widthPx}x${target.heightPx}`;
 }

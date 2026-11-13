@@ -15,9 +15,40 @@ export const MM_PER_INCH = 25.4;
 
 export type PhysicalUnit = 'mm' | 'in';
 
-/** The crop in source pixels, or the whole source when there is no crop. */
+/**
+ * The size of the image as the document turns it (#65): the source's, with
+ * width and height swapped for a quarter turn. The crop and every size shown
+ * are in this frame.
+ */
+export function frameSizeOf(doc: ImageDocument): { widthPx: number; heightPx: number } {
+  const { widthPx, heightPx } = doc.source;
+  return doc.steps.rotation % 180 === 0 ? { widthPx, heightPx } : { widthPx: heightPx, heightPx: widthPx };
+}
+
+/** The crop in pixels of the image as turned, or the whole of it when there is no crop. */
 export function cropRectOf(doc: ImageDocument): CropRect {
-  return doc.steps.crop ?? { x: 0, y: 0, width: doc.source.widthPx, height: doc.source.heightPx };
+  const frame = frameSizeOf(doc);
+  return doc.steps.crop ?? { x: 0, y: 0, width: frame.widthPx, height: frame.heightPx };
+}
+
+/**
+ * The crop as a rectangle of the source file's own pixels, before the turn:
+ * what the pipeline reads from the source. Turning it by `steps.rotation`
+ * gives `cropRectOf(doc)`.
+ */
+export function sourceCropOf(doc: ImageDocument): CropRect {
+  const { x, y, width, height } = cropRectOf(doc);
+  const { widthPx: W, heightPx: H } = doc.source;
+  switch (doc.steps.rotation) {
+    case 90:
+      return { x: y, y: H - x - width, width: height, height: width };
+    case 180:
+      return { x: W - x - width, y: H - y - height, width, height };
+    case 270:
+      return { x: W - y - height, y: x, width: height, height: width };
+    default:
+      return { x, y, width, height };
+  }
 }
 
 /** Width and height in millimetres of the image as cropped, or `null` while the size is not set. */

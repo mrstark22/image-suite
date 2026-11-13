@@ -11,6 +11,7 @@ import {
   type PhysicalUnit,
 } from '../../lib/document-size';
 import { canApplySize, sizeDraftReducer, type SizeField as Field } from '../../lib/size-draft';
+import { describeSize } from '../../lib/reduced-open';
 import { Button } from '../shared/Button';
 import { Dialog } from '../shared/Dialog';
 import { Select, type SelectOption } from '../shared/Select';
@@ -104,6 +105,13 @@ export const SizeDialog: React.FC = () => {
           {crop.width} × {crop.height} px
         </span>
       </div>
+
+      {doc.source.reducedFrom && (
+        <StatusMessage tone="info">
+          Opened at reduced size: {describeSize(doc.source)}. The file is {describeSize(doc.source.reducedFrom)}, too
+          large to open in full.
+        </StatusMessage>
+      )}
 
       {fileDpi !== null && suggestion !== null && (
         <div className={styles.suggestion}>

@@ -1,7 +1,9 @@
 import { useDocumentStore, hasUnsavedEdits } from '../store/documentStore';
 import { useRenderStore } from '../store/renderStore';
 import { useUIStore } from '../store/uiStore';
-import type { LoadedSource } from './image-loader';
+import { usePreferencesStore } from '../store/preferencesStore';
+import { decodeImageFile, SourceRefusedError, type LoadedSource } from './image-loader';
+import type { PixelSize } from './reduced-open';
 
 /** Message shown when more than one file is dropped or chosen at once. */
 export function ignoredFilesMessage(openedName: string, ignoredCount: number): string {
@@ -25,7 +27,15 @@ export async function openImageFiles(
   if (hasUnsavedEdits() && !confirmReplace()) return;
 
   const [first] = files;
-  await useDocumentStore.getState().load(first, decode);
+  try {
+    await useDocumentStore.getState().load(first, decode);
+  } catch (err) {
+    // Too large to open at its own size: say why and offer a smaller one (#69).
+    // The image that was open stays open.
+    if (!(err instanceof SourceRefusedError)) throw err;
+    useUIStore.getState().setReducedOpenOffer({ file: err.file, message: err.message, ...err.size });
+    return;
+  }
   if (useDocumentStore.getState().doc?.mmPerPx === null) {
     useUIStore.getState().setSizeDialogOpen(true);
   }
@@ -35,9 +45,37 @@ export async function openImageFiles(
   }
 }
 
+/**
+ * Opens `file` at `size`, smaller than the file's own: the choice made in
+ * the reduced-open dialog (#69). The document records both sizes. Size is
+ * the first step, as for any image.
+ */
+export async function openImageReduced(
+  file: File,
+  size: PixelSize,
+  decode: (file: File, sourceId: string, reduceTo: PixelSize) => Promise<LoadedSource> = (f, sourceId, reduceTo) =>
+    decodeImageFile(f, sourceId, undefined, reduceTo)
+): Promise<void> {
+  await useDocumentStore.getState().load(file, (f, sourceId) => decode(f, sourceId, size));
+  if (useDocumentStore.getState().doc?.mmPerPx === null) {
+    useUIStore.getState().setSizeDialogOpen(true);
+  }
+}
+
 /** Asks the user, in the browser, whether to discard edits to the current image. */
 export function confirmReplaceInBrowser(): boolean {
-  return window.confirm('Open a new image? Your edits to the current image will be lost.');
+  return window.confirm(replaceConfirmation(usePreferencesStore.getState().keepSettingsOnOpen));
+}
+
+/**
+ * The question asked before an edited image is replaced. It says what will
+ * happen to the settings, so the choice is visible before it is confirmed (#67).
+ */
+export function replaceConfirmation(keepSettings: boolean): string {
+  const lost = 'Open a new image? Your edits to the current image will be lost.';
+  return keepSettings
+    ? `${lost}\n\nThe new image will start with the current settings; its crop and size start fresh. ("Keep Settings for the Next Image" in the File menu is on.)`
+    : `${lost}\n\nThe new image will start with default settings. (Turn on "Keep Settings for the Next Image" in the File menu to carry them over.)`;
 }
 
 /**

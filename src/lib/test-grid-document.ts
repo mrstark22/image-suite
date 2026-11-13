@@ -34,6 +34,8 @@ export async function openTestGridRaster(
   const info = await pipeline.putSource(sourceId, Comlink.transfer(buffer, [buffer]), width, height);
   useDocumentStore.getState().open(
     { sourceId, file: null, name, ...info, fileDpi: null },
-    mmPerPxFromDpi(options.dpi)
+    mmPerPxFromDpi(options.dpi),
+    // A calibration card is burned exactly as generated: it never takes the previous image's settings.
+    'defaults'
   );
 }

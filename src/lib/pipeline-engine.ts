@@ -1,7 +1,7 @@
 import type { ImageDocument } from '../types/document';
 import type { RenderOutput, RenderTarget, Stage } from '../types/render';
 import type { RustWasmEngine } from '../wasm/wasm-bridge';
-import { cropRectOf } from './document-size';
+import { sourceCropOf } from './document-size';
 import { pxPerMmOf, sourceStageKey } from './render-target';
 import { toRunParams } from './run-params';
 
@@ -13,7 +13,14 @@ export const MAX_SOURCE_PIXELS = 150_000_000;
 
 /** Thrown when an image is larger than this device or the pipeline can hold. */
 export class TooLargeError extends Error {
-  constructor(message: string) {
+  /**
+   * `size` is the image's pixel size, when the image itself is what did not
+   * fit: the user is then offered a reduced open (#69).
+   */
+  constructor(
+    message: string,
+    public readonly size: { widthPx: number; heightPx: number } | null = null
+  ) {
     super(message);
     this.name = 'TooLargeError';
   }
@@ -61,21 +68,25 @@ export class PipelineEngine {
 
   /**
    * Reserves memory for a `width` x `height` source, to be filled with
-   * `writeSourceRows`. Releases any previous source first. Throws a
+   * `writeSourceRows`. Releases any previous source first, unless the image
+   * is over the ceiling. Throws a
    * `TooLargeError` when the image is over the ceiling or the memory cannot
    * be had.
    */
   beginSource(sourceId: string, width: number, height: number): void {
-    this.releaseSource();
+    // The ceiling is checked first: an image refused for its size alone leaves the source held untouched.
     if (width * height > MAX_SOURCE_PIXELS) {
       throw new TooLargeError(
-        `This image is ${width} × ${height} px (${megapixels(width, height)} MP). Images over ${MAX_SOURCE_PIXELS / 1e6} MP are not opened.`
+        `This image is ${width} × ${height} px (${megapixels(width, height)} MP). Images over ${MAX_SOURCE_PIXELS / 1e6} MP are not opened at full size.`,
+        { widthPx: width, heightPx: height }
       );
     }
+    this.releaseSource();
     const ptr = this.core.wasm.try_allocate(width * height * 4);
     if (!ptr) {
       throw new TooLargeError(
-        `Not enough memory on this device to open a ${width} × ${height} px image (${megapixels(width, height)} MP).`
+        `Not enough memory on this device to open a ${width} × ${height} px image (${megapixels(width, height)} MP).`,
+        { widthPx: width, heightPx: height }
       );
     }
     this.source = { sourceId, ptr, width, height };
@@ -104,6 +115,23 @@ export class PipelineEngine {
     }
     this.beginSource(sourceId, width, height);
     return { hasAlpha: this.writeSourceRows(0, new Uint8Array(rgba), height) };
+  }
+
+  /** Bytes of WASM memory the source holds; 0 without one. */
+  sourceBytes(): number {
+    return this.source ? this.source.width * this.source.height * 4 : 0;
+  }
+
+  /**
+   * A copy of the source's pixels, outside WASM memory, with its size; null
+   * without a source. For a source that has no file to decode again, when
+   * the instance is replaced (#69).
+   */
+  copySource(): { pixels: ArrayBuffer; width: number; height: number } | null {
+    const src = this.source;
+    if (!src) return null;
+    const pixels = new Uint8Array(this.core.wasm.memory.buffer, src.ptr, src.width * src.height * 4).slice().buffer;
+    return { pixels, width: src.width, height: src.height };
   }
 
   /** Frees the source and the cached render. */
@@ -252,30 +280,37 @@ export class PipelineEngine {
     }
   }
 
-  /** Steps 1 to 3 into a new buffer the caller frees. */
+  /**
+   * Steps 1 to 3 into a new buffer the caller frees. The crop is read from
+   * the source as the file has it, and the result is then turned by the
+   * document's rotation (#65): an exact rearrangement of the pixels.
+   */
   private prepare(doc: ImageDocument, target: RenderTarget): number {
     const src = this.requireSource(doc.source.sourceId);
-    const crop = cropRectOf(doc);
-    const ptr = this.core.wasm.prepare_source(
-      src.ptr,
-      src.width,
-      src.height,
-      crop.x,
-      crop.y,
-      crop.width,
-      crop.height,
-      target.widthPx,
-      target.heightPx
-    );
-    if (!ptr) {
-      if (crop.x + crop.width > src.width || crop.y + crop.height > src.height) {
-        throw new Error('The crop lies outside the image.');
-      }
-      throw new TooLargeError(
+    const wasm = this.core.wasm;
+    const crop = sourceCropOf(doc);
+    const turns = doc.steps.rotation / 90;
+    // Before the turn, a quarter-turned target is the other way up.
+    const [w, h] = turns % 2 === 1 ? [target.heightPx, target.widthPx] : [target.widthPx, target.heightPx];
+    const tooLarge = () =>
+      new TooLargeError(
         `Not enough memory on this device to render ${target.widthPx} × ${target.heightPx} px (${megapixels(target.widthPx, target.heightPx)} MP).`
       );
+    const ptr = wasm.prepare_source(src.ptr, src.width, src.height, crop.x, crop.y, crop.width, crop.height, w, h);
+    if (!ptr) {
+      if (crop.x < 0 || crop.y < 0 || crop.x + crop.width > src.width || crop.y + crop.height > src.height) {
+        throw new Error('The crop lies outside the image.');
+      }
+      throw tooLarge();
     }
-    return ptr;
+    if (turns === 0) return ptr;
+    try {
+      const turned = wasm.rotate_quarter_turns(ptr, w, h, turns);
+      if (!turned) throw tooLarge();
+      return turned;
+    } finally {
+      wasm.deallocate(ptr, w * h * 4);
+    }
   }
 
   private allocate(bytes: number, target: RenderTarget): number {
