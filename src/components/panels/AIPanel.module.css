@@ -39,3 +39,24 @@
   gap: var(--space-2);
   margin-top: var(--space-3);
 }
+
+/* Phone: the primary action and Cancel side by side, under the switch. */
+.actionsRow {
+  flex-direction: row;
+  margin-top: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+
+.actionsRow > * {
+  flex: 1;
+}
+
+@media (max-width: 599px) {
+  .canvas {
+    max-height: 200px;
+  }
+
+  .intro {
+    margin: var(--space-3) 0 0;
+  }
+}

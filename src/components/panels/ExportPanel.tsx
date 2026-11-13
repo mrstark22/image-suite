@@ -20,6 +20,7 @@ import { Progress } from '../shared/Progress';
 import { Section } from '../shared/Section';
 import { Select, type SelectOption } from '../shared/Select';
 import { StatusMessage } from '../shared/StatusMessage';
+import { useLayout } from '../shared/breakpoints';
 import styles from './Panels.module.css';
 
 const GREY_FORMATS: SelectOption<RasterFormat>[] = [
@@ -73,6 +74,7 @@ export const ExportPanel: React.FC = () => {
   const openManager = profiles.openManager;
   const setSizeDialogOpen = useUIStore((s) => s.setSizeDialogOpen);
   const openCalibrate = useProfilesStore((s) => s.openCalibrate);
+  const isPhone = useLayout() === 'phone';
 
   const [format, setFormat] = useState<RasterFormat>('png');
   const [isDone, setIsDone] = useState(false);
@@ -153,9 +155,8 @@ export const ExportPanel: React.FC = () => {
     download([JSON.stringify(recipe, null, 2)], 'application/json', `${baseName}-recipe.imgsuite`);
   };
 
-  return (
-    <div className={styles.panel}>
-      {/* Physical size, from the document */}
+  // Physical size, from the document. A phone shows it after the export buttons, so they are in view.
+  const physicalSection = (
       <Section title="Physical Size & Resolution">
         {doc.sizeOrigin === 'assumed' && size && (
           <StatusMessage tone="warning" className={styles.sizeAssumedNotice}>
@@ -202,6 +203,11 @@ export const ExportPanel: React.FC = () => {
           </div>
         )}
       </Section>
+  );
+
+  return (
+    <div className={styles.panel}>
+      {!isPhone && physicalSection}
 
       {job === 'photo' && (
         <Section title="Image File">
@@ -212,13 +218,6 @@ export const ExportPanel: React.FC = () => {
             options={dithered ? DOT_FORMATS : GREY_FORMATS}
             onChange={setFormat}
           />
-          {dithered && plan && (
-            <div className={`${styles.controlNote} ${styles.stackGap}`}>
-              One pixel per laser dot: {plan.target.widthPx} × {plan.target.heightPx} at {plan.dpi.toFixed(1)} DPI (
-              {plan.widthMm.toFixed(1)} × {plan.heightMm.toFixed(1)} mm). In LightBurn, use Pass-Through and do not
-              resize the image, so it burns dot for dot.
-            </div>
-          )}
           <Button
             variant="primary"
             className={styles.stackGap}
@@ -243,6 +242,13 @@ export const ExportPanel: React.FC = () => {
             <StatusMessage tone="error" className={styles.stackGap}>
               Export failed: {error}
             </StatusMessage>
+          )}
+          {dithered && plan && (
+            <div className={`${styles.controlNote} ${styles.stackGap}`}>
+              One pixel per laser dot: {plan.target.widthPx} × {plan.target.heightPx} at {plan.dpi.toFixed(1)} DPI (
+              {plan.widthMm.toFixed(1)} × {plan.heightMm.toFixed(1)} mm). In LightBurn, use Pass-Through and do not
+              resize the image, so it burns dot for dot.
+            </div>
           )}
         </Section>
       )}
@@ -303,6 +309,8 @@ export const ExportPanel: React.FC = () => {
           <ReliefExports />
         </>
       )}
+
+      {isPhone && physicalSection}
 
       {/* What to set in LightBurn for this file */}
       <Section title="LightBurn Settings">

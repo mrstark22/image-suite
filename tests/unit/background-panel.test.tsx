@@ -10,7 +10,7 @@ import { useDocumentStore } from '../../src/store/documentStore';
 import { setPipeline, type Pipeline } from '../../src/lib/pipeline-client';
 import type { BackgroundPreview } from '../../src/types/worker-messages';
 import { decodedImage, resetStores } from '../helpers/documents';
-import { button, mount, one, settle, type Mounted } from '../helpers/dom';
+import { button, fakeViewport, mount, one, settle, type Mounted } from '../helpers/dom';
 
 let mounted: Mounted | null = null;
 const store = () => useDocumentStore.getState();
@@ -75,5 +75,22 @@ describe('Background panel', () => {
       label: 'Downloading model, 45.3 of 90.7 MB',
       fraction: 0.5,
     });
+  });
+
+  it('on a phone the view switch and Apply come first, before the comparison and the explanation', async () => {
+    fakeViewport(412, true);
+    fakePipeline(async () => ({ ...PREVIEW, original: PREVIEW.original.slice(0), alpha: PREVIEW.alpha.slice(0) }));
+    mounted = mount(<AIPanel />);
+    const { container } = mounted;
+    const intro = () => [...container.querySelectorAll('p')].find((p) => /does not burn/.test(p.textContent!))!;
+    const before = (a: Node, b: Node) => (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+    expect(before(button(container, /^Remove Background/), intro())).toBe(true);
+    await settle(() => button(container, /^Remove Background/).click());
+    const apply = button(container, /Apply Removal/);
+    const removed = button(container, /Removed area/);
+    const canvas = one(container, 'canvas');
+    expect(before(removed, apply)).toBe(true);
+    expect(before(apply, canvas)).toBe(true);
+    expect(before(canvas, intro())).toBe(true);
   });
 });
