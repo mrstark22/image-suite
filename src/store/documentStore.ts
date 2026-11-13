@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { DocumentUpdate, GestureToken, ImageDocument } from '../types/document';
-import { createDocument, sameValue } from '../lib/document';
+import { carrySettings, createDocument, sameValue } from '../lib/document';
+import { usePreferencesStore } from './preferencesStore';
 import { decodeImageFile, type LoadedSource } from '../lib/image-loader';
 
 /** Most undo entries kept. */
@@ -47,8 +48,12 @@ export interface DocumentState {
   /**
    * Opens a source the pipeline already holds as a new document. The size
    * starts as not set unless `mmPerPx` is given (as for a generated test grid).
+   * The settings start at the defaults, or at the previous image's when the
+   * "keep settings" preference is on; the crop, the size and the history
+   * never carry over. A generated image that must be burned exactly as made
+   * (a calibration card) passes `'defaults'`.
    */
-  open(source: LoadedSource, mmPerPx?: number | null): void;
+  open(source: LoadedSource, mmPerPx?: number | null, settings?: 'preference' | 'defaults'): void;
   /** Closes the document. The schedulers' connection releases the worker's copy of its source. */
   close(): void;
 }
@@ -227,7 +232,7 @@ export const useDocumentStore = create<DocumentState>((set, get) => {
       get().open(image);
     },
 
-    open: (image, mmPerPx = null) => {
+    open: (image, mmPerPx = null, settings = 'preference') => {
       loadSequence++;
       const id = `doc-${++nextDocumentId}`;
       const created = createDocument(
@@ -243,7 +248,12 @@ export const useDocumentStore = create<DocumentState>((set, get) => {
         },
         mmPerPx
       );
-      replace(openDefaults ? openDefaults(created) : created);
+      const fresh = openDefaults ? openDefaults(created) : created;
+      // With "Keep settings when opening a new image" on, the new document is
+      // built from the previous one's settings instead of the defaults (#67).
+      const previous = get().doc;
+      const keep = settings === 'preference' && usePreferencesStore.getState().keepSettingsOnOpen && previous !== null;
+      replace(keep ? carrySettings(previous, fresh) : fresh);
     },
 
     close: () => {

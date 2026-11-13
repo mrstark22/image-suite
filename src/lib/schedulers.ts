@@ -120,7 +120,7 @@ export function createSchedulers(pipeline: () => Pipeline): Schedulers {
   });
 
   const relief = new RenderScheduler({
-    select: (doc: ImageDocument) => [doc.source, doc.steps.crop, doc.depth, render().backgroundRemoval] as const,
+    select: (doc: ImageDocument) => [doc.source, doc.steps.rotation, doc.steps.crop, doc.depth, render().backgroundRemoval] as const,
     enabled: () => showsRelief(ui().job) && notExporting(),
     buildRequest: renderRequest,
     run: withSpinner((req: DocumentRenderRequest) => pipeline().renderRelief(req)),

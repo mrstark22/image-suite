@@ -2,6 +2,7 @@
  * The menus (#53) contain only actions that work: every item, run where it
  * is enabled, changes something; items that would do nothing are disabled.
  */
+import { usePreferencesStore } from '../../src/store/preferencesStore';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { MENUS, itemShortcut, type MenuItem } from '../../src/lib/menus';
 import { commandFor, runCommand } from '../../src/lib/shortcuts';
@@ -79,6 +80,7 @@ const effects: Record<string, { setup?: () => void; changed: () => boolean }> = 
   },
   'guide-oval': { changed: () => view().substrateMask === 'oval' },
   theme: { changed: () => ui().theme === 'light' },
+  'keep-settings': { changed: () => usePreferencesStore.getState().keepSettingsOnOpen },
   shortcuts: { changed: () => ui().isShortcutsDialogOpen },
 };
 
@@ -135,7 +137,7 @@ describe('menus', () => {
 
   it('with no image open, only the items that need none are enabled', () => {
     const enabled = items.filter((i) => i.enabled()).map((i) => i.id).sort();
-    expect(enabled).toEqual(['open', 'shortcuts', 'test-card', 'theme']);
+    expect(enabled).toEqual(['keep-settings', 'open', 'shortcuts', 'test-card', 'theme']);
   });
 
   it('Split View works in the vector job, whose canvas shows the adjusted image the trace reads (#23)', () => {

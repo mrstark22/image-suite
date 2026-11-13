@@ -1,6 +1,7 @@
 import { useDocumentStore, hasUnsavedEdits } from '../store/documentStore';
 import { useRenderStore } from '../store/renderStore';
 import { useUIStore } from '../store/uiStore';
+import { usePreferencesStore } from '../store/preferencesStore';
 import type { LoadedSource } from './image-loader';
 
 /** Message shown when more than one file is dropped or chosen at once. */
@@ -37,7 +38,18 @@ export async function openImageFiles(
 
 /** Asks the user, in the browser, whether to discard edits to the current image. */
 export function confirmReplaceInBrowser(): boolean {
-  return window.confirm('Open a new image? Your edits to the current image will be lost.');
+  return window.confirm(replaceConfirmation(usePreferencesStore.getState().keepSettingsOnOpen));
+}
+
+/**
+ * The question asked before an edited image is replaced. It says what will
+ * happen to the settings, so the choice is visible before it is confirmed (#67).
+ */
+export function replaceConfirmation(keepSettings: boolean): string {
+  const lost = 'Open a new image? Your edits to the current image will be lost.';
+  return keepSettings
+    ? `${lost}\n\nThe new image will start with the current settings; its crop and size start fresh. ("Keep Settings for the Next Image" in the File menu is on.)`
+    : `${lost}\n\nThe new image will start with default settings. (Turn on "Keep Settings for the Next Image" in the File menu to carry them over.)`;
 }
 
 /**

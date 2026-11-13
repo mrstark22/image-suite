@@ -1,7 +1,7 @@
 import type { ImageDocument } from '../types/document';
 import type { RenderOutput, RenderTarget, Stage } from '../types/render';
 import type { RustWasmEngine } from '../wasm/wasm-bridge';
-import { cropRectOf } from './document-size';
+import { sourceCropOf } from './document-size';
 import { pxPerMmOf, sourceStageKey } from './render-target';
 import { toRunParams } from './run-params';
 
@@ -252,30 +252,37 @@ export class PipelineEngine {
     }
   }
 
-  /** Steps 1 to 3 into a new buffer the caller frees. */
+  /**
+   * Steps 1 to 3 into a new buffer the caller frees. The crop is read from
+   * the source as the file has it, and the result is then turned by the
+   * document's rotation (#65): an exact rearrangement of the pixels.
+   */
   private prepare(doc: ImageDocument, target: RenderTarget): number {
     const src = this.requireSource(doc.source.sourceId);
-    const crop = cropRectOf(doc);
-    const ptr = this.core.wasm.prepare_source(
-      src.ptr,
-      src.width,
-      src.height,
-      crop.x,
-      crop.y,
-      crop.width,
-      crop.height,
-      target.widthPx,
-      target.heightPx
-    );
-    if (!ptr) {
-      if (crop.x + crop.width > src.width || crop.y + crop.height > src.height) {
-        throw new Error('The crop lies outside the image.');
-      }
-      throw new TooLargeError(
+    const wasm = this.core.wasm;
+    const crop = sourceCropOf(doc);
+    const turns = doc.steps.rotation / 90;
+    // Before the turn, a quarter-turned target is the other way up.
+    const [w, h] = turns % 2 === 1 ? [target.heightPx, target.widthPx] : [target.widthPx, target.heightPx];
+    const tooLarge = () =>
+      new TooLargeError(
         `Not enough memory on this device to render ${target.widthPx} × ${target.heightPx} px (${megapixels(target.widthPx, target.heightPx)} MP).`
       );
+    const ptr = wasm.prepare_source(src.ptr, src.width, src.height, crop.x, crop.y, crop.width, crop.height, w, h);
+    if (!ptr) {
+      if (crop.x < 0 || crop.y < 0 || crop.x + crop.width > src.width || crop.y + crop.height > src.height) {
+        throw new Error('The crop lies outside the image.');
+      }
+      throw tooLarge();
     }
-    return ptr;
+    if (turns === 0) return ptr;
+    try {
+      const turned = wasm.rotate_quarter_turns(ptr, w, h, turns);
+      if (!turned) throw tooLarge();
+      return turned;
+    } finally {
+      wasm.deallocate(ptr, w * h * 4);
+    }
   }
 
   private allocate(bytes: number, target: RenderTarget): number {

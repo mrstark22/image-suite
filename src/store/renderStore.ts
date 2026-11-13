@@ -347,7 +347,11 @@ useDocumentStore.subscribe((state, prev) => {
     return;
   }
 
-  if (doc.source !== before.source || !sameValue(doc.steps.crop, before.steps.crop)) {
+  if (
+    doc.source !== before.source ||
+    doc.steps.rotation !== before.steps.rotation ||
+    !sameValue(doc.steps.crop, before.steps.crop)
+  ) {
     useRenderStore.setState({ depthHeightMap: null });
   }
 

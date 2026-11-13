@@ -7,6 +7,7 @@
 import { useDocumentStore } from '../store/documentStore';
 import { useRenderStore } from '../store/renderStore';
 import { useUIStore } from '../store/uiStore';
+import { usePreferencesStore } from '../store/preferencesStore';
 import { useViewStore, type SubstrateMask } from '../store/viewStore';
 import { resetAll } from './document';
 import { canvasIsFlat, isAvailable, menuShortcut, runCommand, type ShortcutCommand } from './shortcuts';
@@ -35,6 +36,7 @@ export interface Menu {
 const docs = () => useDocumentStore.getState();
 const ui = () => useUIStore.getState();
 const view = () => useViewStore.getState();
+const preferences = () => usePreferencesStore.getState();
 const hasDoc = () => docs().doc !== null;
 
 /** An item that runs a shortcut command, enabled when the command applies and `also` holds. */
@@ -61,6 +63,13 @@ export const MENUS: readonly Menu[] = [
       [
         commandItem('open', 'Open Image…', 'open'),
         { id: 'size', label: 'Physical Size…', enabled: hasDoc, run: () => ui().setSizeDialogOpen(true) },
+        {
+          id: 'keep-settings',
+          label: 'Keep Settings for the Next Image',
+          enabled: () => true,
+          checked: () => preferences().keepSettingsOnOpen,
+          run: () => preferences().setKeepSettingsOnOpen(!preferences().keepSettingsOnOpen),
+        },
       ],
       [
         commandItem('export', 'Go to Export', 'export'),

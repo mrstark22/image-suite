@@ -1,10 +1,10 @@
 import React from 'react';
-import { FolderOpen, Crop, X, Maximize } from 'lucide-react';
+import { FolderOpen, Crop, X, Maximize, RotateCcw, RotateCw } from 'lucide-react';
 import { useDocumentStore } from '../../store/documentStore';
 import { useViewStore } from '../../store/viewStore';
 import { useUIStore } from '../../store/uiStore';
 import { openImagePicker } from '../../lib/open-image';
-import { setCrop } from '../../lib/document';
+import { rotate, setCrop } from '../../lib/document';
 import { cropRectOf, dpiOf, fromMm, physicalSize } from '../../lib/document-size';
 import { Button } from '../shared/Button';
 import styles from './Panels.module.css';
@@ -97,6 +97,23 @@ export const CropStepPanel: React.FC = () => {
         </Button>
         <div className={`${styles.controlNote} ${styles.stackGap}`}>
           The physical size follows the crop: its scale (mm per pixel) is kept.
+        </div>
+      </div>
+      <div className={styles.section}>
+        <div className={styles.readoutBox}>
+          <div className={styles.readoutRow}>
+            <span>Turned</span>
+            <strong>{doc.steps.rotation === 0 ? 'Not turned' : `${doc.steps.rotation}° clockwise`}</strong>
+          </div>
+        </div>
+        <Button className={styles.stackGap} icon={<RotateCcw size={14} />} onClick={() => edit(rotate('ccw'))}>
+          Turn Left 90°
+        </Button>
+        <Button className={styles.stackGap} icon={<RotateCw size={14} />} onClick={() => edit(rotate('cw'))}>
+          Turn Right 90°
+        </Button>
+        <div className={`${styles.controlNote} ${styles.stackGap}`}>
+          For a scan or photo that came in sideways. The crop turns with the image, and width and height swap.
         </div>
       </div>
     </div>

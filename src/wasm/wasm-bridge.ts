@@ -57,6 +57,8 @@ export interface WasmExports {
   /** Like `allocate`, but returns 0 instead of trapping when memory runs out. */
   try_allocate: (size: number) => number;
   deallocate: (ptr: number, size: number) => void;
+  /** Turns an RGBA8 image clockwise by quarter turns into a new buffer, or returns 0. */
+  rotate_quarter_turns: (src: number, width: number, height: number, turns: number) => number;
   /** Crop, flatten onto white and resample in linear light; returns a new buffer or 0. */
   prepare_source: (
     src: number,
