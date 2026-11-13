@@ -93,11 +93,11 @@ describe('flows', () => {
   });
 
   it('the 3D orbit view is shown only in the relief job, and never while cropping (review of #77)', () => {
-    expect(showsOrbitView('relief', '3d-interactive', 'pan')).toBe(true);
+    expect(showsOrbitView('relief', '3d', 'pan')).toBe(true);
     // The crop box is drawn on the flat relief, so the Crop step works in this view too.
-    expect(showsOrbitView('relief', '3d-interactive', 'crop')).toBe(false);
-    expect(showsOrbitView('relief', '3d-shaded', 'pan')).toBe(false);
-    expect(showsOrbitView('photo', '3d-interactive', 'pan')).toBe(false);
-    expect(showsOrbitView('vector', '3d-interactive', 'pan')).toBe(false);
+    expect(showsOrbitView('relief', '3d', 'crop')).toBe(false);
+    expect(showsOrbitView('relief', 'heightmap', 'pan')).toBe(false);
+    expect(showsOrbitView('photo', '3d', 'pan')).toBe(false);
+    expect(showsOrbitView('vector', '3d', 'pan')).toBe(false);
   });
 });

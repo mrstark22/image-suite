@@ -1,53 +1,249 @@
 import React, { useEffect, useRef, useState, useCallback, useId } from 'react';
-import { RotateCcw, Box, Compass, Layers, Grid } from 'lucide-react';
+import { RotateCcw, Box, Compass } from 'lucide-react';
 import { useDocumentStore } from '../../store/documentStore';
 import { DEFAULT_DEPTH } from '../../lib/document';
 import { ActivePointers, type PointerPair } from '../../lib/gestures';
 import { DEFAULT_CAMERA, cameraForKey, dollyBy, orbitBy, panBy, pinchCamera, type OrbitCamera } from '../../lib/orbit-camera';
+import type { ReliefMaterial } from '../../types/depth';
 import styles from './DepthViewer3D.module.css';
 
 interface DepthViewer3DProps {
+  /** The heightmap: `width * height` 16-bit heights, 0 deepest to 65535 the surface. */
   depthBuffer: ArrayBuffer | null;
   width: number;
   height: number;
+  /** The relief's physical size, so it is drawn in true proportion to its depth. */
+  sizeMm?: { widthMm: number; heightMm: number };
 }
 
-const GRID_SIZE = 360; // 360x360 grid = 130,321 vertices for ultra-smooth silhouette curvature
+/** Grid vertices along each side of the mesh. */
+const GRID_SIZE = 360;
+/** Height of the light above the surface, degrees: low enough to model the relief. */
+const LIGHT_ELEVATION_DEG = 35;
+const MATERIAL_CODE: Record<ReliefMaterial, number> = { walnut: 0, brass: 1, slate: 2, grayscale: 3 };
 
-export const DepthViewer3D: React.FC<DepthViewer3DProps> = ({
-  depthBuffer,
-  width,
-  height,
-}) => {
+const VS = `
+attribute vec2 a_uv;
+uniform mat4 u_mvp;
+uniform sampler2D u_heightMap;
+uniform vec2 u_meshHalf;     // half the mesh's width and height, world units
+uniform float u_depth;       // world depth of the deepest point (view exaggeration included)
+varying vec2 v_uv;
+varying float v_height;
+void main() {
+  v_uv = a_uv;
+  float h = texture2D(u_heightMap, a_uv).r;
+  v_height = h;
+  vec3 pos = vec3((a_uv.x * 2.0 - 1.0) * u_meshHalf.x, (1.0 - a_uv.y * 2.0) * u_meshHalf.y, (h - 1.0) * u_depth);
+  gl_Position = u_mvp * vec4(pos, 1.0);
+}`;
+
+const FS = `
+precision highp float;
+varying vec2 v_uv;
+varying float v_height;
+uniform sampler2D u_heightMap;
+uniform vec2 u_texel;        // one heightmap pixel, in uv
+uniform vec2 u_texelWorld;   // one heightmap pixel, in world units
+uniform float u_depth;
+uniform vec3 u_lightDir;
+uniform int u_material;
+void main() {
+  float zL = texture2D(u_heightMap, v_uv - vec2(u_texel.x, 0.0)).r;
+  float zR = texture2D(u_heightMap, v_uv + vec2(u_texel.x, 0.0)).r;
+  float zU = texture2D(u_heightMap, v_uv - vec2(0.0, u_texel.y)).r;
+  float zD = texture2D(u_heightMap, v_uv + vec2(0.0, u_texel.y)).r;
+  // World slopes: uv y runs down the image, world y up.
+  float dzdx = (zR - zL) * u_depth / (2.0 * u_texelWorld.x);
+  float dzdy = (zU - zD) * u_depth / (2.0 * u_texelWorld.y);
+  vec3 N = normalize(vec3(-dzdx, -dzdy, 1.0));
+  vec3 L = normalize(u_lightDir);
+  vec3 H = normalize(L + vec3(0.0, 0.0, 1.0));
+  float diffuse = max(dot(N, L), 0.0);
+  float spec = pow(max(dot(N, H), 0.0), 32.0);
+  vec3 base;
+  float specular;
+  if (u_material == 0) {
+    base = mix(vec3(0.36, 0.22, 0.12), vec3(0.74, 0.50, 0.28), 0.35 + 0.65 * v_height);
+    specular = 0.15;
+  } else if (u_material == 1) {
+    base = vec3(0.82, 0.68, 0.32);
+    specular = 0.6;
+  } else if (u_material == 2) {
+    base = vec3(0.34, 0.38, 0.43);
+    specular = 0.2;
+  } else {
+    base = vec3(0.72);
+    specular = 0.15;
+  }
+  vec3 color = base * (0.32 + 0.8 * diffuse) + vec3(spec * specular);
+  gl_FragColor = vec4(color, 1.0);
+}`;
+
+/** Everything the view made on the GPU, released together. */
+interface GpuScene {
+  gl: WebGLRenderingContext | WebGL2RenderingContext;
+  program: WebGLProgram;
+  shaders: WebGLShader[];
+  buffers: WebGLBuffer[];
+  texture: WebGLTexture;
+  indexCount: number;
+  isWebGL2: boolean;
+  /** True when 32-bit float textures can be filtered linearly. */
+  floatLinear: boolean;
+  uniforms: Record<string, WebGLUniformLocation | null>;
+}
+
+/** Creates the scene on `canvas`, or returns the reason it cannot. */
+function createScene(canvas: HTMLCanvasElement): GpuScene | string {
+  const attrs = { antialias: true, alpha: false, depth: true };
+  let gl: WebGLRenderingContext | WebGL2RenderingContext | null = canvas.getContext('webgl2', attrs) as WebGL2RenderingContext | null;
+  const isWebGL2 = gl !== null;
+  if (!gl) {
+    gl = canvas.getContext('webgl', attrs) as WebGLRenderingContext | null;
+    if (gl && !gl.getExtension('OES_element_index_uint')) return 'This browser cannot draw the 3D view (WebGL without 32-bit indices).';
+  }
+  if (!gl) return 'This browser cannot draw the 3D view (no WebGL). The Heightmap view still shows the result.';
+  const floatLinear = isWebGL2 && gl.getExtension('OES_texture_float_linear') !== null;
+
+  const shaders: WebGLShader[] = [];
+  const compile = (type: number, src: string): WebGLShader | null => {
+    const shader = gl!.createShader(type);
+    if (!shader) return null;
+    shaders.push(shader);
+    gl!.shaderSource(shader, src);
+    gl!.compileShader(shader);
+    return gl!.getShaderParameter(shader, gl!.COMPILE_STATUS) ? shader : null;
+  };
+  const vs = compile(gl.VERTEX_SHADER, VS);
+  const fs = compile(gl.FRAGMENT_SHADER, FS);
+  const program = gl.createProgram();
+  const fail = (why: string) => {
+    shaders.forEach((s) => gl!.deleteShader(s));
+    if (program) gl!.deleteProgram(program);
+    gl!.getExtension('WEBGL_lose_context')?.loseContext();
+    return why;
+  };
+  if (!vs || !fs || !program) return fail('The 3D view could not start its shaders.');
+  gl.attachShader(program, vs);
+  gl.attachShader(program, fs);
+  gl.linkProgram(program);
+  if (!gl.getProgramParameter(program, gl.LINK_STATUS)) return fail('The 3D view could not start its shaders.');
+
+  const uvs = new Float32Array((GRID_SIZE + 1) * (GRID_SIZE + 1) * 2);
+  let k = 0;
+  for (let y = 0; y <= GRID_SIZE; y++) {
+    for (let x = 0; x <= GRID_SIZE; x++) {
+      uvs[k++] = x / GRID_SIZE;
+      uvs[k++] = y / GRID_SIZE;
+    }
+  }
+  const indices = new Uint32Array(GRID_SIZE * GRID_SIZE * 6);
+  k = 0;
+  for (let y = 0; y < GRID_SIZE; y++) {
+    for (let x = 0; x < GRID_SIZE; x++) {
+      const i0 = y * (GRID_SIZE + 1) + x;
+      const i2 = i0 + GRID_SIZE + 1;
+      indices.set([i0, i2, i0 + 1, i0 + 1, i2, i2 + 1], k);
+      k += 6;
+    }
+  }
+  const uvBuffer = gl.createBuffer()!;
+  gl.bindBuffer(gl.ARRAY_BUFFER, uvBuffer);
+  gl.bufferData(gl.ARRAY_BUFFER, uvs, gl.STATIC_DRAW);
+  const indexBuffer = gl.createBuffer()!;
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer);
+  gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indices, gl.STATIC_DRAW);
+
+  gl.useProgram(program);
+  const aUv = gl.getAttribLocation(program, 'a_uv');
+  gl.enableVertexAttribArray(aUv);
+  gl.vertexAttribPointer(aUv, 2, gl.FLOAT, false, 0, 0);
+
+  const texture = gl.createTexture()!;
+  gl.bindTexture(gl.TEXTURE_2D, texture);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.enable(gl.DEPTH_TEST);
+  gl.depthFunc(gl.LEQUAL);
+
+  const uniforms: Record<string, WebGLUniformLocation | null> = {};
+  for (const name of ['u_mvp', 'u_heightMap', 'u_meshHalf', 'u_depth', 'u_texel', 'u_texelWorld', 'u_lightDir', 'u_material']) {
+    uniforms[name] = gl.getUniformLocation(program, name);
+  }
+  return {
+    gl,
+    program,
+    shaders,
+    buffers: [uvBuffer, indexBuffer],
+    texture,
+    indexCount: indices.length,
+    isWebGL2,
+    floatLinear,
+    uniforms,
+  };
+}
+
+/** Deletes everything in `scene` and gives the context back to the browser (#48). */
+function releaseScene(scene: GpuScene): void {
+  const { gl } = scene;
+  gl.deleteTexture(scene.texture);
+  scene.buffers.forEach((b) => gl.deleteBuffer(b));
+  scene.shaders.forEach((s) => {
+    gl.detachShader(scene.program, s);
+    gl.deleteShader(s);
+  });
+  gl.deleteProgram(scene.program);
+  gl.getExtension('WEBGL_lose_context')?.loseContext();
+}
+
+/** Uploads the heightmap as a filterable texture (#48: R32F only where linear filtering of it is supported). */
+function uploadHeights(scene: GpuScene, heights: Uint16Array, width: number, height: number): void {
+  const { gl } = scene;
+  gl.bindTexture(gl.TEXTURE_2D, scene.texture);
+  gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+  if (scene.isWebGL2) {
+    const gl2 = gl as WebGL2RenderingContext;
+    const data = new Float32Array(heights.length);
+    for (let i = 0; i < heights.length; i++) data[i] = heights[i] / 65535;
+    // R16F is always filterable in WebGL 2; R32F needs OES_texture_float_linear.
+    const format = scene.floatLinear ? gl2.R32F : gl2.R16F;
+    gl2.texImage2D(gl2.TEXTURE_2D, 0, format, width, height, 0, gl2.RED, gl2.FLOAT, data);
+  } else {
+    const data = new Uint8Array(heights.length);
+    for (let i = 0; i < heights.length; i++) data[i] = heights[i] >> 8;
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.LUMINANCE, width, height, 0, gl.LUMINANCE, gl.UNSIGNED_BYTE, data);
+  }
+}
+
+/**
+ * The relief as a 3D surface. It draws the heightmap it is given, the one the
+ * export writes, in true proportion: the image's physical size across and
+ * the maximum depth down, times the view-only exaggeration. It draws only
+ * when something changes, and releases its GPU resources and context when it
+ * closes (#48).
+ */
+export const DepthViewer3D: React.FC<DepthViewer3DProps> = ({ depthBuffer, width, height, sizeMm }) => {
+  const canvasHostRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const glRef = useRef<WebGLRenderingContext | WebGL2RenderingContext | null>(null);
-  const programRef = useRef<WebGLProgram | null>(null);
-  const uniformsRef = useRef<Record<string, WebGLUniformLocation>>({});
-  const textureRef = useRef<WebGLTexture | null>(null);
-  const isWebGL2Ref = useRef<boolean>(false);
-  const triIndexBufferRef = useRef<WebGLBuffer | null>(null);
-  const wireIndexBufferRef = useRef<WebGLBuffer | null>(null);
-  const triCountRef = useRef<number>(0);
-  const wireCountRef = useRef<number>(0);
-  const animFrameRef = useRef<number | null>(null);
-  const needsRenderRef = useRef<boolean>(true);
+  const sceneRef = useRef<GpuScene | null>(null);
+  const frameRef = useRef<number | null>(null);
+  const drawRef = useRef<() => void>(() => undefined);
+  const [glError, setGlError] = useState<string | null>(null);
 
   const depthConfig = useDocumentStore((s) => s.doc?.depth ?? DEFAULT_DEPTH);
+  const { material, lightAngle, exaggeration, maxDepthMm } = depthConfig;
 
-  // Camera Orbit State
   const [camera, setCamera] = useState<OrbitCamera>(DEFAULT_CAMERA);
   // The camera as last moved with the keys: what screen readers are told. A
   // drag or pinch changes the camera on every frame, and announcing each one
   // would flood the reader, so pointer moves are not announced (review of #84).
   const [announcedCamera, setAnnouncedCamera] = useState<OrbitCamera>(DEFAULT_CAMERA);
-
-  // The view takes focus, and then the arrow keys orbit and + and - zoom (#81).
   const [isFocused, setIsFocused] = useState(false);
   const keysHintId = useId();
-
-  const [showToolpaths, setShowToolpaths] = useState(false);
-  const [wireframeMode, setWireframeMode] = useState(false);
 
   // The pointers down on the view and the gesture they make (#54). Pointer
   // capture keeps a drag going when it leaves the view, and ends it wherever
@@ -59,508 +255,109 @@ export const DepthViewer3D: React.FC<DepthViewer3DProps> = ({
     | null
   >(null);
 
-  // Reset Camera View
+  /** Draws once, at the next frame; repeated requests before it share it. */
+  const requestDraw = useCallback(() => {
+    if (frameRef.current !== null) return;
+    frameRef.current = requestAnimationFrame(() => {
+      frameRef.current = null;
+      drawRef.current();
+    });
+  }, []);
+
   const handleResetCamera = useCallback(() => {
-    needsRenderRef.current = true;
     setCamera(DEFAULT_CAMERA);
     setAnnouncedCamera(DEFAULT_CAMERA);
   }, []);
 
-  // Top-Down View
   const handleTopDownCamera = useCallback(() => {
-    needsRenderRef.current = true;
-    setCamera((prev) => ({
-      ...prev,
-      azimuth: 0,
-      elevation: 89.9,
-      panX: 0,
-      panY: 0,
-    }));
+    setCamera((prev) => ({ ...prev, azimuth: 0, elevation: 88, panX: 0, panY: 0 }));
   }, []);
 
-  // Initialize WebGL Scene
+  // The GPU scene lives exactly as long as the view. Each scene gets a canvas
+  // of its own: a context once lost cannot be had again from the same canvas
+  // (React mounts effects twice in development).
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
-    // Try WebGL2 first for float textures, fallback to WebGL1
-    let gl: WebGLRenderingContext | WebGL2RenderingContext | null = canvas.getContext('webgl2', {
-      antialias: true,
-      alpha: false,
-      depth: true,
-    });
-
-    if (gl) {
-      isWebGL2Ref.current = true;
-      gl.getExtension('OES_texture_float_linear');
-      gl.getExtension('EXT_color_buffer_float');
-    } else {
-      gl = canvas.getContext('webgl', {
-        antialias: true,
-        alpha: false,
-        depth: true,
-      }) as WebGLRenderingContext | null;
-      isWebGL2Ref.current = false;
-      if (gl) {
-        gl.getExtension('OES_texture_float');
-        gl.getExtension('OES_texture_float_linear');
-        gl.getExtension('OES_element_index_uint');
-      }
+    const host = canvasHostRef.current;
+    if (!host) return;
+    const canvas = document.createElement('canvas');
+    canvas.className = styles.webglCanvas;
+    host.appendChild(canvas);
+    canvasRef.current = canvas;
+    const scene = createScene(canvas);
+    if (typeof scene === 'string') {
+      setGlError(scene);
+      return () => {
+        canvasRef.current = null;
+        canvas.remove();
+      };
     }
-
-    if (!gl) {
-      console.error('WebGL not supported');
-      return;
-    }
-    glRef.current = gl;
-
-    // Vertex Shader: High-Density GPU Grid Displacement
-    const vsSource = `
-      attribute vec3 a_position;
-      attribute vec2 a_uv;
-
-      uniform mat4 u_mvp;
-      uniform sampler2D u_heightMap;
-      uniform float u_depthScale;
-      uniform vec2 u_meshScale;
-
-      varying vec2 v_uv;
-      varying vec3 v_worldPos;
-      varying float v_height;
-
-      void main() {
-        v_uv = a_uv;
-        float h = texture2D(u_heightMap, a_uv).r;
-        v_height = h;
-
-        // Displace Z based on heightmap with true aspect ratio
-        vec3 pos = a_position;
-        pos.x *= u_meshScale.x;
-        pos.y *= u_meshScale.y;
-        pos.z = (h - 0.5) * u_depthScale;
-        v_worldPos = pos;
-
-        gl_Position = u_mvp * vec4(pos, 1.0);
-      }
-    `;
-
-    // Fragment Shader: Per-Pixel Normal Mapping + Cavity Ambient Occlusion
-    const fsSource = `
-      precision mediump float;
-
-      varying vec2 v_uv;
-      varying vec3 v_worldPos;
-      varying float v_height;
-
-      uniform sampler2D u_heightMap;
-      uniform vec2 u_texelSize;
-      uniform float u_normalScale;
-      uniform vec3 u_lightDir;
-      uniform int u_material;      // 0: Walnut, 1: Brass, 2: Slate, 3: Heatmap, 4: Grayscale
-      uniform bool u_showToolpaths;
-
-      vec3 getHeatmapColor(float t) {
-        if (t < 0.25) {
-          return mix(vec3(0.0, 0.1, 0.9), vec3(0.0, 0.8, 0.9), t / 0.25);
-        } else if (t < 0.5) {
-          return mix(vec3(0.0, 0.8, 0.9), vec3(0.1, 0.9, 0.2), (t - 0.25) / 0.25);
-        } else if (t < 0.75) {
-          return mix(vec3(0.1, 0.9, 0.2), vec3(0.95, 0.9, 0.1), (t - 0.5) / 0.25);
-        } else {
-          return mix(vec3(0.95, 0.9, 0.1), vec3(0.9, 0.1, 0.05), (t - 0.75) / 0.25);
-        }
-      }
-
-      void main() {
-        // High-resolution per-pixel surface normal from full heightmap texture
-        float zL = texture2D(u_heightMap, v_uv - vec2(u_texelSize.x, 0.0)).r;
-        float zR = texture2D(u_heightMap, v_uv + vec2(u_texelSize.x, 0.0)).r;
-        float zU = texture2D(u_heightMap, v_uv - vec2(0.0, u_texelSize.y)).r;
-        float zD = texture2D(u_heightMap, v_uv + vec2(0.0, u_texelSize.y)).r;
-
-        float dzdx = (zR - zL) * u_normalScale;
-        float dzdy = (zD - zU) * u_normalScale;
-
-        vec3 N = normalize(vec3(-dzdx, -dzdy, 1.0));
-        vec3 L = normalize(u_lightDir);
-        vec3 V = vec3(0.0, 0.0, 1.0);
-        vec3 H = normalize(L + V);
-
-        float NdotL = max(dot(N, L), 0.0);
-        float NdotH = max(dot(N, H), 0.0);
-        float spec = pow(NdotH, 24.0);
-
-        // Cavity Ambient Occlusion (darkens carved recesses and groove crevices)
-        float aoStep = 2.5;
-        float zC = texture2D(u_heightMap, v_uv).r;
-        float z1 = texture2D(u_heightMap, v_uv + vec2(u_texelSize.x * aoStep, 0.0)).r;
-        float z2 = texture2D(u_heightMap, v_uv - vec2(u_texelSize.x * aoStep, 0.0)).r;
-        float z3 = texture2D(u_heightMap, v_uv + vec2(0.0, u_texelSize.y * aoStep)).r;
-        float z4 = texture2D(u_heightMap, v_uv - vec2(0.0, u_texelSize.y * aoStep)).r;
-        float avgSurround = (z1 + z2 + z3 + z4) * 0.25;
-        float cavity = max(0.0, avgSurround - zC);
-        float ao = 1.0 - clamp(cavity * 4.0, 0.0, 0.45);
-
-        vec3 baseColor;
-        float specularStrength = 0.25;
-
-        if (u_material == 0) {
-          // Walnut Hardwood: warm golden amber peaks & deep wood tone
-          vec3 darkWood = vec3(0.47, 0.29, 0.16);
-          vec3 lightWood = vec3(0.76, 0.51, 0.27);
-          baseColor = mix(darkWood, lightWood, v_height);
-          specularStrength = 0.25;
-        } else if (u_material == 1) {
-          // Brushed Brass
-          baseColor = vec3(0.85, 0.72, 0.32);
-          specularStrength = 0.65;
-        } else if (u_material == 2) {
-          // Ceramic Slate
-          baseColor = vec3(0.36, 0.40, 0.45);
-          specularStrength = 0.20;
-        } else if (u_material == 3) {
-          // Elevation Heatmap
-          baseColor = getHeatmapColor(v_height);
-          specularStrength = 0.15;
-        } else {
-          // Monochrome Grayscale
-          baseColor = vec3(v_height * 0.78 + 0.16);
-          specularStrength = 0.20;
-        }
-
-        // CNC Toolpath Simulation Lines
-        if (u_showToolpaths) {
-          float toolLine = sin(v_uv.y * 350.0);
-          if (abs(toolLine) < 0.25) {
-            baseColor *= 0.65;
-          }
-        }
-
-        float ambient = 0.35;
-        float totalLight = min(1.6, (ambient + NdotL * 0.75) * ao + spec * specularStrength);
-        vec3 finalColor = baseColor * totalLight;
-        gl_FragColor = vec4(finalColor, 1.0);
-      }
-    `;
-
-    const createShader = (type: number, src: string) => {
-      const shader = gl!.createShader(type)!;
-      gl!.shaderSource(shader, src);
-      gl!.compileShader(shader);
-      if (!gl!.getShaderParameter(shader, gl!.COMPILE_STATUS)) {
-        console.error('Shader compile error:', gl!.getShaderInfoLog(shader));
-        gl!.deleteShader(shader);
-        return null;
-      }
-      return shader;
-    };
-
-    const vs = createShader(gl.VERTEX_SHADER, vsSource);
-    const fs = createShader(gl.FRAGMENT_SHADER, fsSource);
-    if (!vs || !fs) return;
-
-    const program = gl.createProgram()!;
-    gl.attachShader(program, vs);
-    gl.attachShader(program, fs);
-    gl.linkProgram(program);
-    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-      console.error('Program link error:', gl.getProgramInfoLog(program));
-      return;
-    }
-    programRef.current = program;
-
-    // Cache Uniform Locations
-    uniformsRef.current = {
-      u_mvp: gl.getUniformLocation(program, 'u_mvp')!,
-      u_heightMap: gl.getUniformLocation(program, 'u_heightMap')!,
-      u_depthScale: gl.getUniformLocation(program, 'u_depthScale')!,
-      u_meshScale: gl.getUniformLocation(program, 'u_meshScale')!,
-      u_texelSize: gl.getUniformLocation(program, 'u_texelSize')!,
-      u_normalScale: gl.getUniformLocation(program, 'u_normalScale')!,
-      u_lightDir: gl.getUniformLocation(program, 'u_lightDir')!,
-      u_material: gl.getUniformLocation(program, 'u_material')!,
-      u_showToolpaths: gl.getUniformLocation(program, 'u_showToolpaths')!,
-    };
-
-    // Create Displaced Mesh Grid (200x200 = 40,401 vertices, safe for Uint16)
-    const vertices: number[] = [];
-    const uvs: number[] = [];
-    const triIndices: number[] = [];
-    const wireIndices: number[] = [];
-
-    for (let y = 0; y <= GRID_SIZE; y++) {
-      const v = y / GRID_SIZE;
-      const posY = (v - 0.5) * 2.0;
-      for (let x = 0; x <= GRID_SIZE; x++) {
-        const u = x / GRID_SIZE;
-        const posX = (u - 0.5) * 2.0;
-        vertices.push(posX, -posY, 0.0);
-        uvs.push(u, v);
-      }
-    }
-
-    for (let y = 0; y < GRID_SIZE; y++) {
-      for (let x = 0; x < GRID_SIZE; x++) {
-        const i0 = y * (GRID_SIZE + 1) + x;
-        const i1 = i0 + 1;
-        const i2 = (y + 1) * (GRID_SIZE + 1) + x;
-        const i3 = i2 + 1;
-
-        triIndices.push(i0, i2, i1);
-        triIndices.push(i1, i2, i3);
-
-        // Wireframe lines
-        wireIndices.push(i0, i1);
-        wireIndices.push(i0, i2);
-        if (x === GRID_SIZE - 1) wireIndices.push(i1, i3);
-        if (y === GRID_SIZE - 1) wireIndices.push(i2, i3);
-      }
-    }
-
-    triCountRef.current = triIndices.length;
-    wireCountRef.current = wireIndices.length;
-
-    const posBuffer = gl.createBuffer();
-    gl.bindBuffer(gl.ARRAY_BUFFER, posBuffer);
-    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertices), gl.STATIC_DRAW);
-
-    const uvBuffer = gl.createBuffer();
-    gl.bindBuffer(gl.ARRAY_BUFFER, uvBuffer);
-    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(uvs), gl.STATIC_DRAW);
-
-    const triBuffer = gl.createBuffer();
-    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, triBuffer);
-    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint32Array(triIndices), gl.STATIC_DRAW);
-    triIndexBufferRef.current = triBuffer;
-
-    const wireBuffer = gl.createBuffer();
-    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, wireBuffer);
-    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint32Array(wireIndices), gl.STATIC_DRAW);
-    wireIndexBufferRef.current = wireBuffer;
-
-    gl.useProgram(program);
-
-    const aPos = gl.getAttribLocation(program, 'a_position');
-    gl.enableVertexAttribArray(aPos);
-    gl.bindBuffer(gl.ARRAY_BUFFER, posBuffer);
-    gl.vertexAttribPointer(aPos, 3, gl.FLOAT, false, 0, 0);
-
-    const aUv = gl.getAttribLocation(program, 'a_uv');
-    gl.enableVertexAttribArray(aUv);
-    gl.bindBuffer(gl.ARRAY_BUFFER, uvBuffer);
-    gl.vertexAttribPointer(aUv, 2, gl.FLOAT, false, 0, 0);
-
-    // Create Heightmap Texture
-    const texture = gl.createTexture();
-    gl.bindTexture(gl.TEXTURE_2D, texture);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-    textureRef.current = texture;
-
-    gl.enable(gl.DEPTH_TEST);
-    gl.depthFunc(gl.LEQUAL);
-
+    sceneRef.current = scene;
+    const resize = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(() => requestDraw());
+    resize?.observe(canvas);
     return () => {
-      if (animFrameRef.current) {
-        cancelAnimationFrame(animFrameRef.current);
-      }
+      resize?.disconnect();
+      if (frameRef.current !== null) cancelAnimationFrame(frameRef.current);
+      frameRef.current = null;
+      sceneRef.current = null;
+      canvasRef.current = null;
+      releaseScene(scene);
+      canvas.remove();
     };
-  }, []);
+  }, [requestDraw]);
 
-  // Update Heightmap Texture when depth buffer changes
   useEffect(() => {
-    const gl = glRef.current;
-    const texture = textureRef.current;
-    if (!gl || !texture || !depthBuffer || width === 0 || height === 0) return;
+    const scene = sceneRef.current;
+    if (!scene || !depthBuffer || width === 0 || height === 0) return;
+    if (depthBuffer.byteLength !== width * height * 2) return;
+    uploadHeights(scene, new Uint16Array(depthBuffer), width, height);
+    requestDraw();
+  }, [depthBuffer, width, height, requestDraw]);
 
-    needsRenderRef.current = true;
-
-    const total = width * height;
-    const is16Bit = depthBuffer.byteLength === total * 2;
-    const isRgba = depthBuffer.byteLength === total * 4;
-
-    const floatData = new Float32Array(total);
-
-    if (is16Bit) {
-      const depth16 = new Uint16Array(depthBuffer);
-      for (let i = 0; i < total; i++) {
-        floatData[i] = depth16[i] / 65535.0;
-      }
-    } else if (isRgba) {
-      const rgba = new Uint8Array(depthBuffer);
-      for (let i = 0; i < total; i++) {
-        const pIdx = i * 4;
-        const lum = 0.299 * rgba[pIdx] + 0.587 * rgba[pIdx + 1] + 0.114 * rgba[pIdx + 2];
-        floatData[i] = lum / 255.0;
-      }
-    } else {
-      const gray = new Uint8Array(depthBuffer);
-      for (let i = 0; i < total; i++) {
-        floatData[i] = (gray[i] || 0) / 255.0;
-      }
-    }
-
-    gl.bindTexture(gl.TEXTURE_2D, texture);
-    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
-
-    if (isWebGL2Ref.current) {
-      const gl2 = gl as WebGL2RenderingContext;
-      gl2.texImage2D(
-        gl2.TEXTURE_2D,
-        0,
-        gl2.R32F,
-        width,
-        height,
-        0,
-        gl2.RED,
-        gl2.FLOAT,
-        floatData
-      );
-    } else {
-      // WebGL 1 fallback: 8-bit luminance with UNPACK_ALIGNMENT = 1
-      const gray8 = new Uint8Array(total);
-      for (let i = 0; i < total; i++) {
-        gray8[i] = Math.round(floatData[i] * 255.0);
-      }
-      gl.texImage2D(
-        gl.TEXTURE_2D,
-        0,
-        gl.LUMINANCE,
-        width,
-        height,
-        0,
-        gl.LUMINANCE,
-        gl.UNSIGNED_BYTE,
-        gray8
-      );
-    }
-  }, [depthBuffer, width, height]);
-
-  // Render Frame Loop with Cached Uniforms & Render-on-Demand
+  // What one frame draws, with the current settings; redrawn when any changes.
   useEffect(() => {
-    const canvas = canvasRef.current;
-    const gl = glRef.current;
-    const program = programRef.current;
-    const u = uniformsRef.current;
-    if (!canvas || !gl || !program) return;
-
-    let isMounted = true;
-    needsRenderRef.current = true;
-
-    const render = () => {
-      if (!isMounted) return;
-
-      if (needsRenderRef.current) {
-        const rect = canvas.getBoundingClientRect();
-        const dpr = window.devicePixelRatio || 1;
-        const w = Math.round(rect.width * dpr);
-        const h = Math.round(rect.height * dpr);
-
-        if (canvas.width !== w || canvas.height !== h) {
-          canvas.width = w;
-          canvas.height = h;
-        }
-
-        gl.viewport(0, 0, canvas.width, canvas.height);
-        // #767676, the --canvas token: 18% grey, as around the 2D canvas.
-        gl.clearColor(118 / 255, 118 / 255, 118 / 255, 1.0);
-        gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-
-        gl.useProgram(program);
-
-        // Compute Perspective Projection & Camera Matrix
-        const aspect = canvas.width / (canvas.height || 1);
-        const imageAspect = width > 0 && height > 0 ? width / height : 1.0;
-        const fov = (45 * Math.PI) / 180;
-        const near = 0.1;
-        const far = 100.0;
-
-        const projMatrix = createPerspectiveMatrix(fov, aspect, near, far);
-        const viewMatrix = createOrbitViewMatrix(
-          camera.azimuth,
-          camera.elevation,
-          camera.distance,
-          camera.panX,
-          camera.panY
-        );
-        const mvp = multiplyMatrices(projMatrix, viewMatrix);
-
-        if (u.u_mvp) gl.uniformMatrix4fv(u.u_mvp, false, new Float32Array(mvp));
-
-        // Calculate Mesh Scale to preserve image aspect ratio within unit bounding box
-        let meshScaleX = 1.0;
-        let meshScaleY = 1.0;
-        if (imageAspect >= 1.0) {
-          meshScaleX = 1.0;
-          meshScaleY = 1.0 / imageAspect;
-        } else {
-          meshScaleX = imageAspect;
-          meshScaleY = 1.0;
-        }
-
-        if (u.u_meshScale) gl.uniform2f(u.u_meshScale, meshScaleX, meshScaleY);
-
-        // Texel step: match exact 1-pixel spacing for full-resolution surface normal evaluation
-        if (u.u_texelSize) gl.uniform2f(u.u_texelSize, 1.0 / (width || 512), 1.0 / (height || 512));
-        if (u.u_normalScale) gl.uniform1f(u.u_normalScale, (depthConfig.depthScale || 3.0) * 12.0);
-        if (u.u_depthScale) gl.uniform1f(u.u_depthScale, (depthConfig.depthScale || 3.0) * 0.08);
-
-        // Directional Light
-        const lightRad = ((depthConfig.lightAngle ?? 315) * Math.PI) / 180;
-        const elevRad = ((depthConfig.lightElevation ?? 45) * Math.PI) / 180;
-        const lx = Math.cos(lightRad) * Math.cos(elevRad);
-        const ly = Math.sin(lightRad) * Math.cos(elevRad);
-        const lz = Math.sin(elevRad);
-
-        if (u.u_lightDir) gl.uniform3f(u.u_lightDir, lx, ly, lz);
-
-        // Material Uniform
-        const matCode =
-          depthConfig.material === 'brass'
-            ? 1
-            : depthConfig.material === 'slate'
-            ? 2
-            : depthConfig.viewMode === 'heatmap'
-            ? 3
-            : depthConfig.material === 'grayscale'
-            ? 4
-            : 0; // Walnut default
-
-        if (u.u_material) gl.uniform1i(u.u_material, matCode);
-        if (u.u_showToolpaths) gl.uniform1i(u.u_showToolpaths, showToolpaths ? 1 : 0);
-
-        // Draw Displaced High-Resolution Mesh
-        if (wireframeMode) {
-          if (wireIndexBufferRef.current) {
-            gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, wireIndexBufferRef.current);
-            gl.drawElements(gl.LINES, wireCountRef.current, gl.UNSIGNED_INT, 0);
-          }
-        } else {
-          if (triIndexBufferRef.current) {
-            gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, triIndexBufferRef.current);
-            gl.drawElements(gl.TRIANGLES, triCountRef.current, gl.UNSIGNED_INT, 0);
-          }
-        }
-
-        needsRenderRef.current = false;
+    drawRef.current = () => {
+      const scene = sceneRef.current;
+      const canvas = canvasRef.current;
+      if (!scene || !canvas || !depthBuffer) return;
+      const { gl, uniforms: u } = scene;
+      const rect = canvas.getBoundingClientRect();
+      const dpr = window.devicePixelRatio || 1;
+      const w = Math.max(1, Math.round(rect.width * dpr));
+      const h = Math.max(1, Math.round(rect.height * dpr));
+      if (canvas.width !== w || canvas.height !== h) {
+        canvas.width = w;
+        canvas.height = h;
       }
+      gl.viewport(0, 0, w, h);
+      // #767676, the --canvas token: 18% grey, as around the 2D canvas.
+      gl.clearColor(118 / 255, 118 / 255, 118 / 255, 1.0);
+      gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+      gl.useProgram(scene.program);
 
-      animFrameRef.current = requestAnimationFrame(render);
+      // True proportions: the longest side spans 2 world units.
+      const widthMm = sizeMm?.widthMm ?? width;
+      const heightMm = sizeMm?.heightMm ?? height;
+      const worldPerMm = 2 / Math.max(widthMm, heightMm);
+      const half = { x: (widthMm * worldPerMm) / 2, y: (heightMm * worldPerMm) / 2 };
+      const depthWorld = maxDepthMm * exaggeration * worldPerMm;
+
+      const proj = perspective((45 * Math.PI) / 180, w / h, 0.05, 100);
+      const view = orbitView(camera.azimuth, camera.elevation, camera.distance, camera.panX, camera.panY, -depthWorld / 2);
+      gl.uniformMatrix4fv(u.u_mvp, false, new Float32Array(multiply(proj, view)));
+      gl.uniform2f(u.u_meshHalf, half.x, half.y);
+      gl.uniform1f(u.u_depth, depthWorld);
+      gl.uniform2f(u.u_texel, 1 / width, 1 / height);
+      gl.uniform2f(u.u_texelWorld, (half.x * 2) / width, (half.y * 2) / height);
+      const az = (lightAngle * Math.PI) / 180;
+      const el = (LIGHT_ELEVATION_DEG * Math.PI) / 180;
+      gl.uniform3f(u.u_lightDir, Math.cos(az) * Math.cos(el), Math.sin(az) * Math.cos(el), Math.sin(el));
+      gl.uniform1i(u.u_material, MATERIAL_CODE[material] ?? 0);
+      gl.uniform1i(u.u_heightMap, 0);
+      gl.drawElements(gl.TRIANGLES, scene.indexCount, gl.UNSIGNED_INT, 0);
     };
+    requestDraw();
+  }, [camera, material, lightAngle, exaggeration, maxDepthMm, sizeMm?.widthMm, sizeMm?.heightMm, width, height, depthBuffer, requestDraw]);
 
-    render();
-
-    return () => {
-      isMounted = false;
-      if (animFrameRef.current) {
-        cancelAnimationFrame(animFrameRef.current);
-      }
-    };
-  }, [camera, depthConfig, width, height, showToolpaths, wireframeMode]);
-
-  // Pointer Interaction Handlers: mouse, pen and touch take the same path.
   const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     // The HUD's buttons are inside the view; they are not drags.
     if ((e.target as Element).closest('button')) return;
@@ -583,9 +380,7 @@ export const DepthViewer3D: React.FC<DepthViewer3DProps> = ({
     if (!gesture) return;
     if (gesture.kind === 'pinch') {
       const pair = pointersRef.current.pair();
-      if (!pair) return;
-      needsRenderRef.current = true;
-      setCamera(pinchCamera(gesture.camera, gesture.start, pair));
+      if (pair) setCamera(pinchCamera(gesture.camera, gesture.start, pair));
       return;
     }
     if (gesture.pointerId !== e.pointerId) return;
@@ -593,7 +388,6 @@ export const DepthViewer3D: React.FC<DepthViewer3DProps> = ({
     const dy = e.clientY - gesture.y;
     gesture.x = e.clientX;
     gesture.y = e.clientY;
-    needsRenderRef.current = true;
     setCamera((prev) => (gesture.kind === 'orbit' ? orbitBy(prev, dx, dy) : panBy(prev, dx, dy)));
   };
 
@@ -612,26 +406,20 @@ export const DepthViewer3D: React.FC<DepthViewer3DProps> = ({
     const next = cameraForKey(camera, e);
     if (!next) return;
     e.preventDefault();
-    needsRenderRef.current = true;
     setCamera(next);
     setAnnouncedCamera(next);
   };
 
-  // Non-passive wheel event listener to avoid [Intervention] preventDefault browser errors
+  // Non-passive, so the page does not scroll while the wheel zooms.
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
-
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
-      needsRenderRef.current = true;
       setCamera((prev) => dollyBy(prev, 1 + e.deltaY * 0.0015));
     };
-
     container.addEventListener('wheel', onWheel, { passive: false });
-    return () => {
-      container.removeEventListener('wheel', onWheel);
-    };
+    return () => container.removeEventListener('wheel', onWheel);
   }, []);
 
   return (
@@ -649,50 +437,27 @@ export const DepthViewer3D: React.FC<DepthViewer3DProps> = ({
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerEnd}
       onPointerCancel={handlePointerEnd}
+      onLostPointerCapture={handlePointerEnd}
       onContextMenu={(e) => e.preventDefault()}
     >
-      <canvas ref={canvasRef} className={styles.webglCanvas} />
+      <div ref={canvasHostRef} className={styles.webglCanvas} />
+      {glError && <div className={styles.hudHint}>{glError}</div>}
 
-      {/* Floating HUD Controls */}
       <div className={styles.hudOverlay}>
         <div className={styles.hudBadge}>
           <Box size={14} />
-          <span>3D Relief Mesh</span>
+          <span>
+            {sizeMm ? `${sizeMm.widthMm.toFixed(0)} × ${sizeMm.heightMm.toFixed(0)} mm, ` : ''}
+            {maxDepthMm.toFixed(1)} mm deep{exaggeration !== 1 ? `, shown ${exaggeration}×` : ''}
+          </span>
         </div>
 
         <div className={styles.hudActions}>
-          <button
-            className={`${styles.hudBtn} ${wireframeMode ? styles.hudBtnActive : ''}`}
-            onClick={() => setWireframeMode((p) => !p)}
-            title="Toggle 3D Surface Wireframe"
-          >
-            <Grid size={14} />
-            <span>Wireframe</span>
-          </button>
-
-          <button
-            className={`${styles.hudBtn} ${showToolpaths ? styles.hudBtnActive : ''}`}
-            onClick={() => setShowToolpaths((p) => !p)}
-            title="Toggle CNC Toolpath Simulation"
-          >
-            <Layers size={14} />
-            <span>Toolpaths</span>
-          </button>
-
-          <button
-            className={styles.hudBtn}
-            onClick={handleTopDownCamera}
-            title="Top-Down CNC Bed Perspective"
-          >
+          <button className={styles.hudBtn} onClick={handleTopDownCamera} title="Look straight down">
             <Compass size={14} />
             <span>Top View</span>
           </button>
-
-          <button
-            className={styles.hudBtn}
-            onClick={handleResetCamera}
-            title="Reset 3D Orbit Camera"
-          >
+          <button className={styles.hudBtn} onClick={handleResetCamera} title="Reset the camera">
             <RotateCcw size={14} />
             <span>Reset View</span>
           </button>
@@ -716,58 +481,44 @@ export const DepthViewer3D: React.FC<DepthViewer3DProps> = ({
 };
 
 // -------------------------------------------------------------------------
-// Fast WebGL Matrix Math Helpers (No Heavy Dependencies)
+// Matrix helpers (column-major, as WebGL takes them)
 // -------------------------------------------------------------------------
 
-function createPerspectiveMatrix(fov: number, aspect: number, near: number, far: number): number[] {
+function perspective(fov: number, aspect: number, near: number, far: number): number[] {
   const f = 1.0 / Math.tan(fov / 2);
   const rangeInv = 1.0 / (near - far);
-  return [
-    f / aspect, 0, 0, 0,
-    0, f, 0, 0,
-    0, 0, (near + far) * rangeInv, -1,
-    0, 0, near * far * rangeInv * 2, 0,
+  return [f / aspect, 0, 0, 0, 0, f, 0, 0, 0, 0, (near + far) * rangeInv, -1, 0, 0, near * far * rangeInv * 2, 0];
+}
+
+function orbitView(azimuthDeg: number, elevationDeg: number, distance: number, panX: number, panY: number, targetZ: number): number[] {
+  const az = (azimuthDeg * Math.PI) / 180;
+  const el = (elevationDeg * Math.PI) / 180;
+  const eye = [
+    distance * Math.cos(el) * Math.sin(az) + panX,
+    -distance * Math.cos(el) * Math.cos(az) + panY,
+    distance * Math.sin(el) + targetZ,
   ];
+  return lookAt(eye, [panX, panY, targetZ], [0, 0, 1]);
 }
 
-function createOrbitViewMatrix(
-  azimuthDeg: number,
-  elevationDeg: number,
-  distance: number,
-  panX: number,
-  panY: number
-): number[] {
-  const azRad = (azimuthDeg * Math.PI) / 180;
-  const elRad = (elevationDeg * Math.PI) / 180;
-
-  const camX = distance * Math.cos(elRad) * Math.sin(azRad) + panX;
-  const camY = -distance * Math.cos(elRad) * Math.cos(azRad) + panY;
-  const camZ = distance * Math.sin(elRad);
-
-  const target = [panX, panY, 0];
-  const eye = [camX, camY, camZ];
-  const up = [0, 0, 1];
-
-  return createLookAtMatrix(eye, target, up);
-}
-
-function createLookAtMatrix(eye: number[], target: number[], up: number[]): number[] {
+function lookAt(eye: number[], target: number[], up: number[]): number[] {
   let zx = eye[0] - target[0];
   let zy = eye[1] - target[1];
   let zz = eye[2] - target[2];
   const zLen = Math.hypot(zx, zy, zz) || 1.0;
-  zx /= zLen; zy /= zLen; zz /= zLen;
-
+  zx /= zLen;
+  zy /= zLen;
+  zz /= zLen;
   let xx = up[1] * zz - up[2] * zy;
   let xy = up[2] * zx - up[0] * zz;
   let xz = up[0] * zy - up[1] * zx;
   const xLen = Math.hypot(xx, xy, xz) || 1.0;
-  xx /= xLen; xy /= xLen; xz /= xLen;
-
+  xx /= xLen;
+  xy /= xLen;
+  xz /= xLen;
   const yx = zy * xz - zz * xy;
   const yy = zz * xx - zx * xz;
   const yz = zx * xy - zy * xx;
-
   return [
     xx, yx, zx, 0,
     xy, yy, zy, 0,
@@ -779,17 +530,14 @@ function createLookAtMatrix(eye: number[], target: number[], up: number[]): numb
   ];
 }
 
-function multiplyMatrices(a: number[], b: number[]): number[] {
+function multiply(a: number[], b: number[]): number[] {
   const out = new Array(16).fill(0);
   for (let i = 0; i < 4; i++) {
     for (let j = 0; j < 4; j++) {
       let sum = 0;
-      for (let k = 0; k < 4; k++) {
-        sum += a[k * 4 + j] * b[i * 4 + k];
-      }
+      for (let k = 0; k < 4; k++) sum += a[k * 4 + j] * b[i * 4 + k];
       out[i * 4 + j] = sum;
     }
   }
   return out;
 }
-

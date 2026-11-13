@@ -352,13 +352,15 @@ describe('orbiting the 3D view from the keyboard (#81)', () => {
 
 describe('the zoom bar and the 3D orbit view (#82)', () => {
   /** Opens an image in the relief job with the depth view mode `viewMode`, and mounts the app. */
-  function reliefApp(viewMode: '3d-interactive' | 'grayscale', width: number): HTMLElement {
+  function reliefApp(viewMode: '3d' | 'heightmap', width: number): HTMLElement {
     fakeViewport(width);
     useUIStore.setState({ job: 'relief', stepByJob: firstSteps() });
     openCanvas();
     mounted?.unmount();
     const doc = useDocumentStore.getState().doc!;
     useDocumentStore.setState({ doc: { ...doc, depth: { ...doc.depth, viewMode } } });
+    // A heightmap to show: the orbit view waits for one.
+    useRenderStore.setState({ depthHeightMap: new ArrayBuffer(8) });
     mounted = mount(<App />);
     return mounted.container;
   }
@@ -368,13 +370,13 @@ describe('the zoom bar and the 3D orbit view (#82)', () => {
 
   for (const width of [1440, 390]) {
     it(`at ${width} px: no zoom bar over the orbit view, which has its own zoom keys`, () => {
-      const root = reliefApp('3d-interactive', width);
+      const root = reliefApp('3d', width);
       expect(root.querySelector('[aria-label="3D relief view"]')).not.toBeNull();
       expect(zoomButtons(root)).toEqual([]);
     });
 
     it(`at ${width} px: the zoom bar is back, and zooms, on the flat relief`, () => {
-      const root = reliefApp('grayscale', width);
+      const root = reliefApp('heightmap', width);
       expect(root.querySelector('[aria-label="3D relief view"]')).toBeNull();
       expect(zoomButtons(root)).toHaveLength(4);
       const before = useViewStore.getState().zoom;
@@ -384,7 +386,7 @@ describe('the zoom bar and the 3D orbit view (#82)', () => {
   }
 
   it('the crop tool shows the flat relief, so the zoom bar is shown with it', () => {
-    const root = reliefApp('3d-interactive', 1440);
+    const root = reliefApp('3d', 1440);
     act(() => useViewStore.setState({ canvasTool: 'crop' }));
     expect(root.querySelector('[aria-label="3D relief view"]')).toBeNull();
     expect(zoomButtons(root)).toHaveLength(4);

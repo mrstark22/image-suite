@@ -170,3 +170,9 @@
 .cutPath {
   stroke: #ff0000;
 }
+
+/* The relief view before its first heightmap, or after a failure. */
+.reliefPending {
+  color: var(--text-2);
+  font-size: 13px;
+}

@@ -4,10 +4,10 @@ import type {
   ExportProgress,
   LoadedSourceInfo,
   PreviewRenderResult,
-  ProcessDepthPayload,
   BackgroundPreview,
   RasterExport,
   RasterFormat,
+  ReliefProgress,
   ReliefRenderResult,
   SourceRefusal,
   SourceStage,
@@ -16,15 +16,21 @@ import type {
 import type { VectorResult } from '../types/vector';
 import type { DepthResult } from '../types/depth';
 import { maskKey, withBackgroundEnabled, type BackgroundMask, type MaskModel, type ModelProgress } from '../lib/background';
+import type { DepthEstimator, DepthModelProgress } from '../lib/ai-depth';
+import { modelInputSize, DownloadCancelledError } from '../lib/ai-depth';
+import { applyDepthCurveInverse } from '../lib/depth-curve';
+import { encodePngGrayscale16 } from '../lib/png-encoder';
+import { reliefPxPerMm } from '../lib/relief';
 import { PipelineEngine, TooLargeError } from '../lib/pipeline-engine';
 import type { PixelSize } from '../lib/reduced-open';
-import { exportPlan, previewTarget, sameTarget, sourceStageKey } from '../lib/render-target';
+import { exportPlan, nativeTarget, previewTarget, sameTarget, sourceStageKey } from '../lib/render-target';
 import { cropRectOf } from '../lib/document-size';
 import { encodeRaster } from '../lib/raster-encode';
 import { vectorFile, type VectorExportRequest } from '../lib/vector-file-export';
 import { withView } from '../lib/trace-view';
 import type { ImageDocument } from '../types/document';
-import type { RustWasmEngine } from '../wasm/wasm-bridge';
+import type { DepthEstimate, RustWasmEngine } from '../wasm/wasm-bridge';
+import type { RenderTarget } from '../types/render';
 
 /**
  * The image worker's API (design section 5: one worker). It holds the
@@ -36,24 +42,6 @@ import type { RustWasmEngine } from '../wasm/wasm-bridge';
  * `loadCore` instantiates the module: in the browser through Vite, in Node
  * tests from the committed binary.
  */
-interface CachedAiDepth {
-  width: number;
-  height: number;
-  hash: number;
-  rawAiDepth: Float32Array;
-}
-let workerAiDepthCache: CachedAiDepth | null = null;
-
-function computeQuickBufferHash(bytes: Uint8Array, width: number, height: number): number {
-  let h = (width * 31 + height) | 0;
-  const len = Math.min(bytes.length, 2048);
-  const step = Math.max(1, Math.floor(len / 32));
-  for (let i = 0; i < len; i += step) {
-    h = ((h << 5) - h + bytes[i]) | 0;
-  }
-  return h;
-}
-
 /** Message shown to the user when the WebAssembly module fails to load. */
 export const ENGINE_LOAD_ERROR =
   'The image processing engine failed to load. Reload the page; if it keeps happening, your browser may not support WebAssembly.';
@@ -127,12 +115,18 @@ export class PipelineWorkerApi {
   /** Masks being computed, so one crop never runs the model twice at once. */
   private pendingMasks = new Map<string, Promise<BackgroundMask>>();
   private modelProgressListener: ((p: ModelProgress) => void) | null = null;
+  /** The last AI estimate and the exact model input it was made from (#43: keyed on the whole image). */
+  private estimateCache: { input: Uint8Array; estimate: DepthEstimate } | null = null;
+  /** Aborts the model download in progress. */
+  private modelAbort: AbortController | null = null;
 
   constructor(
     private readonly loadCore: () => Promise<RustWasmEngine>,
     private readonly decodeFileInto: FileDecoder | null = null,
     /** Memory a run may leave above the steady state before the instance is replaced. */
-    private readonly resetAboveBytes: number = RESET_ABOVE_BYTES
+    private readonly resetAboveBytes: number = RESET_ABOVE_BYTES,
+    /** The AI depth estimator; by default the ONNX model of `ai-depth.ts`, loaded on first use. */
+    private readonly estimator: DepthEstimator | null = null
   ) {
     // Start loading straight away so the first request does not wait for it.
     void this.instance().catch(() => {
@@ -329,21 +323,21 @@ export class PipelineWorkerApi {
     });
   }
 
-  /** Renders the relief heightmap from the `source` stage at the request's target. */
-  public async renderRelief(req: DocumentRenderRequest): Promise<ReliefRenderResult> {
+  /**
+   * Renders the relief heightmap at the request's target (the preview's):
+   * the `source` stage through the depth core. The export computes the same
+   * heightmap at full resolution (`exportHeightmap`). `onProgress` hears about
+   * the AI model's download and estimate.
+   */
+  public async renderRelief(
+    req: DocumentRenderRequest,
+    onProgress?: (progress: ReliefProgress) => void
+  ): Promise<ReliefRenderResult> {
     await this.exportIdle;
     const start = performance.now();
     const mask = await this.maskFor(req.doc);
-    const { source, sourceStage } = await this.guarded(({ engine }) => ({
-      source: engine.render(req.doc, req.target, 'source', { cache: true, mask }),
-      sourceStage: this.sourceStageFor(engine, req, mask),
-    }));
-    const depth = await this.processDepth({
-      buffer: source.pixels,
-      width: req.target.widthPx,
-      height: req.target.heightPx,
-      config: req.doc.depth,
-    });
+    const depth = await this.heightmap(req.doc, req.target, true, mask, onProgress);
+    const sourceStage = await this.guarded(({ engine }) => this.sourceStageFor(engine, req, mask));
     const result: ReliefRenderResult = {
       key: sourceStageKey(req.doc, req.target),
       depth,
@@ -351,6 +345,101 @@ export class PipelineWorkerApi {
       durationMs: performance.now() - start,
     };
     return Comlink.transfer(result, transferables(depth.heightMapBuffer, result.sourceStage));
+  }
+
+  /** Stops a model download in progress; the relief that needed it fails with `DownloadCancelledError`. */
+  public cancelModelDownload(): void {
+    this.modelAbort?.abort();
+  }
+
+  /** The heightmap of `doc` at `target` (one implementation for the view and the file, #42). */
+  private async heightmap(
+    doc: ImageDocument,
+    target: RenderTarget,
+    cache: boolean,
+    mask: BackgroundMask | undefined,
+    onProgress?: (progress: ReliefProgress) => void
+  ): Promise<DepthResult> {
+    const estimate = doc.depth.source === 'ai-estimation' ? await this.aiEstimate(doc, onProgress) : null;
+    const pxPerMm = reliefPxPerMm(doc, target);
+    return this.guarded(({ engine, core }) =>
+      engine.renderWith(doc, target, 'source', { cache, mask }, (ptr) =>
+        core.depthAt(ptr, target.widthPx, target.heightPx, doc.depth, pxPerMm, estimate)
+      )
+    );
+  }
+
+  /**
+   * The AI depth estimate of `doc`'s crop: the `source` stage at the model's
+   * input size, through the estimator. The last one is kept and reused only
+   * for exactly the same input pixels. A failure is thrown, never replaced.
+   */
+  private async aiEstimate(doc: ImageDocument, onProgress?: (progress: ReliefProgress) => void): Promise<DepthEstimate> {
+    const native = nativeTarget(doc);
+    const size = modelInputSize(native.widthPx, native.heightPx);
+    const input = new Uint8Array(await this.guarded(({ engine }) => engine.render(doc, size, 'source').pixels));
+    const cached = this.estimateCache;
+    if (cached && cached.input.length === input.length && cached.input.every((v, i) => v === input[i])) {
+      return cached.estimate;
+    }
+    const estimator = this.estimator ?? (await import('../lib/ai-depth')).estimateDepth;
+    const abort = new AbortController();
+    this.modelAbort = abort;
+    try {
+      const report = (p: DepthModelProgress) => onProgress?.({ model: p });
+      const values = await estimator(input, size.widthPx, size.heightPx, report, abort.signal);
+      if (abort.signal.aborted) throw new DownloadCancelledError();
+      if (values.length !== size.widthPx * size.heightPx) {
+        throw new Error('The AI depth estimate does not match the image size.');
+      }
+      const estimate = { values, width: size.widthPx, height: size.heightPx };
+      this.estimateCache = { input, estimate };
+      return estimate;
+    } finally {
+      if (this.modelAbort === abort) this.modelAbort = null;
+    }
+  }
+
+  /**
+   * Exports `doc`'s heightmap as a 16-bit greyscale PNG (#46): computed as
+   * the view's is, but at the source's full resolution for the crop, with the
+   * document's resolution in the file. With `depthCurve` (a relief
+   * calibration), its inverse is applied so the burn has the proportions
+   * shown; without one, grey levels are written linearly. Refuses while the
+   * size is not set. Renders wait for it, like a raster export.
+   */
+  public exportHeightmap(
+    doc: ImageDocument,
+    depthCurve: number[] | null,
+    onProgress?: (progress: ReliefProgress) => void | Promise<void>
+  ): Promise<RasterExport> {
+    const plan = exportPlan(doc);
+    this.cancelRequested = false;
+    const run = this.queued(async () => {
+      const boundary = async (progress: ReliefProgress) => {
+        await onProgress?.(progress);
+        if (this.cancelRequested) throw new ExportCancelledError();
+      };
+      await boundary({ export: { stage: 'preparing', fraction: 0 } });
+      const depth = await this.heightmap(doc, plan.target, false, await this.maskFor(doc), (p) => void onProgress?.(p));
+      await boundary({ export: { stage: 'processing', fraction: 1 } });
+      const heights = new Uint16Array(depth.heightMapBuffer);
+      const grey = depthCurve ? applyDepthCurveInverse(heights, depthCurve, doc.depth.maxDepthMm) : heights;
+      await boundary({ export: { stage: 'encoding', fraction: 0 } });
+      const png = await encodePngGrayscale16(grey, plan.target.widthPx, plan.target.heightPx, plan.pxPerMm);
+      const bytes = png.buffer.slice(png.byteOffset, png.byteOffset + png.byteLength) as ArrayBuffer;
+      const file: RasterExport = {
+        widthPx: plan.target.widthPx,
+        heightPx: plan.target.heightPx,
+        pxPerMm: plan.pxPerMm,
+        bytes,
+        mimeType: 'image/png',
+        extension: 'png',
+      };
+      return Comlink.transfer(file, [file.bytes]);
+    });
+    this.exportIdle = run.catch(() => undefined);
+    return run;
   }
 
   /**
@@ -449,84 +538,6 @@ export class PipelineWorkerApi {
   }
 
   /**
-   * Generates a 16-bit heightmap from a raster buffer.
-   */
-  public async processDepth(payload: ProcessDepthPayload): Promise<DepthResult> {
-    const { buffer, width, height, config } = payload;
-
-    // 1. AI Monocular Depth Estimation (ONNX WebGPU / Neural Engine)
-    if (config.source === 'ai-estimation') {
-      try {
-        const { runAiDepthEstimation, combineAiWithTonalRelief, applyDetailEmbossing } = await import('../lib/ai-depth');
-        const pixels = new Uint8ClampedArray(buffer);
-        const hash = computeQuickBufferHash(new Uint8Array(buffer), width, height);
-
-        let baseAiDepth: Float32Array;
-        if (
-          workerAiDepthCache &&
-          workerAiDepthCache.width === width &&
-          workerAiDepthCache.height === height &&
-          workerAiDepthCache.hash === hash
-        ) {
-          baseAiDepth = new Float32Array(workerAiDepthCache.rawAiDepth);
-        } else {
-          const rawDepth = await runAiDepthEstimation(pixels, width, height);
-          workerAiDepthCache = {
-            width,
-            height,
-            hash,
-            rawAiDepth: new Float32Array(rawDepth),
-          };
-          baseAiDepth = rawDepth;
-        }
-
-        let depthFloat = baseAiDepth;
-
-        // Professional Hybrid Bas-Relief: Combine AI 3D Base Shape with Bilateral-Denoised Tonal Relief
-        if ((config.tonalBlend ?? 35) > 0) {
-          depthFloat = combineAiWithTonalRelief(
-            depthFloat,
-            pixels,
-            width,
-            height,
-            config.aiWeight ?? 75,
-            config.tonalBlend ?? 35,
-            config.surfaceDenoise ?? 2.0
-          );
-        }
-
-        // Optional fine-edge typography embossing
-        if ((config.detailEmboss ?? 0) > 0) {
-          depthFloat = applyDetailEmbossing(depthFloat, pixels, width, height, config.detailEmboss ?? 0);
-        }
-
-        const depth16 = new Uint16Array(width * height);
-        for (let i = 0; i < width * height; i++) {
-          let val = depthFloat[i];
-          if (config.invertZ) val = 1.0 - val;
-          depth16[i] = Math.round(val * 65535);
-        }
-        return Comlink.transfer(
-          {
-            heightMapBuffer: depth16.buffer,
-            width,
-            height,
-            is16Bit: true,
-            minZ: 0,
-            maxZ: 65535,
-          },
-          [depth16.buffer]
-        );
-      } catch (err) {
-        console.warn('AI depth estimation failed, falling back to WASM:', err);
-      }
-    }
-
-    // 2. Rust WASM depth engine (distance-transform bevels, tonal relief, smoothing)
-    const wasmResult = await this.guarded(({ core }) => core.processDepth(buffer, width, height, config));
-    return Comlink.transfer(wasmResult, [wasmResult.heightMapBuffer]);
-  }
-
   /** Sets the segmentation model background removal runs (#50). The browser worker sets ISNet. */
   public setMaskModel(model: MaskModel | null): void {
     this.maskModel = model;

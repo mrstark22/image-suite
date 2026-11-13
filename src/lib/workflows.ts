@@ -93,7 +93,7 @@ export function canvasImage(job: Job): 'processed' | 'relief' {
  * instead, so the Crop step works in every view.
  */
 export function showsOrbitView(job: Job, viewMode: string | undefined, canvasTool: string): boolean {
-  return canvasImage(job) === 'relief' && viewMode === '3d-interactive' && canvasTool !== 'crop';
+  return canvasImage(job) === 'relief' && viewMode === '3d' && canvasTool !== 'crop';
 }
 
 /** True when the canvas shows the relief, so the relief renders instead of the preview. */

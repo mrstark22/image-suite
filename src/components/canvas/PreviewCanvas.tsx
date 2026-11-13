@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useState, useMemo, useId } from 'react';
+import React, { useRef, useEffect, useState, useMemo, useId, useCallback } from 'react';
 import { useDocumentStore } from '../../store/documentStore';
 import { pxPerMmOfSource, useRenderStore } from '../../store/renderStore';
 import { useViewStore } from '../../store/viewStore';
@@ -12,12 +12,19 @@ import { useUIStore } from '../../store/uiStore';
 import { showsOrbitView } from '../../lib/workflows';
 import { DropZone } from '../shared/DropZone';
 import { DepthViewer3D } from './DepthViewer3D';
+import { reliefSizeMm } from '../../lib/relief';
 import { CanvasRulers } from './CanvasRulers';
 import { CanvasCropOverlay } from './CanvasCropOverlay';
 import styles from './PreviewCanvas.module.css';
 
 export const PreviewCanvas: React.FC = () => {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  // The canvas element, as state too: it is a new element after the 3D view was shown, and must be drawn again.
+  const [canvasEl, setCanvasEl] = useState<HTMLCanvasElement | null>(null);
+  const attachCanvas = useCallback((el: HTMLCanvasElement | null) => {
+    canvasRef.current = el;
+    setCanvasEl(el);
+  }, []);
   // The container, as state so the effects below re-run when it mounts.
   const [container, setContainer] = useState<HTMLDivElement | null>(null);
   const offscreenOrigRef = useRef<HTMLCanvasElement | null>(null);
@@ -58,6 +65,13 @@ export const PreviewCanvas: React.FC = () => {
 
   const vectorResult = useRenderStore((s) => s.vectorResult);
   const depthConfig = useDocumentStore((s) => s.doc?.depth ?? DEFAULT_DEPTH);
+  const reliefError = useRenderStore((s) => s.relief.error);
+  const reliefWidthMm = useDocumentStore((s) => (s.doc && dims ? reliefSizeMm(s.doc, { widthPx: dims.width, heightPx: dims.height }).widthMm : null));
+  const reliefHeightMm = useDocumentStore((s) => (s.doc && dims ? reliefSizeMm(s.doc, { widthPx: dims.width, heightPx: dims.height }).heightMm : null));
+  const reliefSize = useMemo(
+    () => (reliefWidthMm !== null && reliefHeightMm !== null ? { widthMm: reliefWidthMm, heightMm: reliefHeightMm } : null),
+    [reliefWidthMm, reliefHeightMm]
+  );
 
   // Interaction State
   const [isDraggingSplit, setIsDraggingSplit] = useState(false);
@@ -203,7 +217,7 @@ export const PreviewCanvas: React.FC = () => {
       ctx.drawImage(offscreenOrigRef.current, 0, 0);
       ctx.restore();
     }
-  }, [processedBuffer, previewVersion, dims, isSplitView, splitPosition]);
+  }, [processedBuffer, previewVersion, dims, isSplitView, splitPosition, canvasEl]);
 
   /** A point of a pointer event, from the container's centre. */
   const pointOf = (e: { clientX: number; clientY: number }) =>
@@ -379,11 +393,13 @@ export const PreviewCanvas: React.FC = () => {
   if (showsOrbitView(job, depthConfig.viewMode, canvasTool)) {
     return (
       <div className={styles.canvasContainer}>
-        <DepthViewer3D
-          depthBuffer={depthHeightMapBuffer || processedBuffer || previewBuffer}
-          width={dims.width}
-          height={dims.height}
-        />
+        {depthHeightMapBuffer ? (
+          <DepthViewer3D depthBuffer={depthHeightMapBuffer} width={dims.width} height={dims.height} sizeMm={reliefSize ?? undefined} />
+        ) : (
+          <div className={styles.reliefPending} role="status">
+            {reliefError ? 'No relief: see the Relief panel.' : 'Making the relief…'}
+          </div>
+        )}
       </div>
     );
   }
@@ -432,7 +448,7 @@ export const PreviewCanvas: React.FC = () => {
         style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`, '--view-zoom': zoom } as React.CSSProperties}
       >
         {/* Square pixels once zoomed in; smooth below 100%, where skipping pixels would turn dots into moiré. */}
-        <canvas ref={canvasRef} className={`${styles.mainCanvas} ${zoom < 1 ? styles.smoothCanvas : ''}`} />
+        <canvas ref={attachCanvas} className={`${styles.mainCanvas} ${zoom < 1 ? styles.smoothCanvas : ''}`} />
 
         {/* Vector Path Overlay */}
         {showVectorOverlay && vectorResult && (

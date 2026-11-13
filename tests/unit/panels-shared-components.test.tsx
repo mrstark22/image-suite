@@ -303,8 +303,8 @@ describe('every control in the migrated panels is reachable and named', () => {
 
   it('Relief, for every source and view mode', () => {
     openWithPreview();
-    const sources: DepthSource[] = ['ai-estimation', 'tonal-height', 'distance-transform'];
-    const views: DepthViewMode[] = ['3d-interactive', '3d-shaded', 'heatmap', 'grayscale'];
+    const sources: DepthSource[] = ['auto', 'ai-estimation', 'tonal-height', 'distance-transform'];
+    const views: DepthViewMode[] = ['3d', 'heightmap'];
     const { container, rerender } = render(<DepthMapPanel />);
     for (const source of sources) {
       for (const viewMode of views) {
@@ -313,15 +313,17 @@ describe('every control in the migrated panels is reachable and named', () => {
         expect(inaccessibleControls(container), `${source} ${viewMode}`).toEqual([]);
       }
     }
-    // Each group of cards says which card is chosen: the last view mode and source set.
+    // Each group of cards says which card is chosen: the last source, bevel and view mode set.
     const pressed = [...container.querySelectorAll('[aria-pressed=true]')].map((b) => accessibleName(b));
     expect(pressed).toEqual([
-      expect.stringMatching(/^Raw 2D Grayscale/),
-      expect.stringMatching(/^Vector & Logo Bevel/),
-      expect.stringMatching(/^Prismatic/),
+      expect.stringMatching(/^Shape/),
+      expect.stringMatching(/^Round/),
+      expect.stringMatching(/^Heightmap/),
     ]);
-    const invert = one<HTMLInputElement>(container, 'input[type=checkbox]');
-    expect(accessibleName(invert)).toBe('Invert Z-Axis Height');
+    const invert = [...container.querySelectorAll<HTMLInputElement>('input[type=checkbox]')].find(
+      (c) => accessibleName(c) === 'Carve in instead of raising'
+    )!;
+    expect(invert).toBeTruthy();
     expect(invert.getAttribute('aria-describedby')).toBeTruthy();
   });
 

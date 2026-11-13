@@ -1,9 +1,8 @@
 import React, { useState } from 'react';
-import { Download, CheckCircle, FileCode, Box } from 'lucide-react';
+import { Download, CheckCircle, FileCode } from 'lucide-react';
 import { useDocumentStore } from '../../store/documentStore';
 import { traceIsCurrent, useRenderStore } from '../../store/renderStore';
 import { useUIStore } from '../../store/uiStore';
-import { encodePngGrayscale16 } from '../../lib/png-encoder';
 import { vectorExportRequest, vectorExportSource, vectorFile, type VectorFormat } from '../../lib/vector-file-export';
 import { traceSizeMm } from '../../lib/vector-export';
 import { getPipeline } from '../../lib/pipeline-client';
@@ -56,14 +55,13 @@ function download(parts: BlobPart[], type: string, fileName: string): void {
  * the worker at the source's full resolution for the crop and writes the
  * document's DPI into the file (#17); the size and DPI shown come from the
  * same plan the worker uses. Vector files are traced again at full resolution
- * and written in millimetres (#23, #30). The heightmap is still preview-sized
- * (#42, #46) and carries the DPI of the preview.
+ * and written in millimetres (#23, #30). The heightmap is computed again at
+ * full resolution and carries the document's DPI (#42, #46).
  */
 export const ExportPanel: React.FC = () => {
   const doc = useDocumentStore((s) => s.doc);
   const source = useRenderStore((s) => s.source);
   const processedBuffer = useRenderStore((s) => s.processed);
-  const depthHeightMapBuffer = useRenderStore((s) => s.depthHeightMap);
   const vectorResult = useRenderStore((s) => s.vectorResult);
   const tracedInputs = useRenderStore((s) => s.tracedInputs);
   const isVectorStale = useRenderStore((s) => s.isVectorStale);
@@ -96,14 +94,14 @@ export const ExportPanel: React.FC = () => {
   const size = physicalSize(doc);
   // What a raster export writes; null while the size is not set.
   const plan = doc.mmPerPx === null ? null : exportPlan(doc);
-  // The trace and heightmap are preview-sized: their files carry the preview's DPI.
+  // The trace is preview-sized: its file carries the preview's DPI.
   const previewResolution = plan ? exportResolution(doc, source.width) : null;
   const isExporting = progress !== null;
   const blocker = rasterExportBlocker(doc);
   const canExport = blocker === null && !isExporting;
 
   const file =
-    job === 'photo'
+    job === 'photo' || job === 'relief'
       ? plan && { widthPx: plan.target.widthPx, heightPx: plan.target.heightPx, dpi: plan.dpi }
       : previewResolution && { widthPx: source.width, heightPx: source.height, dpi: previewResolution.dpi };
   const settings = lightBurnSettings({
@@ -201,9 +199,6 @@ export const ExportPanel: React.FC = () => {
                 {file.widthPx} × {file.heightPx} px at {file.dpi.toFixed(1)} DPI
               </strong>
             </div>
-            {job === 'relief' && (
-              <div className={styles.controlNote}>The heightmap is computed at preview resolution until #46.</div>
-            )}
           </div>
         ) : (
           <div className={styles.readoutBox}>
@@ -316,32 +311,6 @@ export const ExportPanel: React.FC = () => {
       {job === 'relief' && (
         <>
           <ReliefExports />
-          {depthHeightMapBuffer && (
-            <Section title="Heightmap as Viewed" icon={<Box size={14} />}>
-              <Button
-                icon={<Download size={14} />}
-                disabled={!previewResolution}
-                onClick={() => {
-                  if (!previewResolution) return;
-                  // Preview-sized until #42 and #46, which also decide whether this button stays.
-                  void encodePngGrayscale16(
-                    new Uint16Array(depthHeightMapBuffer),
-                    source.width,
-                    source.height,
-                    previewResolution.pxPerMm
-                  )
-                    .then((png) => download([png.buffer as ArrayBuffer], 'image/png', `${baseName}-16bit-heightmap.png`))
-                    .catch((err: unknown) => setError(err instanceof Error ? err.message : String(err)));
-                }}
-              >
-                16-Bit Heightmap with DPI (.PNG)
-              </Button>
-              <div className={`${styles.controlNote} ${styles.stackGap}`}>
-                The heightmap the view shows. Two heightmap exports remain until #46 leaves one.
-              </div>
-              {error && <StatusMessage tone="error">Export failed: {error}</StatusMessage>}
-            </Section>
-          )}
         </>
       )}
 
