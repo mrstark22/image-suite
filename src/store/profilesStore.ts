@@ -9,6 +9,7 @@ import {
   materialOf,
   mergeProfiles,
   seedProfiles,
+  withAllCollections,
   thicknessOf,
   thicknessesOf,
 } from '../lib/profiles';
@@ -111,6 +112,22 @@ interface ProfilesState extends ProfileSelection {
   selectThickness: (id: string | null) => void;
   openManager: (focus?: ProfilesState['managerFocus']) => void;
   closeManager: () => void;
+  /** The Calibrate flow is open (#40, #85, #47), started for this calibration or card, if any. */
+  calibrateOpen: boolean;
+  calibrateFocus: CalibrateFocus | null;
+  openCalibrate: (focus?: CalibrateFocus | null) => void;
+  closeCalibrate: () => void;
+}
+
+/** Where the Calibrate flow starts: at a kind of calibration (and thickness), or at a card's results. */
+export interface CalibrateFocus {
+  kind?: CalibrationKind;
+  /** Selects this machine, material and thickness first. */
+  machineId?: string;
+  materialId?: string;
+  thicknessId?: string | null;
+  /** Opens the results of this card. */
+  cardId?: string;
 }
 
 export const useProfilesStore = create<ProfilesState>((set, get) => {
@@ -146,6 +163,14 @@ export const useProfilesStore = create<ProfilesState>((set, get) => {
     selectThickness: (thicknessId) => select({ thicknessId }),
     openManager: (managerFocus = null) => set({ managerOpen: true, managerFocus }),
     closeManager: () => set({ managerOpen: false, managerFocus: null }),
+    calibrateOpen: false,
+    calibrateFocus: null,
+    openCalibrate: (calibrateFocus = null) => {
+      if (calibrateFocus?.machineId) select({ machineId: calibrateFocus.machineId });
+      if (calibrateFocus?.materialId) select({ materialId: calibrateFocus.materialId, thicknessId: calibrateFocus.thicknessId ?? null });
+      set({ calibrateOpen: true, calibrateFocus });
+    },
+    closeCalibrate: () => set({ calibrateOpen: false, calibrateFocus: null }),
   };
 });
 
@@ -159,7 +184,7 @@ export async function loadProfiles(): Promise<void> {
   let storageError: string | null = null;
   try {
     const stored = await storage.load();
-    data = stored ?? seedProfiles();
+    data = stored ? withAllCollections(stored) : seedProfiles();
     if (!stored) await storage.save(data);
   } catch (e) {
     data = seedProfiles();

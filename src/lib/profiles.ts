@@ -12,6 +12,7 @@ import {
   PROFILE_FILE_FORMAT,
   PROFILE_FILE_VERSION,
   type Calibration,
+  type CalibrationCard,
   type CalibrationKind,
   type CalibrationSettings,
   type CalibrationStatus,
@@ -54,10 +55,15 @@ function changed<T extends SyncRecord>(record: T, patch: Partial<T>): T {
 
 // Reading
 
-export const COLLECTIONS: readonly ProfileCollection[] = ['machines', 'categories', 'materials', 'thicknesses', 'calibrations'];
+export const COLLECTIONS: readonly ProfileCollection[] = ['machines', 'categories', 'materials', 'thicknesses', 'calibrations', 'cards'];
 
 export function emptyProfiles(): ProfileData {
-  return { machines: [], categories: [], materials: [], thicknesses: [], calibrations: [] };
+  return { machines: [], categories: [], materials: [], thicknesses: [], calibrations: [], cards: [] };
+}
+
+/** Profiles stored before cards existed have no `cards` list; they get an empty one. */
+export function withAllCollections(d: Partial<ProfileData>): ProfileData {
+  return { ...emptyProfiles(), ...d } as ProfileData;
 }
 
 /**
@@ -96,6 +102,7 @@ export const materialOf = (d: ProfileData, id: string | null): Material | null =
 export const categoryOf = (d: ProfileData, id: string | null): Category | null => liveById(d.categories, id);
 export const thicknessOf = (d: ProfileData, id: string | null): Thickness | null => liveById(d.thicknesses, id);
 export const calibrationOf = (d: ProfileData, id: string | null): Calibration | null => liveById(d.calibrations, id);
+export const cardOf = (d: ProfileData, id: string | null): CalibrationCard | null => liveById(d.cards, id);
 
 const byName = <T extends { name: string }>(a: T, b: T) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base', numeric: true });
 
@@ -199,7 +206,8 @@ export function updateMachine(d: ProfileData, id: string, patch: Partial<Machine
 
 /** Deletes a machine and every calibration made on it. */
 export function deleteMachine(d: ProfileData, id: string): ProfileData {
-  return tombstone(tombstone(d, 'calibrations', (c) => c.machineId === id), 'machines', (m) => m.id === id);
+  const next = tombstone(d, 'cards', (c) => c.spec.machineId === id);
+  return tombstone(tombstone(next, 'calibrations', (c) => c.machineId === id), 'machines', (m) => m.id === id);
 }
 
 export function addCategory(d: ProfileData, name: string): { data: ProfileData; id: string } {
@@ -230,6 +238,7 @@ export function updateMaterial(d: ProfileData, id: string, patch: Partial<Materi
 /** Deletes a material with its thicknesses and every calibration under it. */
 export function deleteMaterial(d: ProfileData, id: string): ProfileData {
   let next = tombstone(d, 'calibrations', (c) => c.materialId === id);
+  next = tombstone(next, 'cards', (c) => c.spec.materialId === id);
   next = tombstone(next, 'thicknesses', (t) => t.materialId === id);
   return tombstone(next, 'materials', (m) => m.id === id);
 }
@@ -246,7 +255,8 @@ export function addThickness(d: ProfileData, materialId: string, mm: number): { 
 
 /** Deletes a thickness and the cutting calibrations under it. */
 export function deleteThickness(d: ProfileData, id: string): ProfileData {
-  return tombstone(tombstone(d, 'calibrations', (c) => c.thicknessId === id), 'thicknesses', (t) => t.id === id);
+  const next = tombstone(d, 'cards', (c) => c.spec.thicknessId === id);
+  return tombstone(tombstone(next, 'calibrations', (c) => c.thicknessId === id), 'thicknesses', (t) => t.id === id);
 }
 
 export interface CalibrationEntry extends CalibrationSettings {
@@ -295,7 +305,34 @@ export function settingsOf(c: Calibration): CalibrationSettings {
     toneCurve: c.toneCurve ? [...c.toneCurve] : null,
     depthCurve: c.depthCurve ? [...c.depthCurve] : null,
     kerfMm: c.kerfMm,
+    maxDepthMm: c.maxDepthMm ?? null,
   };
+}
+
+// Calibration cards
+
+/** Keeps a card that was made, so its results can be entered later. */
+export function addCard(d: ProfileData, spec: CalibrationCard['spec']): { data: ProfileData; id: string } {
+  if (!machineOf(d, spec.machineId)) throw new Error(`No machine ${spec.machineId}`);
+  if (!materialOf(d, spec.materialId)) throw new Error(`No material ${spec.materialId}`);
+  const card: CalibrationCard = { spec: structuredClone(spec), readAt: null, id: spec.id, modifiedAt: changeTime(), version: 1, deleted: false };
+  return { data: { ...d, cards: [...d.cards, card] }, id: card.id };
+}
+
+/** Records that results were entered from a card. */
+export function markCardRead(d: ProfileData, id: string): ProfileData {
+  return update(d, 'cards', id, { readAt: Date.now() });
+}
+
+export function deleteCard(d: ProfileData, id: string): ProfileData {
+  return tombstone(d, 'cards', (c) => c.id === id);
+}
+
+/** The live cards of a material on a machine, newest first. */
+export function cardsFor(d: ProfileData, machineId: string, materialId: string): CalibrationCard[] {
+  return live(d.cards)
+    .filter((c) => c.spec.machineId === machineId && c.spec.materialId === materialId)
+    .sort((a, b) => b.spec.createdAt - a.spec.createdAt);
 }
 
 /**
@@ -338,8 +375,8 @@ export function mergeProfiles(local: ProfileData, incoming: ProfileData): Profil
   const out = emptyProfiles();
   for (const collection of COLLECTIONS) {
     const map = new Map<string, SyncRecord>();
-    for (const r of local[collection] as SyncRecord[]) map.set(r.id, r);
-    for (const r of incoming[collection] as SyncRecord[]) {
+    for (const r of (local[collection] ?? []) as SyncRecord[]) map.set(r.id, r);
+    for (const r of (incoming[collection] ?? []) as SyncRecord[]) {
       const have = map.get(r.id);
       map.set(r.id, have ? newer(have, r) : r);
     }
@@ -375,6 +412,25 @@ const isStr = (v: unknown): v is string => typeof v === 'string';
 const isNumOrNull = (v: unknown) => v === null || isNum(v);
 const isStrOrNull = (v: unknown) => v === null || isStr(v);
 const isCurve = (v: unknown) => v === null || (Array.isArray(v) && v.every(isNum));
+const isOptionalNum = (v: unknown) => v === undefined || isNumOrNull(v);
+const isCardSpec = (v: unknown) => {
+  const s = v as Record<string, unknown> | null;
+  return (
+    !!s &&
+    typeof s === 'object' &&
+    isStr(s.id) &&
+    isStr(s.shortId) &&
+    ['engrave-grid', 'engrave-tone', 'cut', 'relief'].includes(s.kind as string) &&
+    isStr(s.machineId) &&
+    isStr(s.materialId) &&
+    isStrOrNull(s.thicknessId) &&
+    Array.isArray(s.cells) &&
+    s.cells.length <= 30 &&
+    s.cells.every((c: Record<string, unknown>) => !!c && isNum(c.speedMmS) && isNum(c.powerPct) && isNum(c.passes) && isNum(c.layer)) &&
+    Array.isArray(s.levels) &&
+    s.levels.every(isNum)
+  );
+};
 
 const CHECKS: Record<ProfileCollection, Record<string, (v: unknown) => boolean>> = {
   machines: {
@@ -404,7 +460,9 @@ const CHECKS: Record<ProfileCollection, Record<string, (v: unknown) => boolean>>
     toneCurve: isCurve,
     depthCurve: isCurve,
     kerfMm: isNumOrNull,
+    maxDepthMm: isOptionalNum,
   },
+  cards: { spec: isCardSpec, readAt: isNumOrNull },
 };
 
 const RECORD_CHECKS: Record<string, (v: unknown) => boolean> = {
@@ -434,7 +492,8 @@ export function parseProfileFile(text: string): ProfileData {
   if (!profiles || typeof profiles !== 'object') throw new Error('The profile file has no profiles.');
   const out = emptyProfiles();
   for (const collection of COLLECTIONS) {
-    const list = profiles[collection];
+    // Files written before cards existed have no list of them.
+    const list = collection === 'cards' && profiles[collection] === undefined ? [] : profiles[collection];
     if (!Array.isArray(list)) throw new Error(`The profile file has no ${collection} list.`);
     const checks = { ...RECORD_CHECKS, ...CHECKS[collection] };
     list.forEach((record, i) => {
@@ -445,7 +504,8 @@ export function parseProfileFile(text: string): ProfileData {
     });
     // Only the known fields are kept.
     (out[collection] as unknown[]) = list.map((record: Record<string, unknown>) =>
-      Object.fromEntries(Object.keys(checks).map((field) => [field, structuredClone(record[field])])),
+      // An optional field that is absent stays absent.
+      Object.fromEntries(Object.keys(checks).filter((field) => record[field] !== undefined || field !== 'maxDepthMm').map((field) => [field, structuredClone(record[field])])),
     );
   }
   return out;
