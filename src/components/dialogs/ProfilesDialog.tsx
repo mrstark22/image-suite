@@ -258,6 +258,9 @@ const MachineForm: React.FC<{
 
 // Materials
 
+/** The Category choice that makes a new category, named in the field shown below it. */
+const NEW_CATEGORY = '__new-category__';
+
 const MaterialForm: React.FC<{
   data: ProfileData;
   id: string;
@@ -268,6 +271,8 @@ const MaterialForm: React.FC<{
   const material = id === NEW ? null : materialOf(data, id);
   const [name, setName] = useState(material?.name ?? '');
   const [categoryId, setCategoryId] = useState(material?.categoryId ?? '');
+  // Typed when "New category…" is chosen: the category is made when the material is saved.
+  const [newCategoryName, setNewCategoryName] = useState('');
   const [finish, setFinish] = useState(material?.finish ?? '');
   const [supplier, setSupplier] = useState(material?.supplier ?? '');
   const [notes, setNotes] = useState(material?.notes ?? '');
@@ -276,16 +281,32 @@ const MaterialForm: React.FC<{
 
   const save = async () => {
     if (!name.trim()) return setError('The material needs a name, such as "White oak".');
-    const fields: MaterialFields = { name: name.trim(), finish: finish.trim(), supplier: supplier.trim(), notes: notes.trim(), categoryId: categoryId || null };
+    let base = data;
+    let chosen: string | null = categoryId || null;
+    if (categoryId === NEW_CATEGORY) {
+      const wanted = newCategoryName.trim();
+      if (!wanted) return setError('Give the new category a name, such as "Hardwoods", or choose another category.');
+      // A category of that name already exists: use it, do not make a second.
+      const existing = categoriesSorted(data).find((c) => c.name.toLowerCase() === wanted.toLowerCase());
+      if (existing) chosen = existing.id;
+      else {
+        const made = addCategory(data, wanted);
+        base = made.data;
+        chosen = made.id;
+      }
+    }
+    const fields: MaterialFields = { name: name.trim(), finish: finish.trim(), supplier: supplier.trim(), notes: notes.trim(), categoryId: chosen };
     setError(null);
     if (material) {
-      await commit(updateMaterial(data, material.id, fields));
+      await commit(updateMaterial(base, material.id, fields));
       onSaved(material.id);
     } else {
-      const added = addMaterial(data, fields);
+      const added = addMaterial(base, fields);
       await commit(added.data);
       onSaved(added.id);
     }
+    setCategoryId(chosen ?? '');
+    setNewCategoryName('');
     setSaved(true);
   };
 
@@ -302,9 +323,16 @@ const MaterialForm: React.FC<{
         <Select<string>
           label="Category"
           value={categoryId}
-          options={[{ value: '', label: 'No category' }, ...categoriesSorted(data).map((c) => ({ value: c.id, label: c.name }))]}
+          options={[
+            { value: '', label: 'No category' },
+            ...categoriesSorted(data).map((c) => ({ value: c.id, label: c.name })),
+            { value: NEW_CATEGORY, label: 'New category…' },
+          ]}
           onChange={setCategoryId}
         />
+        {categoryId === NEW_CATEGORY && (
+          <Field label="New category name" value={newCategoryName} onChange={setNewCategoryName} placeholder="e.g. Hardwoods" autoFocus />
+        )}
         <Field label="Finish" value={finish} onChange={setFinish} placeholder="e.g. Sanded 220, unfinished" />
         <Field label="Supplier or batch" value={supplier} onChange={setSupplier} placeholder="Optional" />
         <TextArea label="Notes" value={notes} onChange={setNotes} placeholder="Anything worth remembering about this material" />
