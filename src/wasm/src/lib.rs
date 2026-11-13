@@ -9,6 +9,7 @@
 #![allow(clippy::not_unsafe_ptr_arg_deref)]
 
 mod burn_sim;
+mod card_photo;
 mod clahe;
 mod depth;
 mod dither;
@@ -38,6 +39,9 @@ static mut LAST_JSON_BUF: Vec<u8> = Vec::new();
 #[allow(static_mut_refs)]
 static mut LAST_DEPTH_BUF: Vec<u16> = Vec::new();
 static mut LAST_DEPTH_SOURCE: u32 = 0;
+
+#[allow(static_mut_refs)]
+static mut LAST_MARKERS: Vec<f32> = Vec::new();
 
 /// Allocates linear memory buffer for image pixels
 #[no_mangle]
@@ -471,4 +475,114 @@ pub extern "C" fn get_depth_buf_len() -> usize {
     unsafe {
         LAST_DEPTH_BUF.len()
     }
+}
+
+/// The 3 x 3 matrix at `matrix`, read unaligned: `allocate` does not promise alignment.
+fn read_matrix(matrix: *const f64) -> [f64; 9] {
+    std::array::from_fn(|i| unsafe { std::ptr::read_unaligned(matrix.add(i)) })
+}
+
+/// Finds the corner markers of a calibration card in the RGBA8 photo at
+/// `ptr` (#56, see `card_photo.rs`). Returns 4 floats per marker (centre x,
+/// centre y, size, dot ratio) in photo pixels; their count is
+/// `get_card_markers_len`.
+#[no_mangle]
+pub extern "C" fn find_card_markers(ptr: *const u8, width: usize, height: usize) -> *const f32 {
+    let found = if ptr.is_null() || width == 0 || height == 0 {
+        Vec::new()
+    } else {
+        let pixels = unsafe { std::slice::from_raw_parts(ptr, width * height * 4) };
+        card_photo::find_markers(pixels, width, height)
+    };
+    #[allow(static_mut_refs)]
+    unsafe {
+        LAST_MARKERS = found
+            .iter()
+            .flat_map(|m| [m.x, m.y, m.side, m.dot_ratio])
+            .collect();
+        LAST_MARKERS.as_ptr()
+    }
+}
+
+/// The number of floats written by the last `find_card_markers`.
+#[no_mangle]
+pub extern "C" fn get_card_markers_len() -> usize {
+    #[allow(static_mut_refs)]
+    unsafe {
+        LAST_MARKERS.len()
+    }
+}
+
+/// Samples `count` rectangles of a card photo (#56). `matrix` holds 9 f64
+/// (card mm to photo pixels, row-major), `rects` 4 f32 per rectangle (x, y,
+/// w, h in mm). Writes 2 f32 per rectangle to `out`: the median linear
+/// luminance and the clipped fraction (NaN median when outside the photo).
+/// Returns 1, or 0 on bad input.
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub extern "C" fn sample_card_patches(
+    ptr: *const u8,
+    width: usize,
+    height: usize,
+    matrix: *const f64,
+    rects: *const f32,
+    count: usize,
+    grid: u32,
+    out: *mut f32,
+) -> u32 {
+    if ptr.is_null()
+        || matrix.is_null()
+        || out.is_null()
+        || width < 2
+        || height < 2
+        || (count > 0 && rects.is_null())
+    {
+        return 0;
+    }
+    let pixels = unsafe { std::slice::from_raw_parts(ptr, width * height * 4) };
+    let m = read_matrix(matrix);
+    // `allocate` does not promise alignment, so the floats are read unaligned.
+    let list: Vec<[f32; 4]> = (0..count)
+        .map(|i| std::array::from_fn(|k| unsafe { std::ptr::read_unaligned(rects.add(i * 4 + k)) }))
+        .collect();
+    let samples = card_photo::sample_patches(pixels, width, height, &m, &list, grid as usize);
+    for (i, s) in samples.iter().enumerate() {
+        unsafe {
+            std::ptr::write_unaligned(out.add(i * 2), s.median);
+            std::ptr::write_unaligned(out.add(i * 2 + 1), s.clipped);
+        }
+    }
+    1
+}
+
+/// The card in a photo flattened to `out_w` x `out_h` RGBA8 pixels at
+/// `px_per_mm` (#56): a new buffer of `out_w * out_h * 4` bytes that the
+/// caller frees with `deallocate`, or null on bad input.
+#[no_mangle]
+pub extern "C" fn rectify_card(
+    ptr: *const u8,
+    width: usize,
+    height: usize,
+    matrix: *const f64,
+    out_w: usize,
+    out_h: usize,
+    px_per_mm: f64,
+) -> *mut u8 {
+    if ptr.is_null()
+        || matrix.is_null()
+        || width < 2
+        || height < 2
+        || out_w == 0
+        || out_h == 0
+        || !(px_per_mm > 0.0)
+    {
+        return std::ptr::null_mut();
+    }
+    let pixels = unsafe { std::slice::from_raw_parts(ptr, width * height * 4) };
+    let m = read_matrix(matrix);
+    let mut out = card_photo::rectify(pixels, width, height, &m, out_w, out_h, px_per_mm);
+    out.shrink_to_fit();
+    let p = out.as_mut_ptr();
+    std::mem::forget(out);
+    p
 }

@@ -13,12 +13,14 @@ import {
 } from '../../lib/calibration-cards';
 import { cardProject } from '../../lib/lbrn2';
 import { cardFileStem, cardPng, cutCardSvg, settingsTable } from '../../lib/card-files';
+import { cardDither } from '../../lib/card-dither';
 import {
   CARD_CALIBRATION,
   cardKey,
   cutFromCell,
   depthCurveFrom,
   engraveFromCell,
+  engraveWithMeasuredTone,
   engraveWithTone,
   kerfFrom,
   minPowerFrom,
@@ -33,6 +35,7 @@ import { Button } from '../shared/Button';
 import { Dialog } from '../shared/Dialog';
 import { StatusMessage } from '../shared/StatusMessage';
 import { CardPicture, placeAt } from './CardPicture';
+import { CardPhotoReader, ToneCurvePlot, type CardRead } from './CardPhotoReader';
 import styles from './CalibrateDialog.module.css';
 
 type Step = 'choose' | 'settings' | 'card' | 'results' | 'done';
@@ -547,8 +550,8 @@ const CardStep: React.FC<{ spec: CardSpec; realSize: boolean; setRealSize: (v: b
   };
   const plainName = spec.kind === 'cut' ? 'SVG' : 'PNG';
   const howTo: Record<CardKind, string> = {
-    'engrave-grid': `The PNG is one cell's tone ramp (${fmt(spec.levels.length * spec.stepMm)} × ${fmt(spec.rampHeightMm)} mm at ${fmt(25.4 / spec.lineIntervalMm)} DPI). Import it ${spec.cells.length} times in a ${spec.rows} × ${spec.cols} grid, put each copy on its own layer, and enter that layer's speed and power from the table. Or burn LightBurn's own Material Test (Laser Tools) over the same ranges and then this ramp at the best setting.`,
-    'engrave-tone': 'The PNG is the whole card at its size. Import it on one layer set as in the table.',
+    'engrave-grid': `The PNG is one cell's tone ramp, already dithered (1-bit, ${fmt(spec.levels.length * spec.stepMm)} × ${fmt(spec.rampHeightMm)} mm at ${fmt(25.4 / spec.lineIntervalMm)} DPI). Import it ${spec.cells.length} times in a ${spec.rows} × ${spec.cols} grid, put each copy on its own layer in Pass-Through mode, and enter that layer's speed and power from the table. A card made this way has no corner markers, so it cannot be read from a photo: use the project for that.`,
+    'engrave-tone': 'The PNG is the whole card at its size, already dithered (1-bit), with its corner markers and code. Import it on one layer in Pass-Through mode, set as in the table.',
     cut: 'The SVG is in millimetres. Each square is drawn in the colour of its own LightBurn layer, so importing it puts every square on its own layer; enter each layer’s speed, power and passes from the table, and set the lettering layer to Fill.',
     relief: `The PNG is the depth ramp at its size, run on one layer in Grayscale mode as in the table.${spec.cells.some((c) => c.role === 'min-power') ? ' The minimum-power squares need a layer each; draw 6 mm filled squares for them, or use the project.' : ''}`,
   };
@@ -570,8 +573,13 @@ const CardStep: React.FC<{ spec: CardSpec; realSize: boolean; setRealSize: (v: b
         <div className={styles.downloadText}>
           <h3 className={styles.blockTitle}>1. LightBurn project (recommended)</h3>
           <p className={styles.muted}>Open it in LightBurn: every cell is already on its own layer with its speed, power and passes filled in. Check the layers, focus, frame and press Start.</p>
+          {(spec.kind === 'engrave-grid' || spec.kind === 'engrave-tone') && (
+            <p className={styles.muted}>
+              The cells are dithered by Image Suite, as a photo is, and their layers are set to Pass-Through so LightBurn burns those dots as they are. Pass-Through in a project file is not yet checked against LightBurn: if a cell layer opens in another image mode, set it to Pass-Through, or use the plain file below.
+            </p>
+          )}
         </div>
-        <Button compact variant="secondary" icon={<Download size={14} />} disabled={busy} onClick={() => void run(async () => download(`${stem}.lbrn2`, [await cardProject(spec)], 'application/xml'))}>
+        <Button compact variant="secondary" icon={<Download size={14} />} disabled={busy} onClick={() => void run(async () => download(`${stem}.lbrn2`, [await cardProject(spec, cardDither())], 'application/xml'))}>
           Download .lbrn2
         </Button>
       </section>
@@ -590,7 +598,7 @@ const CardStep: React.FC<{ spec: CardSpec; realSize: boolean; setRealSize: (v: b
             void run(async () => {
               if (spec.kind === 'cut') download(`${stem}.svg`, [cutCardSvg(spec)], 'image/svg+xml');
               else {
-                const png = await cardPng(spec);
+                const png = await cardPng(spec, cardDither());
                 download(`${stem}.png`, [png.bytes as BlobPart], 'image/png');
               }
             })
@@ -660,7 +668,8 @@ const ResultsStep: React.FC<{ spec: CardSpec; data: ProfileData; error: string |
       {existing ? ', replacing the one there is.' : '.'}
     </p>
   );
-  const props = { spec, header, error, submit };
+  const known = live(data.cards).map((c) => c.spec);
+  const props = { spec, header, error, submit, known };
   if (spec.kind === 'engrave-grid') return <GridResults {...props} />;
   if (spec.kind === 'engrave-tone') return <ToneResults {...props} />;
   if (spec.kind === 'cut') return <CutResults {...props} />;
@@ -669,6 +678,8 @@ const ResultsStep: React.FC<{ spec: CardSpec; data: ProfileData; error: string |
 
 interface ResultProps {
   spec: CardSpec;
+  /** Every card stored in this browser, so a photo of another card is recognised. */
+  known: CardSpec[];
   header: React.ReactNode;
   error: string | null;
   submit: (fn: () => { apply: (d: ProfileData) => ProfileData; text: string }) => (e: React.FormEvent) => void;
@@ -676,32 +687,82 @@ interface ResultProps {
 
 const savedText = (spec: CardSpec, detail: string) => `Saved: ${KIND_LABEL[CARD_CALIBRATION[spec.kind]]} calibration for ${spec.materialName}${spec.thicknessMm !== null ? ` ${formatMm(spec.thicknessMm)}` : ''} on ${spec.machineName}, ${detail}. It is used whenever this machine and material are selected.`;
 
-const GridResults: React.FC<ResultProps> = ({ spec, header, error, submit }) => {
+const GridResults: React.FC<ResultProps> = ({ spec, header, error, submit, known }) => {
   const [pick, setPick] = useState<number | null>(null);
+  const [reading, setReading] = useState<CardRead | null>(null);
   const cell = pick === null ? null : spec.cells[pick];
+  const ranked = reading?.cells ?? null;
+  const proposal = ranked?.[0] ?? null;
+  const scorched = new Set((ranked ?? []).filter((c) => c.scorched).map((c) => c.layer));
+  const at = (layer: number) => `${fmt(spec.cells[layer].speedMmS)} mm/s at ${fmt(spec.cells[layer].powerPct)}%`;
+  const speeds = spec.cells.filter((c) => c.col === 0);
+  const powers = spec.cells.filter((c) => c.row === 0);
   return (
     <form id="card-results" className={styles.stack} onSubmit={submit(() => {
       if (pick === null) throw new Error('Tap the best cell first.');
       const entry = engraveFromCell(spec, pick);
-      return { apply: (d) => saveCardResult(d, spec, entry).data, text: savedText(spec, `${fmt(entry.speedMmS)} mm/s at ${fmt(entry.powerMaxPct)}%`) };
+      const fromPhoto = proposal !== null && pick === proposal.layer;
+      return { apply: (d) => saveCardResult(d, spec, entry).data, text: savedText(spec, `${fmt(entry.speedMmS)} mm/s at ${fmt(entry.powerMaxPct)}%${fromPhoto ? ', as proposed from the photo' : ''}`) };
     })}>
       {header}
-      <p className={styles.instruction}>Tap the cell with <strong>solid blacks</strong>, <strong>no charring</strong> and the <strong>lightest step still visible</strong>.</p>
+      <CardPhotoReader
+        spec={spec}
+        known={known}
+        onRead={(r) => {
+          setReading(r);
+          if (r?.cells?.length) setPick(r.cells[0].layer);
+        }}
+      />
+      {proposal && (
+        <div className={styles.proposal} aria-live="polite">
+          <span>
+            Proposed from the photo: <strong>{at(proposal.layer)}</strong>, the widest clean tone range ({Math.round(proposal.range * 100)} % from its lightest to its darkest step, {proposal.distinct} of {spec.levels.length - 1} steps told apart)
+            {proposal.scorched ? '. Every cell is discoloured around it: check the card for scorching' : ''}.
+            {scorched.size > 0 && !proposal.scorched && <> Discoloured around (scorch or smoke): {[...scorched].map(at).join('; ')}.</>} Tap another cell to use it instead.
+          </span>
+        </div>
+      )}
+      <p className={styles.instruction}>{reading ? 'Or choose' : 'Choose'} by eye: the cell with <strong>solid blacks</strong>, <strong>no charring</strong> and the <strong>lightest step still visible</strong>.</p>
       <CardPicture spec={spec} label={`Card #${spec.shortId}`}>
         {(layout) =>
           layout.cells.map((b) => (
             <button
               key={b.cell.layer}
               type="button"
-              className={`${styles.hit} ${pick === b.cell.layer ? styles.hitPicked : ''}`}
+              tabIndex={-1}
+              className={`${styles.hit} ${scorched.has(b.cell.layer) ? styles.hitCharred : ''} ${pick === b.cell.layer ? styles.hitPicked : ''}`}
               style={placeAt(layout, b.x - 0.8, b.y - 0.8, b.w + 1.6, b.h + 1.6)}
-              aria-pressed={pick === b.cell.layer}
-              aria-label={`Row ${b.cell.row + 1}, column ${b.cell.col + 1}: ${fmt(b.cell.speedMmS)} mm/s, ${fmt(b.cell.powerPct)}%`}
+              aria-hidden="true"
               onClick={() => setPick(b.cell.layer)}
             />
           ))
         }
       </CardPicture>
+      <div className={styles.cellGrid} role="group" aria-label="Cells, by speed and power" style={{ gridTemplateColumns: `auto repeat(${powers.length}, minmax(44px, 1fr))` }}>
+        <span className={styles.cellHead}>mm/s</span>
+        {powers.map((c) => (
+          <span key={c.col} className={styles.cellHead}>{fmt(c.powerPct)}%</span>
+        ))}
+        {speeds.map((row) => (
+          <React.Fragment key={row.row}>
+            <span className={styles.cellHead}>{fmt(row.speedMmS)}</span>
+            {spec.cells
+              .filter((c) => c.row === row.row)
+              .map((c) => (
+                <button
+                  key={c.layer}
+                  type="button"
+                  className={`${styles.cellBtn} ${pick === c.layer ? styles.cellBtnOn : ''} ${scorched.has(c.layer) ? styles.cellBtnWarn : ''}`}
+                  aria-pressed={pick === c.layer}
+                  aria-label={`Row ${c.row + 1}, column ${c.col + 1}: ${fmt(c.speedMmS)} mm/s, ${fmt(c.powerPct)}%${proposal?.layer === c.layer ? ', proposed' : ''}${scorched.has(c.layer) ? ', discoloured around' : ''}`}
+                  onClick={() => setPick(c.layer)}
+                >
+                  {proposal?.layer === c.layer ? '★' : scorched.has(c.layer) ? '!' : ''}
+                </button>
+              ))}
+          </React.Fragment>
+        ))}
+      </div>
       <p className={styles.summary} aria-live="polite">
         {cell ? <>Chosen: <strong>{fmt(cell.speedMmS)} mm/s at {fmt(cell.powerPct)}%</strong>, line interval {fmt(spec.lineIntervalMm)} mm.</> : 'No cell chosen yet.'}
       </p>
@@ -710,19 +771,63 @@ const GridResults: React.FC<ResultProps> = ({ spec, header, error, submit }) => 
   );
 };
 
-const ToneResults: React.FC<ResultProps> = ({ spec, header, error, submit }) => {
+const ToneResults: React.FC<ResultProps> = ({ spec, header, error, submit, known }) => {
   const [blank, setBlank] = useState<number | null>(null);
   const [solid, setSolid] = useState<number | null>(null);
   const [marking, setMarking] = useState<'blank' | 'solid'>('blank');
+  const [measured, setMeasured] = useState<number[] | null>(null);
+  /** The curve saved: measured from the photo, or from the marks made by eye. */
+  const [source, setSource] = useState<'photo' | 'eye'>('eye');
   const pct = (i: number) => `${Math.round(spec.levels[i] * 100)}%`;
   const state = useProfilesStore.getState;
+  const mark = (i: number) => {
+    setSource('eye');
+    if (marking === 'blank') {
+      setBlank(i);
+      setMarking('solid');
+    } else setSolid(i);
+  };
   return (
     <form id="card-results" className={styles.stack} onSubmit={submit(() => {
+      if (source === 'photo' && measured) {
+        const entry = engraveWithMeasuredTone(spec, measured, state().data);
+        return { apply: (d) => saveCardResult(d, spec, engraveWithMeasuredTone(spec, measured, d)).data, text: savedText(spec, `tone curve measured from a photo (${fmt(entry.speedMmS)} mm/s at ${fmt(entry.powerMaxPct)}%)`) };
+      }
       if (blank === null || solid === null) throw new Error('Mark both: the last step that looks bare, and the first that looks fully black.');
       const entry = engraveWithTone(spec, blank, solid, state().data);
       return { apply: (d) => saveCardResult(d, spec, engraveWithTone(spec, blank, solid, d)).data, text: savedText(spec, `tone curve bare up to ${pct(blank)}, black from ${pct(solid)} (${fmt(entry.speedMmS)} mm/s at ${fmt(entry.powerMaxPct)}%)`) };
     })}>
       {header}
+      <CardPhotoReader
+        spec={spec}
+        known={known}
+        onRead={(r) => {
+          const tone = r?.tone ?? null;
+          setMeasured(tone?.curve ?? null);
+          setSource(tone ? 'photo' : 'eye');
+          if (tone) {
+            setBlank(tone.lastBlank);
+            setSolid(tone.firstSolid);
+          }
+        }}
+      />
+      {measured && (
+        <div className={styles.proposal} aria-live="polite">
+          <ToneCurvePlot curve={measured} />
+          <span>
+            {source === 'photo' ? (
+              <>Proposed: the <strong>tone curve measured from the photo</strong>, bare up to {pct(blank ?? 0)} and fully black from {pct(solid ?? spec.levels.length - 1)}. Mark steps below to use your own judgement instead.</>
+            ) : (
+              <>
+                Using your marks instead of the measured curve.{' '}
+                <button type="button" className={styles.linkBtn} onClick={() => setSource('photo')}>
+                  Use the measured curve
+                </button>
+              </>
+            )}
+          </span>
+        </div>
+      )}
       <div className={styles.segment} role="group" aria-label="What to mark">
         <button type="button" className={`${styles.segBtn} ${marking === 'blank' ? styles.segOn : ''}`} aria-pressed={marking === 'blank'} onClick={() => setMarking('blank')}>
           1. Last step that looks bare{blank !== null ? `: ${pct(blank)}` : ''}
@@ -742,12 +847,7 @@ const ToneResults: React.FC<ResultProps> = ({ spec, header, error, submit }) => 
               className={`${styles.hit} ${i === blank ? styles.hitBlank : ''} ${i === solid ? styles.hitPicked : ''}`}
               style={placeAt(layout, b.x + i * spec.stepMm, b.y, spec.stepMm, b.h)}
               aria-label={`Step ${pct(i)}${i === blank ? ', marked last bare' : ''}${i === solid ? ', marked first black' : ''}`}
-              onClick={() => {
-                if (marking === 'blank') {
-                  setBlank(i);
-                  setMarking('solid');
-                } else setSolid(i);
-              }}
+              onClick={() => mark(i)}
             />
           ));
         }}

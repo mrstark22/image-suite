@@ -10,6 +10,37 @@ import { activeCalibration, loadProfiles, memoryProfileStorage, setProfileStorag
 import { addMaterial, addThickness, live } from '../../src/lib/profiles';
 import { accessibleName, button, click, mount, settle, setInputValue, type Mounted } from '../helpers/dom';
 import { act } from 'react';
+import { RustWasmEngine, type WasmExports } from '../../src/wasm/wasm-bridge';
+import { PipelineWorkerApi } from '../../src/workers/pipeline-api';
+import { setPipeline, type Pipeline } from '../../src/lib/pipeline-client';
+import type { CardSpec } from '../../src/types/calibration-card';
+import { loadWasm } from '../helpers/wasm';
+import { cardPhoto, type PhotoOptions } from '../helpers/card-photo';
+
+/**
+ * The app's pipeline over the real core, except that a "photo file" is a
+ * synthetic photo of the card being read (jsdom cannot decode files).
+ */
+async function photoPipeline(darkness: PhotoOptions['darkness'], halos: PhotoOptions['halos'] = []): Promise<void> {
+  const wasm = await loadWasm({ fresh: true });
+  const api = new PipelineWorkerApi(async () => RustWasmEngine.fromExports(wasm.exports as unknown as WasmExports));
+  setPipeline({
+    readCardPhotoFile: async (_file: Blob, expected: CardSpec, known: CardSpec[]) => {
+      const p = cardPhoto(expected, { darkness, halos, width: 900, height: 640, corners: [[60, 50], [840, 70], [860, 600], [40, 590]], light: (u) => 1.1 - 0.3 * u, blurPx: 1 });
+      return api.readCardPhoto(p.rgba.buffer as ArrayBuffer, p.width, p.height, expected, known);
+    },
+  } as unknown as Pipeline);
+}
+
+/** Chooses a "photo" in the Read from a photo section. */
+async function choosePhoto(): Promise<void> {
+  const input = [...dialog().querySelectorAll<HTMLInputElement>('input[type=file]')].find((i) => !i.hasAttribute('capture'))!;
+  Object.defineProperty(input, 'files', { value: [new File([new Uint8Array(4)], 'card.jpg', { type: 'image/jpeg' })], configurable: true });
+  await settle(async () => {
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    await new Promise((r) => setTimeout(r, 2500));
+  });
+}
 
 let mounted: Mounted | null = null;
 
@@ -32,6 +63,7 @@ afterEach(() => {
   mounted?.unmount();
   mounted = null;
   useProfilesStore.setState({ calibrateOpen: false, calibrateFocus: null });
+  setPipeline(null);
 });
 
 describe('Calibrate', () => {
@@ -94,6 +126,69 @@ describe('Calibrate', () => {
     const cal = activeCalibration('engrave')!;
     expect([cal.speedMmS, cal.powerMaxPct, cal.lineIntervalMm]).toEqual([pick.speedMmS, pick.powerPct, card.spec.lineIntervalMm]);
     expect(dialog().textContent).toContain('Make card 2');
+  });
+
+  it('photo card 1 read from a photo: the widest clean cell is proposed and saved, the scorched one flagged', async () => {
+    act(() => useProfilesStore.getState().openCalibrate({ kind: 'engrave' }));
+    await settle(() => click(button(dialog(), /Next: settings/)));
+    await settle(() => click(button(dialog(), /Next: preview card/)));
+    await settle(() => click(button(dialog(), /I burned it/)));
+    const card = live(useProfilesStore.getState().data.cards)[0].spec;
+    const n = card.cells.length;
+    const strength = (layer: number) => 0.25 + (0.65 * layer) / (n - 1);
+    await photoPipeline((layer, _i, level) => Math.min(0.92, 0.04 + strength(layer) * level), [{ layer: n - 1, darkness: 0.3 }]);
+    expect(dialog().textContent).toContain('a flatbed scan is the most repeatable');
+    expect(dialog().querySelector('input[capture=environment]')).not.toBeNull();
+    await choosePhoto();
+    expect(dialog().textContent).toContain(`Card #${card.shortId} recognised and measured.`);
+    const best = card.cells[n - 2];
+    const charred = card.cells[n - 1];
+    expect(dialog().textContent).toContain(`Proposed from the photo: ${best.speedMmS} mm/s at ${best.powerPct}%`);
+    expect(dialog().textContent).toContain(`Discoloured around (scorch or smoke): ${charred.speedMmS} mm/s at ${charred.powerPct}%`);
+    expect(dialog().querySelector('canvas[aria-label^="The card from the photo"]')).not.toBeNull();
+    // The proposal is chosen, and can be overridden from the list of cells.
+    const cellBtn = (c: (typeof card.cells)[number]) => [...dialog().querySelectorAll('button')].find((b) => accessibleName(b).startsWith(`Row ${c.row + 1}, column ${c.col + 1}:`))!;
+    expect(cellBtn(best).getAttribute('aria-pressed')).toBe('true');
+    expect(accessibleName(cellBtn(charred))).toContain('discoloured around');
+    await settle(() => click(button(dialog(), /Save calibration/)));
+    const cal = activeCalibration('engrave')!;
+    expect([cal.speedMmS, cal.powerMaxPct]).toEqual([best.speedMmS, best.powerPct]);
+    expect(dialog().textContent).toContain('as proposed from the photo');
+  });
+
+  it('photo card 2 read from a photo: the measured tone curve is saved', async () => {
+    // Card 2 is made at the setting card 1 gave: pick a cell on card 1 by eye first.
+    act(() => useProfilesStore.getState().openCalibrate({ kind: 'engrave' }));
+    await settle(() => click(button(dialog(), /Next: settings/)));
+    await settle(() => click(button(dialog(), /Next: preview card/)));
+    await settle(() => click(button(dialog(), /I burned it/)));
+    const one = live(useProfilesStore.getState().data.cards)[0].spec.cells[3];
+    click([...dialog().querySelectorAll('button')].find((b) => accessibleName(b) === `Row ${one.row + 1}, column ${one.col + 1}: ${one.speedMmS} mm/s, ${one.powerPct}%`)!);
+    await settle(() => click(button(dialog(), /Save calibration/)));
+    await settle(() => click(button(dialog(), /Make card 2/)));
+    await settle(() => click(button(dialog(), /Next: preview card/)));
+    await settle(() => click(button(dialog(), /I burned it/)));
+    const response = (level: number) => (level <= 0.1 ? 0.02 : 0.02 + 0.83 * Math.pow((level - 0.1) / 0.9, 0.6));
+    await photoPipeline((_l, _i, level) => response(level));
+    await choosePhoto();
+    expect(dialog().textContent).toContain('tone curve measured from the photo');
+    await settle(() => click(button(dialog(), /Save calibration/)));
+    const cal = activeCalibration('engrave')!;
+    expect(cal.toneCurve).toHaveLength(21);
+    expect(cal.toneCurve![0]).toBe(0);
+    expect(cal.toneCurve![20]).toBe(1);
+    expect(cal.toneCurve![10]).toBeCloseTo((response(0.5) - response(0)) / (response(1) - response(0)), 1);
+  });
+
+  it('a photo that cannot be read says why and leaves choosing by eye', async () => {
+    act(() => useProfilesStore.getState().openCalibrate({ kind: 'engrave' }));
+    await settle(() => click(button(dialog(), /Next: settings/)));
+    await settle(() => click(button(dialog(), /Next: preview card/)));
+    await settle(() => click(button(dialog(), /I burned it/)));
+    await photoPipeline(() => 0.5);
+    await choosePhoto();
+    expect(dialog().textContent).toMatch(/No cell shows a tone ramp in this photo.*Choose by eye below instead/);
+    expect(dialog().textContent).toContain('Choose by eye');
   });
 
   it('relief: entered depths become the depth curve and maximum depth', async () => {

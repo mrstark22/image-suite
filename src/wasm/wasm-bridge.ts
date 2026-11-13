@@ -7,6 +7,7 @@ import initWasm from './pkg/image_suite_wasm.wasm?init';
 import wasmUrl from './pkg/image_suite_wasm.wasm?url';
 import type { VectorConfig, VectorResult } from '../types/vector';
 import { traceImageAt, type TraceExports } from '../lib/trace-call';
+import type { CardPhotoExports } from '../lib/card-photo-call';
 import type { DepthConfig, DepthResult, ResolvedDepthSource } from '../types/depth';
 
 export interface WasmPipelineParams {
@@ -156,6 +157,11 @@ export interface WasmExports {
     burnB: number
   ) => void;
   process_trace: TraceExports['process_trace'];
+  /** Reading a card photo (#56); called through `CardPhotoImage` in `card-photo-call.ts`. */
+  find_card_markers: CardPhotoExports['find_card_markers'];
+  get_card_markers_len: CardPhotoExports['get_card_markers_len'];
+  sample_card_patches: CardPhotoExports['sample_card_patches'];
+  rectify_card: CardPhotoExports['rectify_card'];
   get_trace_json_len: () => number;
   process_depth: (
     ptr: number,

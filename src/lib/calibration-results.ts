@@ -70,15 +70,30 @@ export function toneCurveFromMarks(levels: readonly number[], lastBlank: number,
 }
 
 /**
- * Adds card 2's tone curve to the engraving calibration burned at the
- * card's setting. The card is made from that calibration, so the setting is
- * the card's own.
+ * Adds card 2's tone curve, from the steps marked by eye, to the engraving
+ * calibration burned at the card's setting. The card is made from that
+ * calibration, so the setting is the card's own.
  */
 export function engraveWithTone(spec: CardSpec, lastBlank: number, firstSolid: number, d: ProfileData): CalibrationEntry {
   if (spec.kind !== 'engrave-tone') throw new Error('Mark the steps on photo card 2.');
+  const toneCurve = toneCurveFromMarks(spec.levels, lastBlank, firstSolid);
+  return withToneCurve(spec, toneCurve, d, `bare up to ${Math.round(spec.levels[lastBlank] * 100)} %, fully black from ${Math.round(spec.levels[firstSolid] * 100)} %`);
+}
+
+/**
+ * Adds card 2's tone curve as measured from a photo (`card-reader.ts`): one
+ * darkness per step, white to black, 0 to 1 and never falling.
+ */
+export function engraveWithMeasuredTone(spec: CardSpec, curve: readonly number[], d: ProfileData): CalibrationEntry {
+  if (spec.kind !== 'engrave-tone') throw new Error('Measure the steps of photo card 2.');
+  if (curve.length !== spec.levels.length) throw new Error(`Card #${spec.shortId} has ${spec.levels.length} steps.`);
+  if (curve.some((v, i) => !(v >= 0 && v <= 1) || (i > 0 && v < curve[i - 1]))) throw new Error('A tone curve runs from 0 to 1 and never falls.');
+  return withToneCurve(spec, [...curve], d, 'measured from a photo');
+}
+
+function withToneCurve(spec: CardSpec, toneCurve: number[], d: ProfileData, how: string): CalibrationEntry {
   const c = spec.cells[0];
   const existing = findCalibration(d, cardKey(spec));
-  const toneCurve = toneCurveFromMarks(spec.levels, lastBlank, firstSolid);
   return {
     ...(existing ? settingsOf(existing) : { depthCurve: null, kerfMm: null, maxDepthMm: null }),
     speedMmS: c.speedMmS,
@@ -88,7 +103,7 @@ export function engraveWithTone(spec: CardSpec, lastBlank: number, firstSolid: n
     lineIntervalMm: spec.lineIntervalMm,
     toneCurve,
     status: 'verified',
-    notes: `${existing?.notes ? `${existing.notes} ` : ''}Tone curve from photo card 2 #${spec.shortId}: bare up to ${Math.round(spec.levels[lastBlank] * 100)} %, fully black from ${Math.round(spec.levels[firstSolid] * 100)} %.`,
+    notes: `${existing?.notes ? `${existing.notes} ` : ''}Tone curve from photo card 2 #${spec.shortId}: ${how}.`,
   };
 }
 

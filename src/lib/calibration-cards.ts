@@ -14,6 +14,7 @@ import type { CardCell, CardKind, CardSpec } from '../types/calibration-card';
 import type { Machine } from '../types/profiles';
 import { textRects, textWidthMm } from './card-font';
 import { MM_PER_INCH } from './document-size';
+import { CODE_COLS, CODE_ROWS, ID_CHARS, encodeCardCode } from './card-code';
 
 /** LightBurn's normal layers: indices 0 to 29. */
 export const MAX_LAYERS = 30;
@@ -140,8 +141,6 @@ export interface CardRequest {
   shortId?: string;
 }
 
-const ID_CHARS = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
-
 /** Four characters that read unambiguously off a burned card (no 0/O, 1/I). */
 export function newShortId(): string {
   const bytes = new Uint8Array(4);
@@ -264,14 +263,108 @@ export interface CardText {
   ref?: { kind: 'speed-row' | 'power-col' | 'level' | 'min-power'; index: number };
 }
 
+const MARGIN = 5;
+
+/** A rectangle in mm. */
+export interface MmRect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/**
+ * Something burned on the lettering layer that a photo of the card is read
+ * by (#56): a corner marker, the card code, or the outline of a reference
+ * patch. Drawn as filled `rects`, given relative to its own box.
+ */
+export interface CardMark extends MmRect {
+  kind: 'marker' | 'code' | 'reference';
+  rects: MmRect[];
+}
+
+/** What a photo of a photo card is read by (#56); null on other cards. */
+export interface CardReadAids {
+  /** Centres of the corner markers: top left, top right, bottom right, bottom left. */
+  markers: { x: number; y: number }[];
+  /** Bare-material areas to sample, inside their burned outlines. */
+  references: MmRect[];
+  /** The code's cells, in bit order. */
+  codeCells: MmRect[];
+}
+
 export interface CardLayout {
   widthMm: number;
   heightMm: number;
   cells: CellBox[];
   texts: CardText[];
+  /** Burned on the lettering layer with the texts. */
+  marks: CardMark[];
+  read: CardReadAids | null;
 }
 
-const MARGIN = 5;
+/** Side of a corner marker: a ring 1 mm wide, a 1 mm gap and a dot. */
+export const MARKER_MM = 7;
+/** The top-left marker's dot is larger, which gives the card's orientation. */
+export const MARKER_DOT_MM = { large: 3, small: 1.6 } as const;
+export const CODE_CELL_MM = 2.5;
+const REF_MM = 6;
+const REF_LINE = 0.3;
+const REF_INSET = 1.2;
+/** The side strips of a photo card, where its side reference patches are. */
+const SIDE = REF_MM + 2;
+const BAND_GAP = 2.5;
+
+/** True for the cards read from a photo, which carry markers, a code and reference patches. */
+export const isPhotoCard = (spec: Pick<CardSpec, 'kind'>) => spec.kind === 'engrave-grid' || spec.kind === 'engrave-tone';
+
+function markerMark(x: number, y: number, large: boolean): CardMark {
+  const dot = large ? MARKER_DOT_MM.large : MARKER_DOT_MM.small;
+  const o = (MARKER_MM - dot) / 2;
+  return {
+    kind: 'marker',
+    x,
+    y,
+    w: MARKER_MM,
+    h: MARKER_MM,
+    rects: [
+      { x: 0, y: 0, w: MARKER_MM, h: 1 },
+      { x: 0, y: MARKER_MM - 1, w: MARKER_MM, h: 1 },
+      { x: 0, y: 1, w: 1, h: MARKER_MM - 2 },
+      { x: MARKER_MM - 1, y: 1, w: 1, h: MARKER_MM - 2 },
+      { x: o, y: o, w: dot, h: dot },
+    ],
+  };
+}
+
+function referenceMark(x: number, y: number): CardMark {
+  const l = REF_LINE;
+  return {
+    kind: 'reference',
+    x,
+    y,
+    w: REF_MM,
+    h: REF_MM,
+    rects: [
+      { x: 0, y: 0, w: REF_MM, h: l },
+      { x: 0, y: REF_MM - l, w: REF_MM, h: l },
+      { x: 0, y: l, w: l, h: REF_MM - 2 * l },
+      { x: REF_MM - l, y: l, w: l, h: REF_MM - 2 * l },
+    ],
+  };
+}
+
+/** `n` boxes of `size` spread evenly over `from` to `to`. */
+function spread(from: number, to: number, size: number, n: number): number[] {
+  if (n <= 0) return [];
+  const free = to - from - n * size;
+  const gap = free / (n + 1);
+  return Array.from({ length: n }, (_, i) => from + gap + i * (size + gap));
+}
+
+/** The width a photo card needs for its top band: markers, code and two reference patches. */
+const PHOTO_MIN_WIDTH = 2 * MARGIN + 2 * MARKER_MM + CODE_COLS * CODE_CELL_MM + 6 + 2 * (REF_MM + 3) + 3;
+
 const TITLE_H = 2.4;
 const LINE = 3.8;
 const HEAD_H = 2;
@@ -306,14 +399,22 @@ export function cardTitleLines(spec: CardSpec): string[] {
   return [first, second, third];
 }
 
-/** Where everything on a card goes, in mm. */
+/**
+ * Where everything on a card goes, in mm. A photo card (#56) also has a
+ * band at the top with two corner markers and the card code, a band at the
+ * bottom with the other two markers, and bare reference patches in both
+ * bands and in strips down each side.
+ */
 export function cardLayout(spec: CardSpec): CardLayout {
+  const photo = isPhotoCard(spec);
   const texts: CardText[] = [];
   const cells: CellBox[] = [];
+  const left = photo ? MARGIN + SIDE : MARGIN;
   const titles = cardTitleLines(spec);
-  titles.forEach((text, i) => texts.push({ text, x: MARGIN, y: MARGIN + i * LINE, h: TITLE_H }));
-  let y = MARGIN + titles.length * LINE + 1.5;
-  let right = Math.max(...titles.map((t) => MARGIN + textWidthMm(t, TITLE_H)));
+  const top = photo ? MARGIN + MARKER_MM + BAND_GAP : MARGIN;
+  titles.forEach((text, i) => texts.push({ text, x: left, y: top + i * LINE, h: TITLE_H }));
+  let y = top + titles.length * LINE + 1.5;
+  let right = Math.max(...titles.map((t) => left + textWidthMm(t, TITLE_H)));
 
   if (spec.kind === 'engrave-grid' || spec.kind === 'cut') {
     const cellW = spec.kind === 'cut' ? spec.stepMm : spec.levels.length * spec.stepMm;
@@ -322,7 +423,7 @@ export function cardLayout(spec: CardSpec): CardLayout {
     const speeds = spec.cells.filter((c) => c.col === 0).map((c) => c.speedMmS);
     const powers = spec.cells.filter((c) => c.row === 0).map((c) => c.powerPct);
     const headW = Math.max(...speeds.map((s) => textWidthMm(fmt(s), HEAD_H))) + 2.5;
-    const x0 = MARGIN + headW;
+    const x0 = left + headW;
     powers.forEach((p, col) => {
       const t = `${fmt(p)}%`;
       texts.push({ text: t, x: x0 + col * (cellW + gap) + (cellW - textWidthMm(t, HEAD_H)) / 2, y, h: HEAD_H, ref: { kind: 'power-col', index: col } });
@@ -339,33 +440,86 @@ export function cardLayout(spec: CardSpec): CardLayout {
   } else {
     const ramp = spec.cells[0];
     const w = spec.levels.length * spec.stepMm;
-    cells.push({ cell: ramp, x: MARGIN, y, w, h: spec.rampHeightMm });
+    cells.push({ cell: ramp, x: left, y, w, h: spec.rampHeightMm });
     y += spec.rampHeightMm + 1.2;
     const lh = spec.kind === 'relief' ? HEAD_H : SMALL_H;
     spec.levels.forEach((l, i) => {
       const t = fmt(Math.round(l * 100));
-      texts.push({ text: t, x: MARGIN + i * spec.stepMm + (spec.stepMm - textWidthMm(t, lh)) / 2, y, h: lh, ref: { kind: 'level', index: i } });
+      texts.push({ text: t, x: left + i * spec.stepMm + (spec.stepMm - textWidthMm(t, lh)) / 2, y, h: lh, ref: { kind: 'level', index: i } });
     });
     y += lh;
-    right = Math.max(right, MARGIN + w);
+    right = Math.max(right, left + w);
     const finder = spec.cells.filter((c) => c.role === 'min-power');
     if (finder.length > 0) {
       y += 3;
-      texts.push({ text: 'LOWEST POWER THAT MARKS %', x: MARGIN, y, h: HEAD_H });
+      texts.push({ text: 'LOWEST POWER THAT MARKS %', x: left, y, h: HEAD_H });
       y += HEAD_H + 1.5;
       const side = 6;
       const gap = 2.5;
       finder.forEach((cell, i) => {
-        cells.push({ cell, x: MARGIN + i * (side + gap), y, w: side, h: side });
+        cells.push({ cell, x: left + i * (side + gap), y, w: side, h: side });
         const t = fmt(cell.powerPct);
-        texts.push({ text: t, x: MARGIN + i * (side + gap) + (side - textWidthMm(t, HEAD_H)) / 2, y: y + side + 1.2, h: HEAD_H, ref: { kind: 'min-power', index: i } });
+        texts.push({ text: t, x: left + i * (side + gap) + (side - textWidthMm(t, HEAD_H)) / 2, y: y + side + 1.2, h: HEAD_H, ref: { kind: 'min-power', index: i } });
       });
-      right = Math.max(right, MARGIN + finder.length * (side + gap) - gap);
+      right = Math.max(right, left + finder.length * (side + gap) - gap);
       y += side + 1.2 + HEAD_H;
     }
   }
   const round = (v: number) => Math.ceil(v * 10) / 10;
-  return { widthMm: round(right + MARGIN), heightMm: round(y + MARGIN), cells, texts };
+  if (!photo) return { widthMm: round(right + MARGIN), heightMm: round(y + MARGIN), cells, texts, marks: [], read: null };
+
+  const contentBottom = y;
+  const W = round(Math.max(right + SIDE + MARGIN, PHOTO_MIN_WIDTH));
+  const H = round(contentBottom + BAND_GAP + MARKER_MM + MARGIN);
+  const marks: CardMark[] = [];
+  const references: MmRect[] = [];
+  const addRef = (x: number, ry: number) => {
+    marks.push(referenceMark(x, ry));
+    references.push({ x: x + REF_INSET, y: ry + REF_INSET, w: REF_MM - 2 * REF_INSET, h: REF_MM - 2 * REF_INSET });
+  };
+  const xr = W - MARGIN - MARKER_MM;
+  const yb = H - MARGIN - MARKER_MM;
+  marks.push(markerMark(MARGIN, MARGIN, true), markerMark(xr, MARGIN, false), markerMark(xr, yb, false), markerMark(MARGIN, yb, false));
+
+  // Top band: the code after the top-left marker, then reference patches.
+  const bits = encodeCardCode(spec.kind, spec.shortId);
+  const codeX = MARGIN + MARKER_MM + 3;
+  const codeY = MARGIN + (MARKER_MM - CODE_ROWS * CODE_CELL_MM) / 2;
+  const codeCells: MmRect[] = bits.map((_, i) => ({ x: codeX + (i % CODE_COLS) * CODE_CELL_MM, y: codeY + Math.floor(i / CODE_COLS) * CODE_CELL_MM, w: CODE_CELL_MM, h: CODE_CELL_MM }));
+  marks.push({
+    kind: 'code',
+    x: codeX,
+    y: codeY,
+    w: CODE_COLS * CODE_CELL_MM,
+    h: CODE_ROWS * CODE_CELL_MM,
+    rects: codeCells.flatMap((c, i) => (bits[i] ? [{ x: c.x - codeX, y: c.y - codeY, w: c.w, h: c.h }] : [])),
+  });
+  const refY = MARGIN + (MARKER_MM - REF_MM) / 2;
+  const topFrom = codeX + CODE_COLS * CODE_CELL_MM + 3;
+  const topTo = xr - 3;
+  const topCount = Math.max(1, Math.min(4, Math.floor((topTo - topFrom) / (REF_MM + 6))));
+  spread(topFrom, topTo, REF_MM, topCount).forEach((x) => addRef(x, refY));
+  // Down each side, beside the content.
+  const sideFrom = MARGIN + MARKER_MM + BAND_GAP;
+  const sideCount = Math.max(1, Math.min(4, Math.floor((contentBottom - sideFrom) / (REF_MM + 12))));
+  for (const ry of spread(sideFrom, contentBottom, REF_MM, sideCount)) {
+    addRef(MARGIN, ry);
+    addRef(W - MARGIN - REF_MM, ry);
+  }
+  // Bottom band, between the markers.
+  const botFrom = MARGIN + MARKER_MM + 3;
+  const botTo = xr - 3;
+  const botCount = Math.max(2, Math.min(6, Math.floor((botTo - botFrom) / (REF_MM + 14))));
+  spread(botFrom, botTo, REF_MM, botCount).forEach((x) => addRef(x, yb + (MARKER_MM - REF_MM) / 2));
+
+  const half = MARKER_MM / 2;
+  const markers = [
+    { x: MARGIN + half, y: MARGIN + half },
+    { x: xr + half, y: MARGIN + half },
+    { x: xr + half, y: yb + half },
+    { x: MARGIN + half, y: yb + half },
+  ];
+  return { widthMm: W, heightMm: H, cells, texts, marks, read: { markers, references, codeCells } };
 }
 
 // Pixels
@@ -462,5 +616,21 @@ export function renderCard(spec: CardSpec, ppm: number = pxPerMmOf(spec), option
     }
   }
   for (const t of layout.texts) drawText(r, ppm, t);
+  for (const m of layout.marks) for (const d of m.rects) fillRect(r, ppm, m.x + d.x, m.y + d.y, d.w, d.h, 0);
   return r;
 }
+
+/** One burned mark (a marker, the code, a reference outline) as its own image. */
+export function renderMark(mark: CardMark, ppm: number): Raster {
+  const r = blank(Math.max(1, Math.round(mark.w * ppm)), Math.max(1, Math.round(mark.h * ppm)));
+  for (const d of mark.rects) fillRect(r, ppm, d.x, d.y, d.w, d.h, 0);
+  return r;
+}
+
+/**
+ * Dithers a grey card image with the core's dither, as the Photo job does,
+ * at one pixel per scan line (`pipeline-api.ts`, `ditherArtwork`). Card
+ * cells are dithered with it so what is burned is the tool's own dither,
+ * sent through LightBurn's Pass-Through.
+ */
+export type CardDither = (r: Raster) => Promise<Raster>;

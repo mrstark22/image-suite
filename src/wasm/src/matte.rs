@@ -35,18 +35,23 @@ fn coverage_at(
 /// The mask's value at fractional position (`fx`, `fy`), in 0 to 1, with the
 /// edge pixels extended outwards.
 pub fn sample_bilinear(mask: &[u8], mw: usize, mh: usize, fx: f32, fy: f32) -> f32 {
-    let fx = fx.clamp(0.0, (mw - 1) as f32);
-    let fy = fy.clamp(0.0, (mh - 1) as f32);
+    bilinear(|x, y| mask[y * mw + x] as f32, mw, mh, fx, fy) / 255.0
+}
+
+/// Bilinear interpolation of `at` (a value per pixel of a `w` x `h` grid) at
+/// fractional position (`fx`, `fy`), with the edge pixels extended outwards.
+pub fn bilinear(at: impl Fn(usize, usize) -> f32, w: usize, h: usize, fx: f32, fy: f32) -> f32 {
+    let fx = fx.clamp(0.0, (w - 1) as f32);
+    let fy = fy.clamp(0.0, (h - 1) as f32);
     let x0 = fx.floor() as usize;
     let y0 = fy.floor() as usize;
-    let x1 = (x0 + 1).min(mw - 1);
-    let y1 = (y0 + 1).min(mh - 1);
+    let x1 = (x0 + 1).min(w - 1);
+    let y1 = (y0 + 1).min(h - 1);
     let tx = fx - x0 as f32;
     let ty = fy - y0 as f32;
-    let at = |x: usize, y: usize| mask[y * mw + x] as f32;
     let top = at(x0, y0) + (at(x1, y0) - at(x0, y0)) * tx;
     let bottom = at(x0, y1) + (at(x1, y1) - at(x0, y1)) * tx;
-    (top + (bottom - top) * ty) / 255.0
+    top + (bottom - top) * ty
 }
 
 /// The map from probability to coverage.
