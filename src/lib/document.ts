@@ -8,6 +8,7 @@ import type {
   EditSteps,
   ImageDocument,
   Rotation,
+  SizeOrigin,
   SourceInfo,
 } from '../types/document';
 import { RECIPE_VERSION, type EditRecipe, type EditStep } from '../types/recipe';
@@ -136,12 +137,14 @@ export function defaultSteps(): EditSteps {
 export function createDocument(
   id: string,
   source: SourceInfo,
-  mmPerPx: number | null = null
+  mmPerPx: number | null = null,
+  sizeOrigin: SizeOrigin = 'user'
 ): ImageDocument {
   return {
     id,
     source,
     mmPerPx,
+    sizeOrigin,
     steps: defaultSteps(),
     vector: { ...DEFAULT_VECTOR },
     depth: { ...DEFAULT_DEPTH },
@@ -243,7 +246,7 @@ export function setScale(mmPerPx: number): DocumentUpdate {
   if (!Number.isFinite(mmPerPx) || mmPerPx <= 0) {
     throw new RangeError(`A scale must be a positive number of millimetres per pixel, not ${mmPerPx}`);
   }
-  return (d) => ({ ...d, mmPerPx });
+  return (d) => ({ ...d, mmPerPx, sizeOrigin: 'user' });
 }
 
 /** Restores every edit step (crop included) and workflow setting to its default. Keeps the scale. */

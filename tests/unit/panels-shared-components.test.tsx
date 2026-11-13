@@ -36,6 +36,7 @@ import { setPipeline, type Pipeline } from '../../src/lib/pipeline-client';
 import { useDocumentStore } from '../../src/store/documentStore';
 import { useRenderStore } from '../../src/store/renderStore';
 import { useUIStore } from '../../src/store/uiStore';
+import { usePreferencesStore } from '../../src/store/preferencesStore';
 import { setDepth, setDetail, setDither, setVector } from '../../src/lib/document';
 import type { DitherAlgorithm } from '../../src/types/dither';
 import type { TraceColorMode, TraceShapes, VectorResult } from '../../src/types/vector';
@@ -402,7 +403,7 @@ describe('canvas controls a keyboard can reach (#55 review)', () => {
 
   it('the ruler unit switch is disabled while the size is not set, since only px can be measured', () => {
     useUIStore.setState({ showRulers: true });
-    useDocumentStore.getState().open(decodedImage(4, 4));
+    useDocumentStore.getState().open(decodedImage(4, 4), null);
     useRenderStore.setState({ source: previewSource() });
     const { container } = render(<CanvasRulers />);
     expect(one<HTMLButtonElement>(container, 'button').disabled).toBe(true);
@@ -476,6 +477,29 @@ describe('dialogs on the shared Dialog', () => {
     } finally {
       window.removeEventListener('keydown', appShortcut);
     }
+  });
+
+  it('applying a size in the dialog marks it as set by hand and remembers its DPI for the next image without one', () => {
+    useDocumentStore.getState().open(decodedImage(400, 300));
+    expect(useDocumentStore.getState().doc!.sizeOrigin).toBe('assumed');
+    useUIStore.setState({ isSizeDialogOpen: true });
+    const { container } = render(<SizeDialog />);
+    expect(container.textContent).toContain('300 DPI was assumed');
+    const width = container.querySelectorAll<HTMLInputElement>('input[type=number]')[0];
+    act(() => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!;
+      setter.call(width, '80');
+      width.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    act(() => button(container, /^Apply$/).click());
+    const doc = useDocumentStore.getState().doc!;
+    expect(doc.sizeOrigin).toBe('user');
+    // 400 px across 80 mm is 127 DPI.
+    expect(doc.mmPerPx).toBeCloseTo(0.2, 12);
+    expect(usePreferencesStore.getState().lastAppliedDpi).toBeCloseTo(127, 9);
+    useDocumentStore.getState().open(decodedImage(50, 50));
+    expect(useDocumentStore.getState().doc!.sizeOrigin).toBe('assumed');
+    expect(useDocumentStore.getState().doc!.mmPerPx).toBeCloseTo(0.2, 12);
   });
 
   it('a test grid that fails to open is shown as an error alert with the reason, and the dialog stays open', async () => {

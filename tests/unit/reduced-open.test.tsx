@@ -114,8 +114,10 @@ describe('opening an over-limit image (#69)', () => {
     expect(doc.source.name).toBe('scan.png');
     expect([doc.source.widthPx, doc.source.heightPx]).toEqual([six.widthPx, six.heightPx]);
     expect(doc.source.reducedFrom).toEqual(HUGE);
-    // Size is the first step, as for any image, and its dialog shows the reduction.
-    expect(ui().isSizeDialogOpen).toBe(true);
+    // It opens with a size, as any image does, and the size dialog shows the reduction.
+    expect(ui().isSizeDialogOpen).toBe(false);
+    expect(doc.mmPerPx).not.toBeNull();
+    ui().setSizeDialogOpen(true);
     mounted.unmount();
     mounted = mount(<SizeDialog />);
     const text = mounted.container.textContent!;

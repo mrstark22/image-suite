@@ -41,9 +41,12 @@ export function decodedImage(widthPx: number, heightPx: number, fileDpi: number 
 /** A 6000x4000 photo; its preview target is 2048x1365. */
 export const PHOTO = { widthPx: 6000, heightPx: 4000, previewWidth: 2048, previewHeight: 1365 };
 
-/** Opens the 6000x4000 photo (metadata only). */
-export function openPhoto(fileDpi: number | null = null): void {
-  useDocumentStore.getState().open(decodedImage(PHOTO.widthPx, PHOTO.heightPx, fileDpi, 'photo.jpg'));
+/**
+ * Opens the 6000x4000 photo (metadata only). Its size starts as opening sets
+ * it, unless `mmPerPx` is given; `null` opens it with no size.
+ */
+export function openPhoto(fileDpi: number | null = null, mmPerPx?: number | null): void {
+  useDocumentStore.getState().open(decodedImage(PHOTO.widthPx, PHOTO.heightPx, fileDpi, 'photo.jpg'), mmPerPx);
 }
 
 /** Closes any document and resets the stores between tests. */

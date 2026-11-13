@@ -175,6 +175,10 @@
   text-underline-offset: 3px;
 }
 
+.telemetryAssumed {
+  color: var(--warning);
+}
+
 .telemetrySep {
   color: var(--text-3);
 }

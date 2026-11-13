@@ -126,3 +126,27 @@
 .sampleIconGreen {
   color: var(--success);
 }
+
+/* Phone (#54): the canvas is short above the sheet, so the drop zone drops its decoration and scrolls. */
+@media (max-width: 599px) {
+  .container {
+    justify-content: flex-start;
+    max-height: 100%;
+    overflow-y: auto;
+    padding: var(--space-4) var(--space-3);
+  }
+
+  .iconWrapper,
+  .formats {
+    display: none;
+  }
+
+  .subtitle {
+    margin-bottom: var(--space-4);
+  }
+
+  .samplesSection {
+    margin-top: var(--space-4);
+    padding-top: var(--space-3);
+  }
+}

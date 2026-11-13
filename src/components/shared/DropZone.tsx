@@ -60,9 +60,9 @@ export const DropZone: React.FC = () => {
         <Upload size={28} />
       </div>
 
-      <h2 className={styles.title}>Drop your image to prepare & vectorize</h2>
+      <h2 className={styles.title}>Drop an image here to start</h2>
       <p className={styles.subtitle}>
-        One image at a time. 100% Client-side. Zero cloud uploads.
+        One image at a time. It stays on this device: nothing is uploaded.
       </p>
 
       <input
@@ -92,7 +92,7 @@ export const DropZone: React.FC = () => {
       </div>
 
       <div className={styles.samplesSection}>
-        <div className={styles.samplesTitle}>Or try a precision test pattern</div>
+        <div className={styles.samplesTitle}>Or try a sample image</div>
         <div className={styles.samplesGrid}>
           <button type="button" className={styles.sampleButton} onClick={() => loadSample('gradient')}>
             <Sparkles size={14} className={`${styles.sampleIcon} ${styles.sampleIconWarm}`} />

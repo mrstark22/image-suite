@@ -7,6 +7,7 @@ import { describe, it, expect, beforeEach, beforeAll, afterAll } from 'vitest';
 import { useDocumentStore } from '../../src/store/documentStore';
 import { useRenderStore } from '../../src/store/renderStore';
 import { useUIStore } from '../../src/store/uiStore';
+import { usePreferencesStore } from '../../src/store/preferencesStore';
 import { ignoredFilesMessage, openImageFiles } from '../../src/lib/open-image';
 import { applyRecipe, resetAll, setCrop, setDither, setScale, setTonal, setVector } from '../../src/lib/document';
 import { RECIPE_VERSION } from '../../src/types/recipe';
@@ -41,11 +42,27 @@ beforeEach(() => {
 });
 
 describe('opening an image', () => {
-  it('opens the size dialog with the size not set, offering the file DPI only as a suggestion', async () => {
+  it("opens without stopping for a size: the file's DPI sets it, and no dialog opens", async () => {
     await openImageFiles([new File([], 'a.jpg')], () => true, fakeDecode);
-    expect(currentDoc().mmPerPx).toBeNull();
+    expect(currentDoc().mmPerPx).toBeCloseTo(25.4 / 72, 12);
+    expect(currentDoc().sizeOrigin).toBe('file');
     expect(currentDoc().source.fileDpi).toBe(72);
-    expect(useUIStore.getState().isSizeDialogOpen).toBe(true);
+    expect(useUIStore.getState().isSizeDialogOpen).toBe(false);
+  });
+
+  it('a file with no DPI opens at an assumed size, and a size set by hand is remembered for the next one', async () => {
+    const noDpi = async (file: File, sourceId: string) => ({ ...(await fakeDecode(file, sourceId)), fileDpi: null });
+    await openImageFiles([new File([], 'a.png')], () => true, noDpi);
+    expect(currentDoc().sizeOrigin).toBe('assumed');
+    expect(25.4 / currentDoc().mmPerPx!).toBeCloseTo(300, 9);
+    expect(useUIStore.getState().isSizeDialogOpen).toBe(false);
+    // The size dialog applies 0.2 mm per pixel (127 DPI) by hand.
+    usePreferencesStore.getState().setLastAppliedDpi(25.4 / 0.2);
+    store().edit(setScale(0.2));
+    expect(currentDoc().sizeOrigin).toBe('user');
+    await openImageFiles([new File([], 'b.png')], () => true, noDpi);
+    expect(currentDoc().sizeOrigin).toBe('assumed');
+    expect(currentDoc().mmPerPx).toBeCloseTo(0.2, 12);
   });
 
   it('asks before replacing an edited document, and keeps it when the user declines', async () => {

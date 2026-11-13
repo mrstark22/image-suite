@@ -28,7 +28,7 @@ import { useDocumentStore } from '../../src/store/documentStore';
 import { useRenderStore } from '../../src/store/renderStore';
 import { useUIStore, firstSteps } from '../../src/store/uiStore';
 import { useViewStore } from '../../src/store/viewStore';
-import { FLOWS } from '../../src/lib/workflows';
+import { FLOWS, STEPS } from '../../src/lib/workflows';
 import { decodedImage, resetStores } from '../helpers/documents';
 import { accessibleName, button, click, fakeViewport, mount, pointer, type Mounted } from '../helpers/dom';
 
@@ -42,7 +42,7 @@ const render = (el: React.ReactElement) => (mounted = mount(el));
 
 beforeEach(() => {
   resetStores();
-  useUIStore.setState({ job: 'photo', stepByJob: firstSteps(), isPanelCollapsed: false, isSheetOpen: false });
+  useUIStore.setState({ job: 'photo', stepByJob: firstSteps(), isPanelCollapsed: false, isSheetOpen: true });
   useViewStore.setState({ canvasTool: 'pan', zoom: 1, pan: { x: 0, y: 0 }, fitted: false });
   useRenderStore.setState({ source: null, processed: null });
 });
@@ -130,7 +130,7 @@ describe('the shell at each width (#54)', () => {
     expect(button(root, /^Hide controls$/)).toBeTruthy();
   });
 
-  it('phone: a step bar and a bottom sheet instead of the rail and the inspector', () => {
+  it('phone: a step bar and a bottom sheet instead of the rail and the inspector, open from the start', () => {
     fakeViewport(360);
     render(<App />);
     const root = mounted!.container;
@@ -139,11 +139,57 @@ describe('the shell at each width (#54)', () => {
     const sheet = root.querySelector('section[aria-label="Image controls"]')!;
     expect(sheet).not.toBeNull();
     const handle = sheet.querySelector('button[aria-expanded]')!;
+    // Open without a tap: the step's panel is there at once.
+    expect(handle.getAttribute('aria-expanded')).toBe('true');
+    expect(button(sheet, /Open Image/)).toBeTruthy();
+    expect(handle.textContent).toContain('Hide');
+    // A tap folds it to the bar, which then offers to show the controls again.
+    click(handle);
     expect(handle.getAttribute('aria-expanded')).toBe('false');
+    expect(handle.textContent).toContain('Show');
+    expect(sheet.querySelector<HTMLElement>('[id]')!.hidden).toBe(true);
     click(handle);
     expect(handle.getAttribute('aria-expanded')).toBe('true');
-    // The open sheet holds the step's panel.
-    expect(button(sheet, /Open Image/)).toBeTruthy();
+  });
+
+  it.each(['vector', 'photo', 'relief'] as const)(
+    "phone: entering each step of the %s job shows that step's controls without another tap, even after they were hidden",
+    (job) => {
+      fakeViewport(390);
+      useDocumentStore.getState().open(decodedImage(120, 80));
+      render(<App />);
+      const root = mounted!.container;
+      act(() => useUIStore.getState().setJob(job));
+      for (const step of FLOWS[job]) {
+        // The user hid the controls on the step before.
+        act(() => useUIStore.getState().setSheetOpen(false));
+        const select = root.querySelector<HTMLSelectElement>('select[aria-label="Step"]')!;
+        act(() => {
+          select.value = step;
+          select.dispatchEvent(new Event('change', { bubbles: true }));
+        });
+        const label = STEPS[step].label;
+        const sheet = root.querySelector(`section[aria-label="${label} controls"]`)!;
+        expect(sheet, step).not.toBeNull();
+        expect(sheet.querySelector('button[aria-expanded]')!.getAttribute('aria-expanded'), step).toBe('true');
+        const content = sheet.querySelector<HTMLElement>('[id]')!;
+        expect(content.hidden, step).toBe(false);
+        // The step's own panel is in it, after its hint.
+        expect(content.textContent, step).toContain(STEPS[step].hint);
+        expect(content.textContent!.length, step).toBeGreaterThan(STEPS[step].hint.length + 10);
+      }
+    }
+  );
+
+  it('tablet: the panel starts open, and entering a step unfolds a folded panel', () => {
+    fakeViewport(768);
+    render(<App />);
+    const root = mounted!.container;
+    click(button(root, /^Hide controls$/));
+    expect(useUIStore.getState().isPanelCollapsed).toBe(true);
+    act(() => useUIStore.getState().goToStep('crop'));
+    expect(root.querySelector('aside[aria-label="Crop step"]')).not.toBeNull();
+    expect(button(root, /^Hide controls$/)).toBeTruthy();
   });
 
   it("phone: the step bar's Next, Back and select move through the job's steps", () => {
