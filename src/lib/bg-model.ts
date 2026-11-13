@@ -1,4 +1,5 @@
 import * as ort from 'onnxruntime-web';
+import { ORT_WASM_PATHS } from './ort-runtime';
 import type { MaskModel, ModelProgress } from './background';
 import { loadPinnedModel, type PinnedModelFile } from './model-file';
 
@@ -18,8 +19,8 @@ export const ISNET_FILE: PinnedModelFile = {
 const SIZE = 1024;
 
 if (ort.env) {
-  // The same runtime files as the relief's depth model (src/lib/ai-depth.ts).
-  ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.29.0/dist/';
+  // Served by the app, shared with the relief's depth model (src/lib/ort-runtime.ts).
+  ort.env.wasm.wasmPaths = ORT_WASM_PATHS;
   ort.env.wasm.numThreads = typeof crossOriginIsolated !== 'undefined' && crossOriginIsolated ? Math.min(4, navigator.hardwareConcurrency || 1) : 1;
 }
 

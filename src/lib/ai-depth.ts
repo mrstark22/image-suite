@@ -1,9 +1,10 @@
 import * as ort from 'onnxruntime-web';
+import { ORT_WASM_PATHS } from './ort-runtime';
 import localforage from 'localforage';
 
 // Configure ONNX Runtime Web environment for Web Worker execution
 if (typeof ort !== 'undefined' && ort.env) {
-  ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.29.0/dist/';
+  ort.env.wasm.wasmPaths = ORT_WASM_PATHS;
   ort.env.wasm.numThreads = 1;
 }
 
