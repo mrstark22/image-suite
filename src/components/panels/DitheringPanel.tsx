@@ -61,6 +61,12 @@ export const DitheringPanel: React.FC = () => {
             );
           })}
         </div>
+        {dither.algorithm === 'none' && (
+          <div className={`${styles.controlNote} ${styles.stackGap}`}>
+            Not dithered yet: the image is still in grey tones. Choose a pattern to turn it into dots the laser can
+            burn; Floyd-Steinberg suits most photos. Zoom to 100% to see the dots.
+          </div>
+        )}
       </Section>
 
       {/* Dither Parameters */}

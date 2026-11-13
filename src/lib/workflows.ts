@@ -52,13 +52,13 @@ export const FLOWS: Record<Job, readonly StepId[]> = {
 
 export const STEPS: Record<StepId, StepInfo> = {
   image: { label: 'Image', hint: 'Open the image to work on. It stays in this browser.' },
-  crop: { label: 'Crop', hint: 'Drag the box on the canvas, then press Enter or Apply.' },
+  crop: { label: 'Crop', hint: 'Optional: trim the image. Choose Draw Crop Box, drag on the canvas, then Apply Crop.' },
   background: { label: 'Background', hint: 'Optional: remove the background so it is not burned.' },
-  size: { label: 'Size', hint: 'The size on the material. Exports and lengths in mm need it.' },
-  adjust: { label: 'Adjust', hint: 'Tone, colour and detail.' },
-  dither: { label: 'Dither', hint: 'Turn tone into dots for Pass-Through.' },
-  trace: { label: 'Trace', hint: 'Turn the image into paths.' },
-  relief: { label: 'Relief', hint: 'Shape the heightmap and how it is viewed.' },
+  size: { label: 'Size', hint: 'How big the image comes out on the material. Check it before you burn.' },
+  adjust: { label: 'Adjust', hint: 'Optional: brightness, contrast and sharpness, shown live on the canvas.' },
+  dither: { label: 'Dither', hint: 'Turn grey tones into dots the laser can burn (use Pass-Through mode in LightBurn).' },
+  trace: { label: 'Trace', hint: 'Turn the image into lines the laser follows. The paths are drawn over the image.' },
+  relief: { label: 'Relief', hint: 'Shape the depth map that sets how deep each part is carved. The canvas shows it as a relief.' },
   export: { label: 'Export', hint: 'The file, its physical size and the LightBurn settings to use.' },
 };
 
