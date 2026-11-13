@@ -57,7 +57,8 @@ function gated(inner: Pipeline): Pipeline {
     decodeFile: inner.decodeFile.bind(inner),
     putSource: inner.putSource.bind(inner),
     releaseSource: inner.releaseSource.bind(inner),
-    processDepth: inner.processDepth.bind(inner),
+    exportHeightmap: inner.exportHeightmap.bind(inner),
+    cancelModelDownload: inner.cancelModelDownload.bind(inner),
     renderPreview: hold('preview', inner.renderPreview.bind(inner)),
     renderRelief: hold('relief', inner.renderRelief.bind(inner)),
     traceDocument: hold('trace', inner.traceDocument.bind(inner)),
@@ -260,7 +261,7 @@ describe('each flow has the steps that reach its output (#53)', () => {
     expect(pending('relief')).toHaveLength(1);
     expect(FLOWS.relief).not.toContain('adjust');
     expect(FLOWS.relief).not.toContain('dither');
-    store().edit(setDepth({ smoothingRadius: 5 }));
+    store().edit(setDepth({ smoothingMm: 0.5 }));
     expect(pending('relief')).toHaveLength(2);
     expect(FLOWS.relief).toContain('relief');
   });
@@ -278,7 +279,7 @@ describe('each flow has the steps that reach its output (#53)', () => {
   it('no relief renders outside the relief job', () => {
     for (const job of ['photo', 'vector'] as const) {
       useUIStore.getState().setJob(job);
-      store().edit(setDepth({ smoothingRadius: 3 + held.length }));
+      store().edit(setDepth({ smoothingMm: 0.3 + held.length / 10 }));
       expect(pending('relief'), job).toHaveLength(0);
     }
   });

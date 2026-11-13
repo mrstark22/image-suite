@@ -1,183 +1,84 @@
 import React, { useState } from 'react';
-import { Download, CheckCircle, Layers, Image as ImageIcon } from 'lucide-react';
+import { CheckCircle, Layers } from 'lucide-react';
 import { useDocumentStore } from '../../store/documentStore';
-import { previewDpi, useRenderStore } from '../../store/renderStore';
-import { DEFAULT_DEPTH } from '../../lib/document';
-import { getPipeline } from '../../lib/pipeline-client';
-import { encodeBmpGrayscale8, encodeBmpRgb24 } from '../../lib/bmp-encoder';
-import { encodePngGrayscale16 } from '../../lib/png-encoder';
-import { renderReliefPreview } from '../../lib/depth-shader';
+import { useRenderStore } from '../../store/renderStore';
+import { useProfilesStore } from '../../store/profilesStore';
+import { exportHeightmap, reliefDepthCurve } from '../../lib/relief-export';
+import { rasterExportBlocker } from '../../lib/raster-export';
+import { cancelRasterExport } from '../../lib/raster-export';
 import { Button } from '../shared/Button';
+import { Progress } from '../shared/Progress';
 import { Section } from '../shared/Section';
+import { StatusMessage } from '../shared/StatusMessage';
 import styles from './Panels.module.css';
 
+const STAGE_LABEL = {
+  preparing: 'Preparing the full-resolution image',
+  processing: 'Computing the heightmap',
+  encoding: 'Encoding',
+} as const;
+
 /**
- * The relief's files, moved from the relief panel to the relief job's export
- * step (#53). Preview-sized until #46, which also leaves one heightmap export.
+ * The relief's one file (#46): the heightmap as a 16-bit greyscale PNG, at the
+ * source's full resolution for the crop, with the document's DPI. It is the
+ * heightmap the view shows, computed again at full size. LightBurn runs it
+ * in Grayscale mode; the settings are listed under it in the Export panel.
  */
 export const ReliefExports: React.FC = () => {
-  const depth = useDocumentStore((s) => s.doc?.depth ?? DEFAULT_DEPTH);
-  const sourceName = useDocumentStore((s) => s.doc?.source.name ?? null);
-  // Heightmap files carry a resolution, so they need the size (preview-sized until #46).
-  const sizeSet = useDocumentStore((s) => s.doc?.mmPerPx != null);
-  const source = useRenderStore((s) => s.source);
-  const previewBuffer = source?.buffer ?? null;
-  const dims = source;
+  const doc = useDocumentStore((s) => s.doc);
+  const progress = useRenderStore((s) => s.exportProgress);
+  useProfilesStore((s) => s.data);
+  useProfilesStore((s) => s.materialId);
+  useProfilesStore((s) => s.machineId);
+  const [done, setDone] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  if (!doc) return null;
+  const blocker = rasterExportBlocker(doc);
+  const curve = reliefDepthCurve();
 
-  const [isExporting, setIsExporting] = useState(false);
-  const [exportTypeDone, setExportTypeDone] = useState<'png16' | 'cnc' | 'shaded' | null>(null);
-
-  // 1. Export True 16-Bit Lossless PNG Heightmap (65,536 Depth Levels for Vectric / Carbide / LightBurn)
-  const handleExport16BitPng = async () => {
-    if (!previewBuffer || !dims) return;
-
-    setIsExporting(true);
-    setExportTypeDone(null);
-
+  const run = async () => {
+    setDone(false);
+    setError(null);
     try {
-      const worker = getPipeline();
-      const bufCopy = previewBuffer.slice(0);
-      const result = await worker.processDepth({
-        buffer: bufCopy,
-        width: dims.width,
-        height: dims.height,
-        config: depth,
-      });
-
-      const depth16Data = new Uint16Array(result.heightMapBuffer);
-      const pngBytes = await encodePngGrayscale16(depth16Data, dims.width, dims.height);
-
-      const blob = new Blob([pngBytes.buffer as ArrayBuffer], { type: 'image/png' });
-      const url = URL.createObjectURL(blob);
+      const file = await exportHeightmap(doc);
+      if (!file) return;
+      const url = URL.createObjectURL(new Blob([file.bytes], { type: file.mimeType }));
       const a = document.createElement('a');
       a.href = url;
-      const baseName = sourceName?.replace(/\.[^/.]+$/, '') || 'heightmap';
-      a.download = `${baseName}-16Bit-CNC-Heightmap-${dims.width}x${dims.height}.png`;
+      a.download = `${doc.source.name.replace(/\.[^/.]+$/, '') || 'relief'}-heightmap-16bit.png`;
       a.click();
       URL.revokeObjectURL(url);
-
-      setExportTypeDone('png16');
-      setTimeout(() => setExportTypeDone(null), 3000);
+      setDone(true);
     } catch (err) {
-      console.error('Failed to export 16-bit PNG heightmap:', err);
-    } finally {
-      setIsExporting(false);
-    }
-  };
-
-  // 2. Export 8-bit CNC Heightmap BMP (Legacy 256 Grayscale Levels)
-  const handleExportCncBmp = async () => {
-    if (!previewBuffer || !dims) return;
-
-    setIsExporting(true);
-    setExportTypeDone(null);
-
-    try {
-      const worker = getPipeline();
-      const bufCopy = previewBuffer.slice(0);
-      const result = await worker.processDepth({
-        buffer: bufCopy,
-        width: dims.width,
-        height: dims.height,
-        config: depth,
-      });
-
-      const depth16Data = new Uint16Array(result.heightMapBuffer);
-      const dpi = previewDpi();
-      if (dpi === null) return;
-
-      const bmpBuffer = encodeBmpGrayscale8(depth16Data, dims.width, dims.height, dpi);
-      const blob = new Blob([bmpBuffer], { type: 'image/bmp' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      const baseName = sourceName?.replace(/\.[^/.]+$/, '') || 'heightmap';
-      a.download = `${baseName}-8Bit-CNC-depth-${dims.width}x${dims.height}.bmp`;
-      a.click();
-      URL.revokeObjectURL(url);
-
-      setExportTypeDone('cnc');
-      setTimeout(() => setExportTypeDone(null), 3000);
-    } catch (err) {
-      console.error('Failed to export CNC depth map BMP:', err);
-    } finally {
-      setIsExporting(false);
-    }
-  };
-
-  // 3. Export 3D Visual Presentation Mockup (24-bit Color Shaded with Walnut/Brass Lighting)
-  const handleExportShadedBmp = async () => {
-    if (!previewBuffer || !dims) return;
-
-    setIsExporting(true);
-    setExportTypeDone(null);
-
-    try {
-      const worker = getPipeline();
-      const bufCopy = previewBuffer.slice(0);
-      const result = await worker.processDepth({
-        buffer: bufCopy,
-        width: dims.width,
-        height: dims.height,
-        config: depth,
-      });
-
-      const depth16Data = new Uint16Array(result.heightMapBuffer);
-      const shadedRgba = renderReliefPreview(depth16Data, dims.width, dims.height, depth);
-      const dpi = previewDpi();
-      if (dpi === null) return;
-
-      const bmpBuffer = encodeBmpRgb24(shadedRgba, dims.width, dims.height, dpi);
-      const blob = new Blob([bmpBuffer], { type: 'image/bmp' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      const baseName = sourceName?.replace(/\.[^/.]+$/, '') || 'relief';
-      a.download = `${baseName}-3D-shaded-render-${depth.material || 'walnut'}-${dims.width}x${dims.height}.bmp`;
-      a.click();
-      URL.revokeObjectURL(url);
-
-      setExportTypeDone('shaded');
-      setTimeout(() => setExportTypeDone(null), 3000);
-    } catch (err) {
-      console.error('Failed to export 3D shaded relief BMP:', err);
-    } finally {
-      setIsExporting(false);
+      setError(err instanceof Error ? err.message : String(err));
     }
   };
 
   return (
-    <Section title="Manufacturing & Render Output">
-      {!sizeSet && <div className={styles.controlNote}>Set the size to export.</div>}
+    <Section title="Heightmap File">
+      {blocker && <div className={styles.controlNote}>{blocker}</div>}
       <div className={styles.buttonStack}>
         <Button
           variant="primary"
-          icon={exportTypeDone === 'png16' ? <CheckCircle size={16} /> : <Layers size={16} />}
-          onClick={handleExport16BitPng}
-          disabled={isExporting || !previewBuffer || !sizeSet}
-          title="Lossless 16-Bit (65,536 depth levels) for Vectric, Carbide Create Pro, LightBurn"
+          icon={done ? <CheckCircle size={16} /> : <Layers size={16} />}
+          onClick={() => void run()}
+          disabled={blocker !== null || progress !== null}
         >
-          {exportTypeDone === 'png16' ? '16-Bit Heightmap Exported (.PNG)' : 'Export 16-Bit CNC Heightmap (.PNG)'}
-        </Button>
-
-        <Button
-          icon={exportTypeDone === 'cnc' ? <CheckCircle size={16} /> : <Download size={16} />}
-          onClick={handleExportCncBmp}
-          disabled={isExporting || !previewBuffer || !sizeSet}
-          title="Standard 8-Bit (256 depth levels) Windows Grayscale BMP"
-        >
-          {exportTypeDone === 'cnc' ? '8-Bit CNC Heightmap Exported (.BMP)' : 'Export 8-Bit CNC Heightmap (.BMP)'}
-        </Button>
-
-        <Button
-          icon={exportTypeDone === 'shaded' ? <CheckCircle size={16} /> : <ImageIcon size={16} />}
-          onClick={handleExportShadedBmp}
-          disabled={isExporting || !previewBuffer || !sizeSet}
-          title="24-Bit Color Presentation Mockup Render (with substrate lighting & shadows)"
-        >
-          {exportTypeDone === 'shaded' ? 'Presentation Render Exported (.BMP)' : 'Export 3D Presentation Render (.BMP)'}
+          Export Heightmap (16-bit PNG)
         </Button>
       </div>
+      {progress && (
+        <Progress label={STAGE_LABEL[progress.stage]} fraction={progress.stage === 'encoding' ? null : progress.fraction} onCancel={cancelRasterExport} />
+      )}
+      <div className={`${styles.controlNote} ${styles.stackGap}`}>
+        White is the untouched surface and black the deepest point.{' '}
+        {curve
+          ? 'The relief calibration in use is applied, so the burn has the proportions shown.'
+          : 'No relief calibration is in use: grey levels are linear, and LightBurn’s power range sets the depth.'}{' '}
+        16 bits per pixel keep smooth slopes; LightBurn and CNC software read it.
+      </div>
+      {done && <StatusMessage tone="success">Heightmap exported.</StatusMessage>}
+      {error && <StatusMessage tone="error">Export failed: {error}</StatusMessage>}
     </Section>
   );
 };

@@ -8,7 +8,10 @@ import { useUIStore } from '../store/uiStore';
 import { showsRelief, traces } from './workflows';
 import { RenderScheduler } from './render-scheduler';
 import { previewTarget } from './render-target';
-import { renderReliefPreview } from './depth-shader';
+import { heightmapToRgba } from './relief';
+import { RELIEF_SHAPE_KEYS } from '../types/depth';
+import * as Comlink from 'comlink';
+import type { ReliefProgress } from '../types/worker-messages';
 import { getPipeline, type Pipeline } from './pipeline-client';
 
 /** The preview, trace and relief schedulers (design section 2). */
@@ -111,26 +114,44 @@ export function createSchedulers(pipeline: () => Pipeline): Schedulers {
     fail: report('Tracing failed'),
   });
 
+  // The relief reads the crop and only the shape settings: lighting, material
+  // and the view's exaggeration are drawn by the view and never re-run it (#42).
+  const onReliefProgress = (p: ReliefProgress) => {
+    if (p.model) render().setRelief({ model: p.model });
+  };
   const relief = new RenderScheduler({
-    select: (doc: ImageDocument) => [doc.source, doc.steps.rotation, doc.steps.crop, doc.steps.background, doc.depth] as const,
+    select: (doc: ImageDocument) =>
+      [doc.source, doc.steps.rotation, doc.steps.crop, doc.steps.background, doc.mmPerPx, ...RELIEF_SHAPE_KEYS.map((k) => doc.depth[k])] as const,
     enabled: () => showsRelief(ui().job) && notExporting(),
     buildRequest: renderRequest,
-    run: withSpinner((req: DocumentRenderRequest) => pipeline().renderRelief(req)),
+    run: withSpinner(async (req: DocumentRenderRequest) => {
+      render().setRelief({ error: null, model: null });
+      try {
+        return await pipeline().renderRelief(req, Comlink.proxy(onReliefProgress));
+      } finally {
+        render().setRelief({ model: null });
+      }
+    }),
     commit: (res: ReliefRenderResult) => {
-      const doc = useDocumentStore.getState().doc;
-      if (!doc) return;
-      const { width, height } = res.depth;
-      const shaded = renderReliefPreview(new Uint16Array(res.depth.heightMapBuffer), width, height, doc.depth);
+      const heights = new Uint16Array(res.depth.heightMapBuffer);
       const committed = render().commitRender({
         key: res.key,
         sourceStage: res.sourceStage,
-        pixels: shaded.buffer as ArrayBuffer,
+        pixels: heightmapToRgba(heights).buffer as ArrayBuffer,
         durationMs: res.durationMs,
       });
-      if (committed) render().setDepthHeightMap(res.depth.heightMapBuffer);
-      else relief.rerun();
+      if (committed) {
+        render().setDepthHeightMap(res.depth.heightMapBuffer);
+        render().setRelief({ source: res.depth.source, error: null });
+      } else relief.rerun();
     },
-    fail: report('Depth map generation failed'),
+    // Report failures, never substitute (#43): no heightmap is shown after one.
+    fail: (err: unknown) => {
+      const message = err instanceof Error ? err.message : String(err);
+      render().setDepthHeightMap(null);
+      render().setRelief({ error: message, model: null });
+      report('Depth map generation failed')(err);
+    },
   });
 
   return { preview, trace, relief };

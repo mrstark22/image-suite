@@ -2,7 +2,7 @@ import type { ImageDocument } from './document';
 import type { CropRect } from './image';
 import type { RenderOutput, RenderTarget } from './render';
 import type { DepthResult } from './depth';
-import type { DepthConfig } from './depth';
+import type { DepthModelProgress } from '../lib/ai-depth';
 
 /** A render of the document for the preview or the relief view, at the preview target. */
 export interface DocumentRenderRequest {
@@ -70,11 +70,10 @@ export interface SourceRefusal {
   refused: { message: string; widthPx: number; heightPx: number };
 }
 
-export interface ProcessDepthPayload {
-  buffer: ArrayBuffer;
-  width: number;
-  height: number;
-  config: DepthConfig;
+/** Progress of a relief render or heightmap export: the AI model's, or the export's. */
+export interface ReliefProgress {
+  model?: DepthModelProgress;
+  export?: ExportProgress;
 }
 
 /** What background removal would do, for the panel's comparison (#50). */

@@ -1,3 +1,5 @@
+import type { ResolvedDepthSource } from '../types/depth';
+import type { DepthModelProgress } from '../lib/ai-depth';
 import { create } from 'zustand';
 import type { ImageDocument } from '../types/document';
 import type { VectorLayer, VectorResult } from '../types/vector';
@@ -29,7 +31,10 @@ interface RenderState {
   processed: ArrayBuffer | null;
   /** Increases on every commit to `processed`, so the canvas redraws. */
   previewVersion: number;
+  /** The relief heightmap the view shows (16-bit, the size of `source`). The export computes the same at full resolution. */
   depthHeightMap: ArrayBuffer | null;
+  /** The relief render's state: the source used, the AI model's progress, and why it failed. */
+  relief: ReliefStatus;
   vectorResult: VectorResult | null;
   autoTrace: boolean;
   /** True when the tracing settings changed while auto-trace was off. */
@@ -75,6 +80,7 @@ interface RenderState {
    */
   commitRender: (render: { key: string; sourceStage: SourceStage | null; pixels: ArrayBuffer; durationMs: number }) => boolean;
   setDepthHeightMap: (buffer: ArrayBuffer | null) => void;
+  setRelief: (relief: Partial<ReliefStatus>) => void;
   setVectorResult: (result: VectorResult | null) => void;
   setAutoTrace: (autoTrace: boolean) => void;
   /** Turns auto-trace on and traces now. */
@@ -134,10 +140,23 @@ function summed(layers: VectorLayer[]): Pick<VectorResult, 'totalPaths' | 'total
   };
 }
 
+/** What the relief panel shows about the last relief render. */
+export interface ReliefStatus {
+  /** The source the heightmap shown came from (`auto` resolved); null before one. */
+  source: ResolvedDepthSource | null;
+  /** The AI model's download or estimate in progress, or null. */
+  model: DepthModelProgress | null;
+  /** Why the last relief render failed; null when it did not. No heightmap is shown then. */
+  error: string | null;
+}
+
+const EMPTY_RELIEF: ReliefStatus = { source: null, model: null, error: null };
+
 const EMPTY_RESULTS = {
   source: null,
   processed: null,
   depthHeightMap: null,
+  relief: EMPTY_RELIEF,
   vectorResult: null,
   autoTrace: true,
   isVectorStale: false,
@@ -182,6 +201,7 @@ export const useRenderStore = create<RenderState>((set, get) => ({
   },
 
   setDepthHeightMap: (depthHeightMap) => set({ depthHeightMap }),
+  setRelief: (relief) => set((s) => ({ relief: { ...s.relief, ...relief } })),
 
   // Called with a trace's result only while nothing it read has changed, so the
   // document's tracing settings are the ones it was traced with.
