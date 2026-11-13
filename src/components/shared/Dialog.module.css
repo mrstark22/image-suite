@@ -111,3 +111,32 @@
     min-height: 0;
   }
 }
+
+/* A two-pane manager (#33): a fixed height so its panes scroll on their own. */
+.xl {
+  width: 920px;
+}
+
+.xl .body {
+  height: min(640px, 78vh);
+  max-height: none;
+  overflow: hidden;
+}
+
+@media (max-width: 599px) {
+  .dialog.xl {
+    width: 100vw;
+    max-width: 100vw;
+    height: 100dvh;
+    max-height: 100dvh;
+    border: none;
+    border-radius: 0;
+  }
+
+  .xl .body {
+    height: auto;
+    flex: 1;
+    overflow-y: auto;
+    padding: 12px 16px;
+  }
+}

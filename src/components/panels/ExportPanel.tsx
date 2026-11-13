@@ -12,7 +12,8 @@ import { describePhysicalSize, exportResolution, fromMm, physicalSize } from '..
 import { exportPlan } from '../../lib/render-target';
 import { cancelRasterExport, exportRaster, rasterExportBlocker } from '../../lib/raster-export';
 import { lightBurnSettings } from '../../lib/lightburn-settings';
-import { machineById, materialById } from '../../lib/machines';
+import { activeCalibration, activeProfiles, useProfilesStore } from '../../store/profilesStore';
+import { JOB_CALIBRATION } from '../../lib/profiles';
 import type { ExportProgress, RasterFormat } from '../../types/worker-messages';
 import { ReliefExports } from './ReliefExports';
 import { Button } from '../shared/Button';
@@ -64,8 +65,10 @@ export const ExportPanel: React.FC = () => {
   const backgroundRemoval = useRenderStore((s) => s.backgroundRemoval);
   const progress = useRenderStore((s) => s.exportProgress);
   const job = useUIStore((s) => s.job);
-  const machine = useUIStore((s) => machineById(s.machineId));
-  const material = useUIStore((s) => materialById(s.materialId));
+  const profiles = useProfilesStore();
+  const { machine, material, thickness } = activeProfiles(profiles);
+  const calibration = activeCalibration(JOB_CALIBRATION[job], profiles);
+  const openManager = profiles.openManager;
   const setSizeDialogOpen = useUIStore((s) => s.setSizeDialogOpen);
   const setTestGridDialogOpen = useUIStore((s) => s.setTestGridDialogOpen);
 
@@ -101,6 +104,8 @@ export const ExportPanel: React.FC = () => {
     job,
     machine,
     material,
+    thickness,
+    calibration,
     dither: doc.steps.dither.algorithm,
     fileDpi: file?.dpi ?? null,
   });
@@ -336,7 +341,14 @@ export const ExportPanel: React.FC = () => {
             </div>
           ))}
         </div>
-        <div className={`${styles.controlNote} ${styles.stackGap}`}>{settings.calibration}</div>
+        {settings.tone === 'warning' ? (
+          <StatusMessage tone="warning">{settings.calibration}</StatusMessage>
+        ) : (
+          <div className={`${styles.controlNote} ${styles.stackGap}`}>{settings.calibration}</div>
+        )}
+        <Button variant="link" onClick={() => openManager({ tab: 'materials', id: material?.id ?? null })}>
+          Machines &amp; materials…
+        </Button>
         <Button variant="link" onClick={() => setTestGridDialogOpen(true)}>
           Make a calibration test card…
         </Button>

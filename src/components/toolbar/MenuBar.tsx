@@ -5,8 +5,7 @@ import { useUIStore } from '../../store/uiStore';
 import { useViewStore } from '../../store/viewStore';
 import { MENUS, itemShortcut } from '../../lib/menus';
 import { JOBS, JOB_HINT, JOB_LABEL } from '../../lib/workflows';
-import { MACHINES, MATERIALS } from '../../lib/machines';
-import { chooseMaterial } from '../../lib/job-setup';
+import { ProfileSelectors } from './ProfileSelectors';
 import { cropRectOf, describePhysicalSize, dpiOf } from '../../lib/document-size';
 import styles from './MenuBar.module.css';
 
@@ -25,9 +24,6 @@ export const MenuBar: React.FC = () => {
 
   const job = useUIStore((s) => s.job);
   const setJob = useUIStore((s) => s.setJob);
-  const machineId = useUIStore((s) => s.machineId);
-  const setMachineId = useUIStore((s) => s.setMachineId);
-  const materialId = useUIStore((s) => s.materialId);
   const setSizeDialogOpen = useUIStore((s) => s.setSizeDialogOpen);
 
   // The menus read several stores when open; these make the bar redraw when they change.
@@ -127,34 +123,7 @@ export const MenuBar: React.FC = () => {
       </div>
 
       <div className={styles.rightSide}>
-        <label className={styles.setupField}>
-          <span className={styles.setupLabel}>Machine</span>
-          <select className={styles.setupSelect} value={machineId} onChange={(e) => setMachineId(e.target.value)}>
-            {MACHINES.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label
-          className={styles.setupField}
-          title="Choosing a material applies its starting point (uncalibrated) to the photo settings. Undo takes it back."
-        >
-          <span className={styles.setupLabel}>Material</span>
-          <select
-            className={styles.setupSelect}
-            value={materialId ?? ''}
-            onChange={(e) => chooseMaterial(e.target.value === '' ? null : e.target.value)}
-          >
-            <option value="">Not chosen</option>
-            {MATERIALS.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.name}
-              </option>
-            ))}
-          </select>
-        </label>
+        <ProfileSelectors />
 
         {doc && shownSize && (
           <button

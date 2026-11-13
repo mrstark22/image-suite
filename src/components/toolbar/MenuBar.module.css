@@ -244,6 +244,68 @@
   max-width: 190px;
 }
 
+.setupNarrow {
+  max-width: 90px;
+}
+
+/* With no materials yet, the material selector is an invitation to add one. */
+.addMaterial {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--text-md);
+  color: var(--text);
+  padding: 3px 10px;
+  border: 1px dashed var(--control-border);
+  border-radius: var(--radius-sm);
+}
+
+.addMaterial:hover {
+  background: var(--surface-hover);
+}
+
+/* The calibration the selection loads for this job, or plainly that there is none (#33). */
+.calChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 300px;
+  padding: 3px 8px;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--border);
+  font-size: var(--text-sm);
+  color: var(--text-2);
+}
+
+.calChip:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.calText {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.calDot {
+  flex-shrink: 0;
+  width: 7px;
+  height: 7px;
+  border-radius: var(--radius-full);
+  border: 1.5px solid var(--text-3);
+}
+
+.calOk .calDot {
+  background: var(--success);
+  border-color: var(--success);
+}
+
+.calWarn .calDot {
+  background: var(--warning);
+  border-color: var(--warning);
+}
+
 /*
  * Tablet and phone (#54): the bar wraps to two rows, the menus and the job
  * on the first, the machine and material on the second.
@@ -306,7 +368,20 @@
 
   .rightSide {
     width: 100%;
-    flex-wrap: nowrap;
+    flex-wrap: wrap;
+    row-gap: var(--space-1);
+  }
+
+  /* With no material there is nothing to report that the selectors do not show. */
+  .calIdle {
+    display: none;
+  }
+
+  .calChip {
+    order: 10;
+    width: 100%;
+    max-width: none;
+    border-radius: var(--radius-sm);
   }
 
   .setupField {
@@ -334,6 +409,8 @@
   }
 
   .setupSelect,
+  .addMaterial,
+  .calChip,
   .telemetry,
   .dropdownItem {
     min-height: var(--touch-target);

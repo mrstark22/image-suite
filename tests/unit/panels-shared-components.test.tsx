@@ -22,6 +22,7 @@ import { AIPanel } from '../../src/components/panels/AIPanel';
 import { DitheringPanel } from '../../src/components/panels/DitheringPanel';
 import { ExportPanel } from '../../src/components/panels/ExportPanel';
 import { ShortcutsDialog } from '../../src/components/dialogs/ShortcutsDialog';
+import { ProfilesDialog } from '../../src/components/dialogs/ProfilesDialog';
 import { AdjustmentsPanel } from '../../src/components/panels/AdjustmentsPanel';
 import { VectorizationPanel } from '../../src/components/panels/VectorizationPanel';
 import { DepthMapPanel } from '../../src/components/panels/DepthMapPanel';
@@ -234,6 +235,35 @@ describe('every control in the migrated panels is reachable and named', () => {
         unmount();
       }
     }
+  });
+
+  it('the Machines & Materials manager: both lists, a material, a calibration and a confirmation (#33)', async () => {
+    const p = await import('../../src/lib/profiles');
+    const store = await import('../../src/store/profilesStore');
+    let d = p.seedProfiles();
+    const cat = p.addCategory(d, 'Hardwoods');
+    const mat = p.addMaterial(cat.data, { name: 'White oak', finish: '', supplier: '', notes: '', categoryId: cat.id });
+    const other = p.addMaterial(mat.data, { name: 'Red oak', finish: '', supplier: '', notes: '', categoryId: null });
+    const t = p.addThickness(other.data, mat.id, 3);
+    d = p.saveCalibration(t.data, { kind: 'cut', machineId: d.machines[0].id, materialId: mat.id, thicknessId: t.id }, {
+      speedMmS: 20, powerMinPct: 60, powerMaxPct: 60, passes: 2, lineIntervalMm: null, toneCurve: null, depthCurve: null, kerfMm: 0.2, status: 'unverified', notes: '',
+    }).data;
+    store.setProfileStorage(store.memoryProfileStorage(d));
+    await store.loadProfiles();
+    const { container } = render(<ProfilesDialog />);
+    act(() => store.useProfilesStore.getState().openManager({ tab: 'machines', id: d.machines[0].id }));
+    expect(inaccessibleControls(container), 'machines').toEqual([]);
+    act(() => store.useProfilesStore.getState().openManager({ tab: 'materials', id: mat.id }));
+    expect(container.querySelectorAll('button, input, select, textarea').length).toBeGreaterThan(12);
+    expect(inaccessibleControls(container), 'material').toEqual([]);
+    click(button(container, /^Edit cutting 3 mm calibration on 60 W CO2$/));
+    expect(inaccessibleControls(container), 'calibration').toEqual([]);
+    click(button(container, /^Delete$/));
+    expect(container.querySelector('[role=alertdialog]')).not.toBeNull();
+    expect(inaccessibleControls(container), 'confirmation').toEqual([]);
+    // Escape closes it like every dialog.
+    press('Escape');
+    expect(store.useProfilesStore.getState().managerOpen).toBe(false);
   });
 
   it('the shortcuts dialog', () => {

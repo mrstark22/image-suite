@@ -1,15 +1,11 @@
 import { create } from 'zustand';
 import { FLOWS, nextStep, previousStep, type Job, type StepId } from '../lib/workflows';
-import { DEFAULT_MACHINE_ID } from '../lib/machines';
 
 interface UIState {
   /** The job being done: its flow of steps is shown, and the canvas shows its output (#53). */
   job: Job;
   /** The current step of each job, so switching jobs and back returns to where the user was. */
   stepByJob: Record<Job, StepId>;
-  /** The machine and material the output is for; chosen in the shell. */
-  machineId: string;
-  materialId: string | null;
 
   isSplitView: boolean;
   isInvertedView: boolean;
@@ -41,8 +37,6 @@ interface UIState {
   goToStep: (step: StepId) => void;
   goToNextStep: () => void;
   goToPreviousStep: () => void;
-  setMachineId: (id: string) => void;
-  setMaterialId: (id: string | null) => void;
   toggleSplitView: () => void;
   toggleInvertedView: () => void;
   toggleRulers: () => void;
@@ -76,8 +70,6 @@ export function currentStep(state: Pick<UIState, 'job' | 'stepByJob'>): StepId {
 export const useUIStore = create<UIState>((set, get) => ({
   job: 'photo',
   stepByJob: firstSteps(),
-  machineId: DEFAULT_MACHINE_ID,
-  materialId: null,
   isSplitView: false,
   isInvertedView: false,
   showRulers: true,
@@ -105,8 +97,6 @@ export const useUIStore = create<UIState>((set, get) => ({
     const prev = previousStep(get().job, currentStep(get()));
     if (prev) get().goToStep(prev);
   },
-  setMachineId: (machineId) => set({ machineId }),
-  setMaterialId: (materialId) => set({ materialId }),
   toggleSplitView: () => set((state) => ({ isSplitView: !state.isSplitView })),
   toggleInvertedView: () => set((state) => ({ isInvertedView: !state.isInvertedView })),
   toggleRulers: () => set((state) => ({ showRulers: !state.showRulers })),
