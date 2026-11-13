@@ -23,7 +23,7 @@ mod trace;
 mod tests;
 
 use clahe::apply_clahe;
-use depth::{generate_depth_map_wasm, DepthParams};
+use depth::{generate_heightmap, resolve_source, DepthParams, Estimate};
 use dither::{apply_dithering, DitherAlgo, DitherParams};
 use resample::{prepare, Crop};
 use sharpen::apply_unsharp_mask;
@@ -36,6 +36,7 @@ static mut LAST_JSON_BUF: Vec<u8> = Vec::new();
 
 #[allow(static_mut_refs)]
 static mut LAST_DEPTH_BUF: Vec<u16> = Vec::new();
+static mut LAST_DEPTH_SOURCE: u32 = 0;
 
 /// Allocates linear memory buffer for image pixels
 #[no_mangle]
@@ -350,42 +351,71 @@ pub extern "C" fn get_trace_json_len() -> usize {
     }
 }
 
-/// 3D Depth Map & Heightmap Relief pipeline executed in Rust WebAssembly
+/// The relief heightmap of the RGBA8 image at `ptr` (see `depth.rs`), as
+/// `width * height` 16-bit heights; its length is `get_depth_buf_len`. The
+/// source Auto resolves to is `get_depth_resolved_source`. For the estimate
+/// source, `est_ptr` holds `est_width * est_height` f32 depth estimates; it
+/// is ignored otherwise. Returns null on bad input or a missing estimate.
 #[no_mangle]
+#[allow(clippy::too_many_arguments)]
 pub extern "C" fn process_depth(
     ptr: *const u8,
     width: usize,
     height: usize,
-    source_mode: u32,
-    bevel_style: u32,
-    invert_z: u32,
-    smoothing_radius: f32,
-    depth_scale: f32,
-    relief_angle: f32,
+    source: u32,
+    profile: u32,
+    shape_is_light: u32,
+    invert: u32,
+    smoothing_px: f32,
+    bevel_px: f32,
+    detail: f32,
+    est_ptr: *const f32,
+    est_width: usize,
+    est_height: usize,
 ) -> *const u16 {
     if ptr.is_null() || width == 0 || height == 0 {
         return std::ptr::null();
     }
-
-    let size = width * height * 4;
-    let pixels = unsafe { std::slice::from_raw_parts(ptr, size) };
-
-    let params = DepthParams {
-        source_mode,
-        bevel_style,
-        invert_z: invert_z != 0,
-        smoothing_radius,
-        depth_scale,
-        relief_angle,
+    let pixels = unsafe { std::slice::from_raw_parts(ptr, width * height * 4) };
+    let estimate = if source == depth::SOURCE_ESTIMATE
+        && !est_ptr.is_null()
+        && est_width > 0
+        && est_height > 0
+    {
+        Some(Estimate {
+            values: unsafe { std::slice::from_raw_parts(est_ptr, est_width * est_height) },
+            width: est_width,
+            height: est_height,
+        })
+    } else {
+        None
     };
-
-    let depth16 = generate_depth_map_wasm(pixels, width, height, &params);
-
+    let params = DepthParams {
+        source,
+        profile,
+        shape_is_light: shape_is_light != 0,
+        invert: invert != 0,
+        smoothing_px,
+        bevel_px,
+        detail,
+    };
+    let resolved = resolve_source(pixels, width, height, source);
+    let depth16 = generate_heightmap(pixels, width, height, &params, estimate);
     #[allow(static_mut_refs)]
     unsafe {
+        LAST_DEPTH_SOURCE = resolved;
         LAST_DEPTH_BUF = depth16;
+        if LAST_DEPTH_BUF.is_empty() {
+            return std::ptr::null();
+        }
         LAST_DEPTH_BUF.as_ptr()
     }
+}
+
+/// The source the last `process_depth` used: Auto resolved to Tone (0) or Shape (1).
+#[no_mangle]
+pub extern "C" fn get_depth_resolved_source() -> u32 {
+    unsafe { LAST_DEPTH_SOURCE }
 }
 
 /// Returns the element count (u16 items) of the last generated depth buffer

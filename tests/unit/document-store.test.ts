@@ -64,7 +64,7 @@ const EDITS: Array<[string, DocumentUpdate]> = [
   ['crop', setCrop({ x: 4, y: 3, width: 20, height: 10 })],
   ['scale', setScale(0.1)],
   ['tracing', setVector({ shapes: 'centerline', threshold: 90 })],
-  ['relief', setDepth({ depthScale: 5 })],
+  ['relief', setDepth({ bevelWidthMm: 5 })],
   ['reset all', (d) => resetAll(setTonal({ brightness: 10 })(d))],
   [
     'recipe',

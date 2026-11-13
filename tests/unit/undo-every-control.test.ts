@@ -72,7 +72,7 @@ const EVERYTHING_ADJUSTED: DocumentUpdate = combine(
   setDetail({ clahe: true, adaptiveThreshold: true, unsharpStrength: 40, unsharpRadiusMm: 0.5 }),
   setDither({ algorithm: 'atkinson', serpentine: false, matrixScale: 2 }),
   setVector({ shapes: 'centerline', invert: true, cutline: true, threshold: 90 }),
-  setDepth({ invertZ: true, viewMode: 'heatmap', material: 'slate', source: 'distance-transform', bevelStyle: 'dome' })
+  setDepth({ invertZ: true, viewMode: 'heightmap', material: 'slate', source: 'distance-transform', bevelStyle: 'cove' })
 );
 
 /** A material preset's recipe, as the material preset dialog applies it. */
@@ -126,8 +126,8 @@ const CLICK_EDITS: EditCase[] = [
   { name: 'trace reset', from: 'adjusted', update: resetVector },
   // Depth panel
   { name: 'relief source button', from: 'fresh', update: setDepth({ source: 'ai-estimation' }) },
-  { name: 'bevel style button', from: 'fresh', update: setDepth({ bevelStyle: 'concave' }) },
-  { name: 'relief view mode button', from: 'fresh', update: setDepth({ viewMode: 'grayscale' }) },
+  { name: 'bevel style button', from: 'fresh', update: setDepth({ bevelStyle: 'cove' }) },
+  { name: 'relief view mode button', from: 'fresh', update: setDepth({ viewMode: 'heightmap' }) },
   { name: 'relief material button', from: 'fresh', update: setDepth({ material: 'brass' }) },
   { name: 'invert Z checkbox', from: 'fresh', update: setDepth({ invertZ: true }) },
   // Canvas, dialogs and menus
@@ -221,8 +221,8 @@ describe('every kind of edit is one undo entry, and undo restores the previous d
     const before = start('fresh');
     const slider = new SliderGesture(store);
     slider.startDrag();
-    slider.change(setDepth({ zMax: 60 }));
-    slider.change(setDepth({ zMax: 50 }));
+    slider.change(setDepth({ bevelWidthMm: 6 }));
+    slider.change(setDepth({ bevelWidthMm: 5 }));
     windowStandIn.dispatchEvent(new Event('pointerup'));
     expect(store().gesture).toBeNull();
     expectUndoRedo(before, currentDoc());

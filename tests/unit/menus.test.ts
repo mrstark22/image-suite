@@ -181,8 +181,9 @@ describe('menus', () => {
     useRenderStore.setState({ vectorResult: TRACE });
     ui().setJob('relief');
     const flat = () => items.filter((i) => FLAT_ONLY.includes(i.id) && i.enabled()).map((i) => i.id).sort();
+    docs().edit(setDepth({ viewMode: 'heightmap' }));
     expect(flat()).toEqual([...FLAT_ONLY].sort());
-    docs().edit(setDepth({ viewMode: '3d-interactive' }));
+    docs().edit(setDepth({ viewMode: '3d' }));
     expect(flat()).toEqual([]);
     expect(runCommand('toggleRulers')).toBe(false);
     expect(runCommand('zoomIn')).toBe(false);
@@ -195,7 +196,7 @@ describe('menus', () => {
   it('with the crop tool on, the orbit view gives way to the flat relief, and the view items work again', () => {
     docs().open(decodedImage(900, 600));
     ui().setJob('relief');
-    docs().edit(setDepth({ viewMode: '3d-interactive' }));
+    docs().edit(setDepth({ viewMode: '3d' }));
     view().setCanvasTool('crop');
     expect(items.find((i) => i.id === 'rulers')!.enabled()).toBe(true);
     view().setCanvasTool('pan');

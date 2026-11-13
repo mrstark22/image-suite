@@ -9,6 +9,8 @@ import path from 'path';
 import { traceImageAt, type TraceExports } from '../../src/lib/trace-call';
 import { DEFAULT_VECTOR } from '../../src/lib/document';
 import type { VectorConfig, VectorResult } from '../../src/types/vector';
+import type { DepthConfig } from '../../src/types/depth';
+import { RustWasmEngine, type DepthEstimate, type WasmExports as BridgeExports } from '../../src/wasm/wasm-bridge';
 
 const WASM_PATH = path.resolve(__dirname, '../../src/wasm/pkg/image_suite_wasm.wasm');
 
@@ -66,6 +68,7 @@ interface WasmExports {
   get_trace_json_len(): number;
   process_depth(...args: number[]): number;
   get_depth_buf_len(): number;
+  get_depth_resolved_source(): number;
 }
 
 export interface Wasm {
@@ -280,5 +283,32 @@ export function prepareSource(
     }
   } finally {
     e.deallocate(src, size);
+  }
+}
+
+/**
+ * The relief heightmap of `rgba` through the bridge's `depthAt`, the call the
+ * worker makes (so `process_depth`'s argument order is tested where it is
+ * written, in `wasm-bridge.ts`). Lengths in `config` are in mm at `pxPerMm`.
+ */
+export function depthMap(
+  wasm: Wasm,
+  rgba: Uint8Array,
+  width: number,
+  height: number,
+  config: DepthConfig,
+  pxPerMm = 1,
+  estimate: DepthEstimate | null = null
+): { heights: Uint16Array; source: string } {
+  const e = wasm.exports;
+  const core = RustWasmEngine.fromExports(e as unknown as BridgeExports);
+  const size = width * height * 4;
+  const ptr = e.allocate(size);
+  try {
+    new Uint8Array(e.memory.buffer, ptr, size).set(rgba);
+    const result = core.depthAt(ptr, width, height, config, pxPerMm, estimate);
+    return { heights: new Uint16Array(result.heightMapBuffer), source: result.source };
+  } finally {
+    e.deallocate(ptr, size);
   }
 }

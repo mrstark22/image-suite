@@ -96,24 +96,42 @@ export const DEFAULT_VECTOR: VectorConfig = {
 };
 
 export const DEFAULT_DEPTH: DepthConfig = {
-  source: 'tonal-height',
-  bevelStyle: 'prismatic',
+  source: 'auto',
+  bevelStyle: 'round',
+  bevelWidthMm: 1.5,
+  shapeIsLight: false,
+  detail: 30,
+  smoothingMm: 0.1,
   invertZ: false,
-  zMin: 0,
-  zMax: 100,
-  smoothingRadius: 2.0,
-  depthScale: 3.0,
-  reliefAngle: 45,
-  export16Bit: true,
-  detailEmboss: 0,
-  aiWeight: 75,
-  tonalBlend: 25,
-  surfaceDenoise: 2.0,
-  viewMode: '3d-shaded',
+  maxDepthMm: 2,
+  viewMode: '3d',
   material: 'walnut',
   lightAngle: 315,
-  lightElevation: 45,
+  exaggeration: 1,
 };
+
+const DEPTH_CHOICES: { [K in keyof DepthConfig]?: readonly unknown[] } = {
+  source: ['auto', 'ai-estimation', 'distance-transform', 'tonal-height'],
+  bevelStyle: ['chamfer', 'round', 'cove'],
+  viewMode: ['3d', 'heightmap'],
+  material: ['walnut', 'brass', 'slate', 'grayscale'],
+};
+
+/**
+ * The relief settings in `params` that this version still has, with a valid
+ * value. A recipe saved before #44 carries settings that were removed or
+ * renamed; those are dropped and the defaults stand.
+ */
+export function knownDepthSettings(params: object): Partial<DepthConfig> {
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(params)) {
+    if (!(key in DEFAULT_DEPTH)) continue;
+    const choices = DEPTH_CHOICES[key as keyof DepthConfig];
+    const fallback = DEFAULT_DEPTH[key as keyof DepthConfig];
+    if (choices ? choices.includes(value) : typeof value === typeof fallback) out[key] = value;
+  }
+  return out as Partial<DepthConfig>;
+}
 
 /**
  * `next`, a newly opened image, with the settings of `previous`, the image it
@@ -312,7 +330,7 @@ export function applyRecipe(recipe: EditRecipe): DocumentUpdate {
       if (step.type === 'dither') Object.assign(dither, step.params);
       // Only settings the tracer still has: a recipe saved before phase 2 carries old ones (#32).
       if (step.type === 'vectorize') Object.assign(vector, knownKeys(step.params, DEFAULT_VECTOR));
-      if (step.type === 'depth') Object.assign(depth, step.params);
+      if (step.type === 'depth') Object.assign(depth, knownDepthSettings(step.params));
     }
     return { ...d, steps: { ...d.steps, tonal, color, detail, dither }, vector, depth };
   };
