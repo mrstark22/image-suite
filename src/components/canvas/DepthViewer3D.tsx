@@ -476,7 +476,7 @@ export const DepthViewer3D: React.FC<DepthViewer3DProps> = ({ depthBuffer, width
           : 'Drag: Orbit • Right-Drag or Two Fingers: Pan • Scroll or Pinch: Zoom'}
       </div>
       <div className={styles.visuallyHidden} role="status" aria-live="polite">
-        {`Camera ${Math.round(((announcedCamera.azimuth % 360) + 360) % 360)}° around, ${Math.round(announcedCamera.elevation)}° above the surface, distance ${announcedCamera.distance.toFixed(2)}`}
+        {`Camera ${Math.round(((announcedCamera.azimuth % 360) + 360) % 360)}° around, ${Math.round(announcedCamera.elevation)}° above the surface, zoom ${Math.round(100 / announcedCamera.distance)}%`}
       </div>
     </div>
   );
